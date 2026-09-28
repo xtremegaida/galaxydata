@@ -15,6 +15,7 @@ using GalaxyData.Query.Providers;
 using GalaxyData.Query.Results;
 using GalaxyData.Query.Sqlite;
 using Microsoft.Data.Sqlite;
+using Xunit;
 
 namespace GalaxyData.Query.IntegrationTests.Execution;
 
@@ -75,15 +76,33 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
 
    public static Task<TestSources> DuckDbShopAsync() => new TestSources().AddDuckDbAsync("shop", Fixtures.Sql("shop.duckdb.sql"));
 
-   /// <summary>Rows as text, one line each: <c>1001 | 250.00 | 'Acme Ltd' | null</c>.</summary>
-   public static string Format(IEnumerable<object?[]> rows)
+   /// <summary>
+   /// Rows as text, one line each: <c>1001 | 250.00 | 'Acme Ltd' | null</c>. With a schema, only the visible values, and
+   /// the hidden ones after <c>||</c> when <paramref name="hidden"/> is set.
+   /// </summary>
+   public static string Format(IEnumerable<object?[]> rows, ResultSchema? schema = null, bool hidden = false)
    {
       StringBuilder text = new();
-      foreach (object?[] row in rows) { text.AppendJoin(" | ", row.Select(Value)).AppendLine(); }
+      int visible = schema?.VisibleColumns.Count ?? int.MaxValue;
+      foreach (object?[] row in rows)
+      {
+         text.AppendJoin(" | ", row.Take(visible).Select(Value));
+         if (hidden && row.Length > visible) { text.Append(" || ").AppendJoin(" | ", row.Skip(visible).Select(Value)); }
+         text.AppendLine();
+      }
       return text.ToString();
    }
 
-   public static string Header(ResultSchema schema) => string.Join(" | ", schema.Columns.Select(c => c.Name));
+   /// <summary>The rest of a result's rows, visible values only.</summary>
+   public static async Task<string> RowsAsync(QueryResult result) =>
+      Format(await result.ToListAsync(TestContext.Current.CancellationToken), result.Schema);
+
+   public static string Header(ResultSchema schema)
+   {
+      string text = string.Join(" | ", schema.VisibleColumns.Select(c => c.Name));
+      List<ResultColumn> hidden = schema.Columns.Where(c => c.IsHidden).ToList();
+      return hidden.Count == 0 ? text : text + " || " + string.Join(" | ", hidden.Select(c => c.Name));
+   }
 
    private static string Value(object? value) => value switch
    {

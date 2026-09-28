@@ -236,3 +236,20 @@ Intersect
     Scan sales.orders
   Select customer_id: int32 = it.id
     Scan sales.customers
+
+### sales.orders.orderBy(desc(total)).first()
+Value sales.orders.orderBy(desc(it.total)).first() :: record sales.orders?
+
+### sales.orders.firstOrDefault(status == 'open').customer
+Value sales.orders.where(it => it.status == 'open').firstOrDefault().customer :: record sales.customers?
+
+### sales.customers.select(name, latest: orders_by_customer.orderBy(desc(order_date)).first())
+Select name: string(100) = it.name, latest: record sales.orders? = it.orders_by_customer.orderBy(desc(it.order_date)).first()
+  Scan sales.customers
+
+### sales.customers.where(c => c.orders_by_customer.orderBy(desc(order_date)).firstOrDefault(o => o.status == 'open').total > 100)
+Where(c) c.orders_by_customer.orderBy(desc(it.order_date)).where(o => o.status == 'open').firstOrDefault().total > 100
+  Scan sales.customers
+
+### sales.orders.groupBy(status).orderBy(desc(count())).first().status
+Value sales.orders.groupBy(status: it.status).orderBy(desc(count())).first().status :: string(20,ansi)?

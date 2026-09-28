@@ -322,12 +322,14 @@ internal sealed class RemoveUselessSorts : IRewriteRule
       _ => null,
    };
 
-   /// <summary>The plan without a sort at its top (under filters and projections); null when there is none.</summary>
+   /// <summary>The plan without a sort at its top (under filters, projections and joins' left sides); null when there is none.</summary>
    private static PlanNode? Strip(PlanNode node) => node switch
    {
       SortNode sort => sort.Input,
       FilterNode filter when Strip(filter.Input) is { } input => new FilterNode(input, filter.Predicate),
       ProjectNode project when Strip(project.Input) is { } input => new ProjectNode(input, project.Items),
+      JoinNode { Kind: JoinKind.Inner or JoinKind.Left } join when Strip(join.Left) is { } left =>
+         new JoinNode(join.Kind, left, join.Right, join.Condition, join.Navigation),
       _ => null,
    };
 }
@@ -480,7 +482,7 @@ internal sealed class PushFilterThroughAggregate : IRewriteRule
          else { kept.Add(conjunct); }
       }
       if (below.Count == 0) { return null; }
-      PlanNode grouped = new AggregateNode(new FilterNode(aggregate.Input, PlanAnalysis.Conjunction(below)!), aggregate.Keys, aggregate.Aggregates);
+      PlanNode grouped = new AggregateNode(new FilterNode(aggregate.Input, PlanAnalysis.Conjunction(below)!), aggregate.Keys, aggregate.Aggregates, aggregate.DependentKeys);
       return kept.Count == 0 ? grouped : new FilterNode(grouped, PlanAnalysis.Conjunction(kept)!);
    }
 }

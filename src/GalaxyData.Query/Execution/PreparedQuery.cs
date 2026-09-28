@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using GalaxyData.Query.Binding;
 using GalaxyData.Query.Diagnostics;
+using GalaxyData.Query.Explain;
 using GalaxyData.Query.Planning;
 using GalaxyData.Query.Results;
 using GalaxyData.Query.Sql;
@@ -18,19 +19,29 @@ public sealed class PreparedQuery
 {
    private readonly QueryEngine engine;
    private readonly QueryParameters parameters;
+   private readonly PageRequest? paging;
 
-   internal PreparedQuery(QueryEngine engine, string text, QueryParameters parameters, IReadOnlyList<QueryDiagnostic> diagnostics,
-                          LogicalPlan? plan, IReadOnlyList<QueryFragment> fragments)
+   internal PreparedQuery(QueryEngine engine, QueryRequest request, QueryParameters parameters, BoundProgram? program,
+                          IReadOnlyList<QueryDiagnostic> diagnostics, LogicalPlan? plan, IReadOnlyList<QueryFragment> fragments)
    {
       this.engine = engine;
       this.parameters = parameters;
-      Text = text;
+      paging = request.Paging;
+      Program = program;
+      Text = request.Text;
       Diagnostics = diagnostics;
       Plan = plan;
       Fragments = fragments;
    }
 
    public string Text { get; }
+
+   internal QueryParameters Parameters => parameters;
+
+   internal BoundProgram? Program { get; }
+
+   /// <summary>Made by <see cref="ForCount"/>: the plan counts the program's rows.</summary>
+   internal bool IsCount { get; set; }
 
    public IReadOnlyList<QueryDiagnostic> Diagnostics { get; }
 
@@ -42,6 +53,16 @@ public sealed class PreparedQuery
 
    /// <summary>The SQL each source runs.</summary>
    public IReadOnlyList<QueryFragment> Fragments { get; }
+
+   /// <summary>
+   /// The same query counting its rows instead (one row, one column <c>count</c>): without its final sort and without
+   /// the request's paging, and with the joins that can't change the count left out. A <c>take(...)</c> in the
+   /// query itself still counts.
+   /// </summary>
+   public PreparedQuery ForCount() => engine.PrepareCount(this);
+
+   /// <summary>What the query would do, without running it; <paramref name="verbose"/> adds the plan after each optimizer phase.</summary>
+   public QueryExplain Explain(bool verbose = false) => QueryExplainer.Explain(this, Program, paging, IsCount, engine.Options.Optimize, verbose);
 
    public async Task<QueryResult> ExecuteAsync(CancellationToken cancellationToken = default)
    {
@@ -75,7 +96,10 @@ public sealed class PreparedQuery
          {
             throw new QueryExecutionException($"{fragment.Source.Alias} ({fragment.Dialect.Name}) failed to run the query: {e.Message}", e);
          }
-         return new QueryResult(Schema!, fragment, provider, connection, command, reader, options.LenientConversion, started, options.Clock);
+         return new QueryResult(Schema!, fragment, provider, connection, command, reader, options.LenientConversion, started, options.Clock)
+         {
+            RequiresRow = Plan!.RequiresRow,
+         };
       }
       catch
       {

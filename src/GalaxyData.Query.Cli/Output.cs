@@ -44,15 +44,16 @@ internal static class Output
 
    private static void Table(TextWriter writer, ResultSchema schema, IReadOnlyList<object?[]> rows)
    {
-      int count = schema.Columns.Count;
-      string[][] cells = rows.Select(r => r.Select(v => Clip(Text(v) ?? "null")).ToArray()).ToArray();
+      IReadOnlyList<ResultColumn> columns = schema.VisibleColumns;
+      int count = columns.Count;
+      string[][] cells = rows.Select(r => r.Take(count).Select(v => Clip(Text(v) ?? "null")).ToArray()).ToArray();
       int[] widths = new int[count];
       for (int i = 0; i < count; i++)
       {
-         widths[i] = Math.Max(Clip(schema.Columns[i].Name).Length, cells.Length == 0 ? 0 : cells.Max(c => c[i].Length));
+         widths[i] = Math.Max(Clip(columns[i].Name).Length, cells.Length == 0 ? 0 : cells.Max(c => c[i].Length));
       }
-      bool[] right = schema.Columns.Select(c => c.Type.IsNumeric).ToArray();
-      writer.WriteLine(Line(schema.Columns.Select(c => Clip(c.Name)).ToArray(), widths, new bool[count]));
+      bool[] right = columns.Select(c => c.Type.IsNumeric).ToArray();
+      writer.WriteLine(Line(columns.Select(c => Clip(c.Name)).ToArray(), widths, new bool[count]));
       writer.WriteLine(string.Join("-+-", widths.Select(w => new string('-', w))));
       foreach (string[] row in cells) { writer.WriteLine(Line(row, widths, right)); }
    }
@@ -68,8 +69,9 @@ internal static class Output
 
    private static void Csv(TextWriter writer, ResultSchema schema, IReadOnlyList<object?[]> rows)
    {
-      writer.WriteLine(string.Join(",", schema.Columns.Select(c => CsvField(c.Name))));
-      foreach (object?[] row in rows) { writer.WriteLine(string.Join(",", row.Select(v => v == null ? string.Empty : CsvField(Text(v)!)))); }
+      int count = schema.VisibleColumns.Count;
+      writer.WriteLine(string.Join(",", schema.VisibleColumns.Select(c => CsvField(c.Name))));
+      foreach (object?[] row in rows) { writer.WriteLine(string.Join(",", row.Take(count).Select(v => v == null ? string.Empty : CsvField(Text(v)!)))); }
    }
 
    private static string CsvField(string text) =>
@@ -84,9 +86,9 @@ internal static class Output
          foreach (object?[] row in rows)
          {
             json.WriteStartObject();
-            for (int i = 0; i < row.Length; i++)
+            for (int i = 0; i < schema.VisibleColumns.Count; i++)
             {
-               json.WritePropertyName(schema.Columns[i].Name);
+               json.WritePropertyName(schema.VisibleColumns[i].Name);
                switch (row[i])
                {
                   case null:
@@ -144,12 +146,6 @@ internal static class Output
          }
          writer.WriteLine();
       }
-   }
-
-   public static void Lineage(TextWriter writer, ResultSchema schema)
-   {
-      foreach (ResultColumn column in schema.Columns) { writer.WriteLine($"-- {column.Name} {column.Type}: {column.Lineage}"); }
-      writer.WriteLine();
    }
 
    /// <summary>Each diagnostic with the line of the query it is on, underlined.</summary>

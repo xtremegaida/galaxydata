@@ -1,3 +1,4 @@
+using System.Linq;
 using GalaxyData.Query.Language;
 using Shouldly;
 using Xunit;
@@ -45,5 +46,45 @@ public sealed class QueryTextTests
       QueryText.FormatPath(["xl", "Budget 2024", "Sheet 1"]).ShouldBe("xl['Budget 2024']['Sheet 1']");
       QueryText.FormatPath(["shop", "main", "orders"]).ShouldBe("shop.main.orders");
       QueryText.FormatPath(["shop", "in"]).ShouldBe("shop['in']");
+   }
+
+   [Theory]
+   [InlineData("total", "total")]
+   [InlineData("Total Spend", "it['Total Spend']")]
+   [InlineData("it", "it['it']")]
+   [InlineData("key", "it['key']")]
+   [InlineData("in", "it['in']")]
+   [InlineData("$x", "it['$x']")]
+   [InlineData("o'brien", "it['o\\'brien']")]
+   public void NamesForTheImplicitRow(string name, string expected)
+   {
+      QueryText.QuoteName(name).ShouldBe(expected);
+   }
+
+   [Theory]
+   [InlineData("shop.orders", "shop.orders")]
+   [InlineData("x := shop.orders; x.where(total > 1);", "x := shop.orders|x.where(total > 1)")]
+   [InlineData("x := shop.orders.where(s == ';');  // last ; one\n x", "x := shop.orders.where(s == ';')|x")]
+   [InlineData("a := f(1; 2); /* ; */ # ;\n b", "a := f(1; 2)|b")]
+   [InlineData(";; shop.orders ;", "shop.orders")]
+   [InlineData("x := `raw ; text`; x", "x := `raw ; text`|x")]
+   [InlineData("x := 'it\\'s; fine'; x", "x := 'it\\'s; fine'|x")]
+   [InlineData("", "")]
+   public void StatementsSplitOnTopLevelSemicolons(string text, string expected)
+   {
+      string.Join("|", QueryText.SplitStatements(text).Select(r => text[r])).ShouldBe(expected);
+   }
+
+   [Fact]
+   public void ComposeWrapsTheLastStatement()
+   {
+      QueryText.Compose("shop.orders").ShouldBe("shop.orders");
+      QueryText.Compose("shop.orders.select(id, total)", ["total > 100"]).ShouldBe("(shop.orders.select(id, total)).where(total > 100)");
+      QueryText.Compose("big := shop.orders.where(total > 100);\nbig.select(id) // the ids\n", ["id > 3", " "], [new QuerySortKey("id", Descending: true)])
+         .ShouldBe("big := shop.orders.where(total > 100);\n(big.select(id)).where(id > 3).orderBy(desc(id)) // the ids\n");
+      QueryText.Compose("shop.orders;", sort: [new QuerySortKey(QueryText.QuoteName("Total Spend"))], tiebreak: ["id", "Total Spend"])
+         .ShouldBe("(shop.orders).orderBy(it['Total Spend'], id);");
+      QueryText.Compose("shop.orders", tiebreak: ["id"]).ShouldBe("shop.orders");
+      Should.Throw<System.ArgumentException>(() => QueryText.Compose("  // nothing", ["a"]));
    }
 }

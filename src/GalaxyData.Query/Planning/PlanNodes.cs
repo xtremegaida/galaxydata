@@ -187,12 +187,14 @@ public sealed class AggregateNode : PlanNode
 {
    private readonly List<ProjectItem> keys;
    private readonly List<AggregateItem> aggregates;
+   private readonly HashSet<PlanColumn> dependentKeys;
 
-   public AggregateNode(PlanNode input, IEnumerable<ProjectItem> keys, IEnumerable<AggregateItem> aggregates)
+   public AggregateNode(PlanNode input, IEnumerable<ProjectItem> keys, IEnumerable<AggregateItem> aggregates, IEnumerable<PlanColumn>? dependentKeys = null)
    {
       Input = input;
       this.keys = keys.ToList();
       this.aggregates = aggregates.ToList();
+      this.dependentKeys = [.. dependentKeys ?? []];
    }
 
    public PlanNode Input { get; internal set; }
@@ -201,11 +203,21 @@ public sealed class AggregateNode : PlanNode
 
    public IReadOnlyList<AggregateItem> Aggregates => aggregates;
 
+   /// <summary>
+   /// Keys whose values follow from the other keys, such as the other columns of a row grouped by its key: they don't
+   /// change the groups, so one that nothing reads can be dropped.
+   /// </summary>
+   internal IReadOnlySet<PlanColumn> DependentKeys => dependentKeys;
+
    public override IReadOnlyList<PlanColumn> Output => [.. keys.Select(k => k.Column), .. aggregates.Select(a => a.Column)];
 
    public override IReadOnlyList<PlanNode> Inputs => [Input];
 
-   internal void AddKey(ProjectItem key) => keys.Add(key);
+   internal void AddKey(ProjectItem key, bool dependent = false)
+   {
+      keys.Add(key);
+      if (dependent) { dependentKeys.Add(key.Column); }
+   }
 
    internal void AddAggregate(AggregateItem aggregate) => aggregates.Add(aggregate);
 }

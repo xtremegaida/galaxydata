@@ -2,7 +2,7 @@
 exit 0
 --- out
 -- shop (SQLite)
-SELECT o.id, o.total, c.name AS who, c.city
+SELECT o.id, o.total, c.name AS who, c.city, c.id
 FROM orders AS o
 LEFT JOIN customers AS c ON o.customer_id = c.id
 WHERE o.status = @p0
@@ -43,27 +43,101 @@ name,city
 Acme Ltd,Cape Town
 Beta Corp,Johannesburg
 
-### sql: plan, lineage and SQL
+### sql: the SQL only
 exit 0
 --- out
--- plan
--- Limit take 3
---   Project line_no#2, city#17
---     Join inner via customer: customer_id#7 == id#15
---       Join inner via order: order_id#1 == id#6
---         Scan shop.order_lines (order_id#1, line_no#2)
---         Scan shop.orders (id#6, customer_id#7)
---       Scan shop.customers (id#15, city#17)
--- lineage
--- line_no int32: direct shop.order_lines.line_no
--- city string?: direct order.customer -> shop.customers.city
-
 -- shop (DuckDB)
-SELECT o.line_no, c.city
+SELECT o.line_no, c.city, o.order_id, c.id
 FROM order_lines AS o
 INNER JOIN orders AS o2 ON o.order_id = o2.id
 INNER JOIN customers AS c ON o2.customer_id = c.id
 LIMIT 3
+
+### explain: plan, columns with lineage and links, SQL
+exit 0
+--- out
+Runs as one SQLite query in shop, reading shop.orders, shop.customers and shop.order_lines.
+
+Plan
+  Project  id, total, who: customer.name, n: coalesce(count, 0), customer.id
+    Left join  id == order_lines.order_id
+      Left join  customer: customer_id == customer.id
+        Filter  status == 'open'
+          Scan  shop.orders
+        Scan  shop.customers as customer
+      Aggregate  by order_lines.order_id; count: count()
+        Scan  shop.order_lines as order_lines
+
+Columns
+  0 id int64: direct shop.orders.id; edits shop.orders.id by id = [0]
+  1 total decimal(10,2): direct shop.orders.total; edits shop.orders.total by id = [0]
+  2 who string?: direct customer -> shop.customers.name; edits shop.customers.name by id = [4]
+  3 n int64: aggregated (order_lines.count()); links to rows shop.order_lines(order_id) = [0] via order_lines
+  4 id int64? (hidden): direct customer -> shop.customers.id
+
+SQL for shop (SQLite, whole result)
+  SELECT o.id, o.total, c.name AS who, coalesce(d.count, 0) AS n, c.id
+  FROM orders AS o
+  LEFT JOIN customers AS c ON o.customer_id = c.id
+  LEFT JOIN (
+     SELECT o2.order_id, count(*) AS count
+     FROM order_lines AS o2
+     GROUP BY o2.order_id
+  ) AS d ON o.id = d.order_id
+  WHERE o.status = @p0
+  -- p0 string = 'open'
+
+### explain, verbose
+exit 0
+--- out
+Runs as one DuckDB query in shop, reading shop.orders.
+
+Plan
+  Project  customer_id, spend: sum
+    Aggregate  by customer_id; sum: sum(total)
+      Scan  shop.orders  (~4 rows)
+
+Columns
+  0 customer_id int32: direct shop.orders.customer_id; links to row shop.customers(id) = [0] via customer
+  1 spend decimal(38,2): aggregated (sum(total)) from shop.orders.total; links to rows of shop.orders where customer_id == [0]
+
+SQL for shop (DuckDB, whole result)
+  SELECT o.customer_id, coalesce(sum(o.total), 0) AS spend
+  FROM orders AS o
+  GROUP BY o.customer_id
+
+Phase lowered
+  Project customer_id#2, spend#11 = sum#10
+    Aggregate by customer_id#2: sum#10 = sum(total#6)
+      Scan shop.orders (id#1, customer_id#2, ship_address_id#3, bill_address_id#4, status#5, total#6, order_date#7, placed_at#8, tags#9)
+
+Phase normalize
+  Project customer_id#2, spend#11 = sum#10
+    Aggregate by customer_id#2: sum#10 = sum(total#6)
+      Scan shop.orders (id#1, customer_id#2, ship_address_id#3, bill_address_id#4, status#5, total#6, order_date#7, placed_at#8, tags#9)
+
+Phase pushdown
+  Project customer_id#2, spend#11 = sum#10
+    Aggregate by customer_id#2: sum#10 = sum(total#6)
+      Scan shop.orders (id#1, customer_id#2, ship_address_id#3, bill_address_id#4, status#5, total#6, order_date#7, placed_at#8, tags#9)
+
+Phase prune
+  Project customer_id#2, spend#11 = sum#10
+    Aggregate by customer_id#2: sum#10 = sum(total#6)
+      Scan shop.orders (customer_id#2, total#6)
+
+### explain a query that doesn't bind
+exit 1
+--- out
+The query can't run: There is no 'totl' here. Did you mean 'total'?
+error GDQ2001: There is no 'totl' here. Did you mean 'total'?
+  shop.orders.where(totl > 5)
+                    ^^^^
+
+### first() of no rows
+exit 2
+--- err
+gdq: first() found no rows; use firstOrDefault() when there may be none
 
 ### schema, filtered
 exit 0
@@ -141,6 +215,61 @@ gdq> ...> id
 ----
 1001
 (1 row; (time))
+gdq> Runs as one SQLite query in shop, reading shop.orders.
+
+Plan
+  Project  id
+    Filter  total > 100
+      Scan  shop.orders
+
+Columns
+  0 id int64: direct shop.orders.id; edits shop.orders.id by id = [0]
+
+SQL for shop (SQLite, whole result)
+  SELECT o.id
+  FROM orders AS o
+  WHERE o.total > @p0
+  -- p0 decimal(10,2) = 100
+gdq> Runs as one SQLite query in shop, reading shop.orders and shop.customers.
+
+Plan
+  Project  name, first_order: status, id, id
+    Project  name, id: (subquery 1), status: (subquery 2), id
+        subquery 1 (scalar)
+          Project  orders.id  (~1 row)
+            Limit  take 1  (~1 row)
+              Sort  orders.order_date, orders.id
+                Filter  orders.customer_id == id
+                  Scan  shop.orders as orders
+        subquery 2 (scalar)
+          Project  orders.status  (~1 row)
+            Limit  take 1  (~1 row)
+              Sort  orders.order_date, orders.id
+                Filter  orders.customer_id == id
+                  Scan  shop.orders as orders
+      Scan  shop.customers
+
+Columns
+  0 name string: direct shop.customers.name; edits shop.customers.name by id = [2]
+  1 first_order string?: direct orders -> shop.orders.status; links to row shop.orders(id) = [3]
+  2 id int64 (hidden): direct shop.customers.id
+  3 id int64? (hidden): direct orders -> shop.orders.id
+
+SQL for shop (SQLite, whole result)
+  SELECT c.name, (
+     SELECT o2.status
+     FROM orders AS o2
+     WHERE o2.customer_id = c.id
+     ORDER BY o2.order_date, o2.id
+     LIMIT 1
+  ) AS first_order, c.id, (
+     SELECT o.id
+     FROM orders AS o
+     WHERE o.customer_id = c.id
+     ORDER BY o.order_date, o.id
+     LIMIT 1
+  ) AS id
+  FROM customers AS c
 gdq> gdq>
 --- err
 gdq: ':nope' is not a command; type :help

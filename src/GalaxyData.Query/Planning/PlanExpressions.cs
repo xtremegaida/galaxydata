@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using GalaxyData.Query.Binding;
+using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Functions;
 using GalaxyData.Query.Results;
 using GalaxyData.Query.Types;
@@ -12,12 +13,13 @@ namespace GalaxyData.Query.Planning;
 /// </summary>
 public sealed class PlanColumn
 {
-   internal PlanColumn(int id, string name, ScalarType type, ColumnLineage lineage)
+   internal PlanColumn(int id, string name, ScalarType type, ColumnLineage lineage, RowOrigin? origin = null)
    {
       Id = id;
       Name = name;
       Type = type;
       Lineage = lineage;
+      Origin = origin;
    }
 
    /// <summary>Unique within a plan; used for printing.</summary>
@@ -30,7 +32,38 @@ public sealed class PlanColumn
 
    public ColumnLineage Lineage { get; }
 
+   /// <summary>
+   /// The table row the value was read from, while it still stands for that row's column (its lineage is direct and
+   /// every operator on the way kept rows apart); null for other values.
+   /// </summary>
+   internal RowOrigin? Origin { get; }
+
    public override string ToString() => $"{Name}#{Id}";
+}
+
+/// <summary>
+/// One scan's rows, while lowering: the columns of a table row read by that scan. Columns that carry the same origin
+/// and direct lineage hold the same row's value of the same column, however they were renamed on the way.
+/// </summary>
+internal sealed class RowOrigin(TableEntity entity)
+{
+   private readonly Dictionary<ColumnDef, PlanColumn> columns = [];
+
+   public TableEntity Entity { get; } = entity;
+
+   /// <summary>The scan's column for a column of the table.</summary>
+   public PlanColumn this[ColumnDef column] => columns[column];
+
+   public void Add(ColumnDef column, PlanColumn output) => columns[column] = output;
+
+   /// <summary>Whether <paramref name="candidate"/> holds the value <paramref name="wanted"/> stands for: the same column, or a copy of it.</summary>
+   public static bool Provides(PlanColumn candidate, PlanColumn wanted) =>
+      ReferenceEquals(candidate, wanted) ||
+      (wanted.Origin != null && ReferenceEquals(candidate.Origin, wanted.Origin) && SourceOf(candidate) is { } source && ReferenceEquals(source, SourceOf(wanted)));
+
+   /// <summary>The table column a column with an origin holds.</summary>
+   public static ColumnDef? SourceOf(PlanColumn column) =>
+      column.Origin != null && column.Lineage.Kind == LineageKind.Direct ? column.Lineage.Sources[0].Column : null;
 }
 
 public enum ParameterSource : byte

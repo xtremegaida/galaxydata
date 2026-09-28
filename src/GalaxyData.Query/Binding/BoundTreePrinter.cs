@@ -142,6 +142,7 @@ public static class BoundTreePrinter
       BoundGroupAggregate aggregate => $"{Aggregate(aggregate.Kind)}({(aggregate.Argument == null ? string.Empty : Expr(aggregate.Argument))})",
       BoundQueryAggregate aggregate => $"{Chain(aggregate.Source)}.{Aggregate(aggregate.Kind)}({(aggregate.Argument == null ? string.Empty : Expr(aggregate.Argument))})",
       BoundExists exists => $"{Chain(exists.Source)}.{(exists.Negated ? "none" : "any")}()",
+      BoundFirst first => $"{Chain(first.Source)}.{(first.OrDefault ? "firstOrDefault" : "first")}()",
       BoundInQuery inQuery => $"{Operand(inQuery.Operand)} in {Chain(inQuery.Source)}",
       _ => expr.GetType().Name,
    };

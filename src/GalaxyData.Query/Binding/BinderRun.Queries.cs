@@ -14,16 +14,10 @@ internal sealed partial class BinderRun
    {
       "where", "select", "extend", "orderBy", "orderByDescending", "orderByDesc", "thenBy", "thenByDescending", "thenByDesc",
       "take", "skip", "distinct", "groupBy", "join", "leftJoin", "selectMany", "union", "concat", "intersect", "except",
-      "count", "countDistinct", "sum", "avg", "min", "max", "any", "all", "contains",
+      "count", "countDistinct", "sum", "avg", "min", "max", "any", "all", "contains", "first", "firstOrDefault",
    };
 
-   /// <summary>Methods the language will have but this version can't bind yet.</summary>
-   private static readonly HashSet<string> LaterMethods = new(StringComparer.OrdinalIgnoreCase)
-   {
-      "first", "firstOrDefault",
-   };
-
-   private static bool IsQueryMethod(string name) => SupportedMethods.Contains(name) || LaterMethods.Contains(name);
+   private static bool IsQueryMethod(string name) => SupportedMethods.Contains(name);
 
    private BoundNode BindCall(CallSyntax call, Scope scope)
    {
@@ -41,6 +35,8 @@ internal sealed partial class BinderRun
                BoundExpr { IsScalar: true } value => BindFunction(method.Name, call, call.Arguments, value, scope),
                BoundExpr { Type: RecordBoundType { Shape.Group: not null } } group when AggregateNames.Contains(method.Name)
                   => BindGroupAggregate(method.Name, call, ((BoundRowRef)group).Row, scope),
+               BoundFirst => throw Error(method, DiagnosticCodes.UnknownMethod,
+                  $"'{SourceText(member.Left)}' is one row, not a query, so it has no methods; call {method.Name}(...) before first(), or on one of its columns"),
                BoundExpr => throw Error(method, DiagnosticCodes.UnknownMethod,
                   $"'{SourceText(member.Left)}' is a row, which has no methods; call {method.Name}(...) on one of its columns"),
                BoundNamespace ns => throw Error(method, DiagnosticCodes.UnknownMethod,
@@ -70,12 +66,7 @@ internal sealed partial class BinderRun
       string name = method.Name;
       if (!SupportedMethods.Contains(name))
       {
-         if (LaterMethods.Contains(name))
-         {
-            throw Error(method, DiagnosticCodes.NotSupportedYet, $"{name}(...) is not supported yet");
-         }
-         throw Error(method, DiagnosticCodes.UnknownMethod,
-            $"A query has no method '{name}'{Suggestion(name, SupportedMethods.Concat(LaterMethods))}");
+         throw Error(method, DiagnosticCodes.UnknownMethod, $"A query has no method '{name}'{Suggestion(name, SupportedMethods)}");
       }
       switch (name.ToLowerInvariant())
       {
@@ -121,9 +112,29 @@ internal sealed partial class BinderRun
             return BindSetOperation(input, call, scope, SetOperationKind.Except, "except");
          case "count" or "countdistinct" or "sum" or "avg" or "min" or "max" or "any" or "all" or "contains":
             return BindQueryAggregate(input, method, call, scope);
+         case "first":
+            return BindFirst(input, call, scope, orDefault: false);
+         case "firstordefault":
+            return BindFirst(input, call, scope, orDefault: true);
          default:
             throw new InvalidOperationException($"Unhandled method {name}");
       }
+   }
+
+   /// <summary>
+   /// <c>first()</c>, <c>first(condition)</c> and the <c>OrDefault</c> forms: the query's first row as a record. The record
+   /// of a group is just its members; the group's rows can't be aggregated through it.
+   /// </summary>
+   private BoundFirst BindFirst(BoundQuery input, CallSyntax call, Scope scope, bool orDefault)
+   {
+      string method = orDefault ? "firstOrDefault" : "first";
+      if (call.Arguments.Length > 1)
+      {
+         throw Error(call, DiagnosticCodes.WrongArgumentCount, $"{method}(...) takes at most one condition, as in {method}(status == 'open')");
+      }
+      BoundQuery source = call.Arguments.Length == 1 ? BindWhere(input, call, scope) : input;
+      RowShape shape = source.Shape.Group == null ? source.Shape : new RowShape(source.Shape.Members, source.Shape.Entity);
+      return new BoundFirst(source, orDefault, shape, call);
    }
 
    /// <summary>A row variable for a method's arguments, named after the first lambda parameter if there is one.</summary>

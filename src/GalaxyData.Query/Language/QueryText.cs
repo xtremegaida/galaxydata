@@ -1,13 +1,20 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace GalaxyData.Query.Language;
+
+/// <summary>A sort key for <see cref="QueryText.Compose"/>: an expression over the rows, in query text.</summary>
+public sealed record QuerySortKey(string Expression, bool Descending = false);
 
 /// <summary>Lexical helpers for writing names and values into query text.</summary>
 public static class QueryText
 {
    private static readonly HashSet<string> Reserved = new(StringComparer.Ordinal) { "true", "false", "null" };
+
+   /// <summary>Names that mean something else where a row's members are in scope: the row itself, a group's key, join sides.</summary>
+   private static readonly HashSet<string> RowKeywords = new(StringComparer.Ordinal) { "it", "key", "outer", "inner" };
 
    /// <summary>
    /// True when <paramref name="name"/> lexes as a single identifier: a letter, '_' or '$' followed by letters,
@@ -56,6 +63,17 @@ public static class QueryText
       return text.Append('\'').ToString();
    }
 
+   /// <summary>
+   /// A reference to a member of the implicit row, as in a filter: the name itself when it reads as one, else
+   /// <c>it["Total Spend"]</c>. Names such as <c>it</c> or <c>key</c> are quoted too, since they mean something else,
+   /// and so are names starting with <c>$</c>, which would be parameters.
+   /// </summary>
+   public static string QuoteName(string name)
+   {
+      ArgumentNullException.ThrowIfNull(name);
+      return IsBareIdentifier(name) && name[0] != '$' && !RowKeywords.Contains(name) ? name : "it[" + QuoteString(name) + "]";
+   }
+
    /// <summary>Appends a member access to <paramref name="text"/>: <c>.name</c>, or <c>["weird name"]</c> when needed.</summary>
    public static StringBuilder AppendMember(StringBuilder text, string name)
    {
@@ -78,5 +96,104 @@ public static class QueryText
       StringBuilder text = new(parts[0]);
       for (int i = 1; i < parts.Count; i++) { AppendMember(text, parts[i]); }
       return text.ToString();
+   }
+
+   /// <summary>
+   /// The statements of a query text, separated by <c>;</c> outside strings, comments and brackets: for each, the
+   /// range from its first to its last character that isn't space or a comment. Empty statements are left out.
+   /// </summary>
+   public static IReadOnlyList<Range> SplitStatements(string text)
+   {
+      ArgumentNullException.ThrowIfNull(text);
+      List<Range> statements = [];
+      int depth = 0;
+      int start = -1;
+      int end = -1;
+      int i = 0;
+      while (i < text.Length)
+      {
+         char c = text[i];
+         if (char.IsWhiteSpace(c)) { i++; continue; }
+         if (c == '#' || (c == '/' && i + 1 < text.Length && text[i + 1] == '/'))
+         {
+            while (i < text.Length && text[i] != '\n' && text[i] != '\r') { i++; }
+            continue;
+         }
+         if (c == '/' && i + 1 < text.Length && text[i + 1] == '*')
+         {
+            int close = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
+            i = close < 0 ? text.Length : close + 2;
+            continue;
+         }
+         if (c == ';' && depth == 0)
+         {
+            if (start >= 0) { statements.Add(start..end); }
+            start = -1;
+            i++;
+            continue;
+         }
+         if (start < 0) { start = i; }
+         switch (c)
+         {
+            case '(' or '[' or '{':
+               depth++;
+               i++;
+               break;
+            case ')' or ']' or '}':
+               depth = Math.Max(0, depth - 1);
+               i++;
+               break;
+            case '\'' or '"':
+               i++;
+               while (i < text.Length && text[i] != c) { i += text[i] == '\\' ? 2 : 1; }
+               i = Math.Min(i + 1, text.Length);
+               break;
+            case '`':
+               int closing = text.IndexOf('`', i + 1);
+               i = closing < 0 ? text.Length : closing + 1;
+               break;
+            default:
+               i++;
+               break;
+         }
+         end = i;
+      }
+      if (start >= 0) { statements.Add(start..end); }
+      return statements;
+   }
+
+   /// <summary>
+   /// Adds filters and a sort to a query text: the last statement becomes <c>(last).where(f1).where(f2).orderBy(...)</c>,
+   /// and the statements before it (named subtrees) stay as they are. A sort replaces the query's own. Filters and
+   /// sort keys are expressions over the rows, such as <c>total &gt; 100</c> or <c>QuoteName("Total Spend")</c>.
+   /// <paramref name="tiebreak"/> names columns added to the end of the sort (when there is one) that aren't in it
+   /// already, so pages of equal values come back in the same order each time.
+   /// </summary>
+   public static string Compose(string text, IEnumerable<string>? filters = null, IEnumerable<QuerySortKey>? sort = null,
+                                IEnumerable<string>? tiebreak = null)
+   {
+      ArgumentNullException.ThrowIfNull(text);
+      List<string> where = filters?.Where(f => !string.IsNullOrWhiteSpace(f)).ToList() ?? [];
+      List<QuerySortKey> keys = sort?.ToList() ?? [];
+      if (keys.Count > 0 && tiebreak != null)
+      {
+         foreach (string name in tiebreak)
+         {
+            string expression = QuoteName(name);
+            if (!keys.Any(k => string.Equals(k.Expression.Trim(), expression, StringComparison.Ordinal))) { keys.Add(new QuerySortKey(expression)); }
+         }
+      }
+      if (where.Count == 0 && keys.Count == 0) { return text; }
+      IReadOnlyList<Range> statements = SplitStatements(text);
+      if (statements.Count == 0) { throw new ArgumentException("The query text has no statement to add to", nameof(text)); }
+      (int start, int length) = statements[^1].GetOffsetAndLength(text.Length);
+      StringBuilder composed = new(text.Length + 64);
+      composed.Append(text, 0, start).Append('(').Append(text, start, length).Append(')');
+      foreach (string filter in where) { composed.Append(".where(").Append(filter).Append(')'); }
+      if (keys.Count > 0)
+      {
+         composed.Append(".orderBy(").AppendJoin(", ", keys.Select(k => k.Descending ? "desc(" + k.Expression + ")" : k.Expression)).Append(')');
+      }
+      return composed.Append(text, start + length, text.Length - start - length).ToString();
    }
 }

@@ -200,6 +200,22 @@ public sealed class BoundExists(BoundQuery source, bool negated, SyntaxNode? syn
    public bool Negated { get; } = negated;
 }
 
+/// <summary>
+/// The first row of a query (<c>first()</c>, <c>firstOrDefault()</c>), as a record of its shape. In an expression it is
+/// null when the query has no rows; as a program's result, <c>first()</c> of no rows is an error.
+/// </summary>
+public sealed class BoundFirst(BoundQuery source, bool orDefault, RowShape shape, SyntaxNode? syntax) : BoundExpr(syntax)
+{
+   private readonly RecordBoundType type = new(shape, IsNullable: true);
+
+   /// <summary>The query, with the condition of <c>first(condition)</c> applied.</summary>
+   public BoundQuery Source { get; } = source;
+
+   public bool OrDefault { get; } = orDefault;
+
+   public override BoundType Type => type;
+}
+
 /// <summary><c>value in query</c>: whether the query's single column has the value.</summary>
 public sealed class BoundInQuery(BoundExpr operand, BoundQuery source, SyntaxNode? syntax)
    : BoundScalarExpr(ScalarType.Boolean.WithNullable(operand.Type.Nullable), syntax)
@@ -437,7 +453,10 @@ public sealed class BoundProgram(string text, IReadOnlyList<BoundLet> lets, Boun
 
    public IReadOnlyList<BoundLet> Lets { get; } = lets;
 
-   /// <summary>A <see cref="BoundQuery"/> or a scalar <see cref="BoundExpr"/>; null when binding failed.</summary>
+   /// <summary>
+   /// A <see cref="BoundQuery"/>, a scalar <see cref="BoundExpr"/>, or a record of a query's first row (<see cref="BoundFirst"/>,
+   /// or a member path from one); null when binding failed.
+   /// </summary>
    public BoundNode? Result { get; } = result;
 
    public IReadOnlyList<QueryDiagnostic> Diagnostics { get; } = diagnostics;

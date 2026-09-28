@@ -1,5 +1,5 @@
 ### sales.orders.where(status == 'open').select(id, total, who: customer.name, city: customer.city)
-Project id#1, total#4, who#17 = name#10, city#11
+Project id#1, total#4, who#17 = name#10, city#11, id#9
   Join inner via customer: customer_id#2 == id#9
     Filter status#3 == 'open'
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
@@ -8,6 +8,7 @@ Project id#1, total#4, who#17 = name#10, city#11
 => total decimal(10,2): direct sales.orders.total
 => who string(100): direct customer -> sales.customers.name
 => city string?: direct customer -> sales.customers.city
+=> id int32: direct customer -> sales.customers.id
 
 ### sales.orders
 Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
@@ -73,7 +74,7 @@ Filter (order_date#5 >= '2026-01-01'::date) and (shipped_at#6 < '2026-02-01 12:3
 => attachment binary?: direct sales.orders.attachment
 
 ### sales.orders.where(shipped_at == null or ship_customer == null).select(id, ship_to: ship_customer)
-Project id#1, ship_to#17 = name#10
+Project id#1, ship_to#17 = name#10, id#9
   Project id#1, id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16
     Join left via ship_customer: ship_customer_id#7 == id#9
       Filter (shipped_at#6 is null) or (ship_customer_id#7 is null)
@@ -81,15 +82,17 @@ Project id#1, ship_to#17 = name#10
       Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 => id int64: direct sales.orders.id
 => ship_to string(100)?: direct ship_customer -> sales.customers.name
+=> id int32?: direct ship_customer -> sales.customers.id
 
 ### sales.orders.where(ship_customer.city == 'Durban').select(id, ship_customer.name)
-Project id#1, name#10
+Project id#1, name#10, id#9
   Filter city#11 == 'Durban'
     Join left via ship_customer: ship_customer_id#7 == id#9
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
       Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 => id int64: direct sales.orders.id
 => name string(100)?: direct ship_customer -> sales.customers.name
+=> id int32?: direct ship_customer -> sales.customers.id
 
 ### sales.orders.where(status in ['open', 'shipped'] and not (total < 10))
 Filter (status#3 in ['open', 'shipped']) and not (total#4 < 10)
@@ -131,7 +134,7 @@ Project order_id#9 = id#1, id#10, name#11, city#12, credit_limit#13, created#14,
 => notes json?: direct customer -> sales.customers.notes
 
 ### sales.orders.select(id, customer.name, total * 2, lower(status), 'Total Spend': total)
-Project id#1, name#10, total * 2#17 = total#4 * 2, lower(status)#18 = lower(status#3), Total Spend#19 = total#4
+Project id#1, name#10, total * 2#17 = total#4 * 2, lower(status)#18 = lower(status#3), Total Spend#19 = total#4, id#9
   Join inner via customer: customer_id#2 == id#9
     Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
     Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
@@ -140,9 +143,10 @@ Project id#1, name#10, total * 2#17 = total#4 * 2, lower(status)#18 = lower(stat
 => total * 2 decimal: computed (total * 2) from sales.orders.total
 => lower(status) string: computed (lower(status)) from sales.orders.status
 => Total Spend decimal(10,2): direct sales.orders.total
+=> id int32: direct customer -> sales.customers.id
 
 ### sales.orders.extend(gross: total * (1 + $rate)).where(gross > 100).select(customer.name, gross)
-Project name#11, gross#9
+Project name#11, gross#9, id#10
   Join inner via customer: customer_id#2 == id#10
     Filter gross#9 > 100
       Project id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8, gross#9 = total#4 * (1 + $rate)
@@ -150,9 +154,10 @@ Project name#11, gross#9
     Scan sales.customers (id#10, name#11, city#12, credit_limit#13, created#14, region_code#15, uid#16, notes#17)
 => name string(100): direct customer -> sales.customers.name
 => gross decimal: computed (total * (1 + $rate)) from sales.orders.total
+=> id int32: direct customer -> sales.customers.id
 
 ### sales.orders.select(id, customer).where(customer.city != null).select(id, customer.name)
-Project id#1, name#10
+Project id#1, name#10, id#9
   Filter city#11 is not null
     Project id#1, id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16
       Join inner via customer: customer_id#2 == id#9
@@ -160,9 +165,10 @@ Project id#1, name#10
         Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 => id int64: direct sales.orders.id
 => name string(100): direct customer -> sales.customers.name
+=> id int32: direct customer -> sales.customers.id
 
 ### sales.order_lines.select(line_no, region: order.customer.region.name)
-Project line_no#2, region#24 = name#23
+Project line_no#2, region#24 = name#23, order_id#1, code#22
   Join left via region: region_code#19 == code#22
     Join inner via customer: customer_id#7 == id#14
       Join inner via order: order_id#1 == id#6
@@ -172,13 +178,16 @@ Project line_no#2, region#24 = name#23
     Scan sales.regions (code#22, name#23)
 => line_no int32: direct sales.order_lines.line_no
 => region string?: direct order.customer.region -> sales.regions.name
+=> order_id int64: direct sales.order_lines.order_id
+=> code string(3)?: direct order.customer.region -> sales.regions.code
 
 ### sales.customers.select(name, label: name + ' (' + (city ?? 'unknown') + ')', size: credit_limit > 1000 ? 'big' : 'small')
-Project name#2, label#9 = ((name#2 + ' (') + coalesce(city#3, 'unknown')) + ')', size#10 = (credit_limit#4 > 1000) ? 'big' : 'small'
+Project name#2, label#9 = ((name#2 + ' (') + coalesce(city#3, 'unknown')) + ')', size#10 = (credit_limit#4 > 1000) ? 'big' : 'small', id#1
   Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
 => name string(100): direct sales.customers.name
 => label string: computed (name + ' (' + (city ?? 'unknown') + ')') from sales.customers.name, sales.customers.city
 => size string: computed (credit_limit > 1000 ? 'big' : 'small') from sales.customers.credit_limit
+=> id int32: direct sales.customers.id
 
 ### sales.customers.select(n: name.upper().trim(), y: year(created), d: addDays(created, 30), c: coalesce(city, name, 'x'))
 Project n#9 = trim(upper(name#2)), y#10 = year(created#5), d#11 = addDays(created#5, 30), c#12 = coalesce(city#3, name#2, 'x')
@@ -189,7 +198,7 @@ Project n#9 = trim(upper(name#2)), y#10 = year(created#5), d#11 = addDays(create
 => c string: computed (coalesce(city, name, 'x')) from sales.customers.city, sales.customers.name
 
 ### sales.order_lines.select(order_id, line_no, amount: qty * price, share: qty / 3, r: round(price, 1), p: product.name)
-Project order_id#1, line_no#2, amount#6 = qty#4 * price#5, share#7 = qty#4 / 3, r#8 = round(price#5, 1), p#12 = name#10
+Project order_id#1, line_no#2, amount#6 = qty#4 * price#5, share#7 = qty#4 / 3, r#8 = round(price#5, 1), p#12 = name#10, code#9
   Join inner via product: product_code#3 == code#9
     Scan sales.order_lines (order_id#1, line_no#2, product_code#3, qty#4, price#5)
     Scan sales.products (code#9, name#10, price#11)
@@ -199,6 +208,7 @@ Project order_id#1, line_no#2, amount#6 = qty#4 * price#5, share#7 = qty#4 / 3, 
 => share double: computed (qty / 3) from sales.order_lines.qty
 => r decimal(10,2): computed (round(price, 1)) from sales.order_lines.price
 => p string: direct product -> sales.products.name
+=> code string(20): direct product -> sales.products.code
 
 ### sales.customers.where(between(credit_limit, 100, 5000.5) and like(name, 'A%'))
 Filter between(credit_limit#4, 100, 5000.5) and like(name#2, 'A%')
@@ -268,9 +278,10 @@ Project a#6 = toInt(price#5), b#7 = toDecimal(qty#4, 10, 2), c#8 = toString(pric
 ### sales.customers.select(region.name).distinct()
 Distinct
   Project name#10
-    Join left via region: region_code#6 == code#9
-      Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
-      Scan sales.regions (code#9, name#10)
+    Project name#10, code#9
+      Join left via region: region_code#6 == code#9
+        Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
+        Scan sales.regions (code#9, name#10)
 => name string?: direct region -> sales.regions.name
 
 ### sales.orders.orderBy(id).distinct()
@@ -301,20 +312,22 @@ Filter status#3 == 'open'
 => attachment binary?: direct sales.orders.attachment
 
 ### sales.orders.take(5).select(id, who: customer.name)
-Project id#1, who#17 = name#10
+Project id#1, who#17 = name#10, id#9
   Join inner via customer: customer_id#2 == id#9
     Limit take 5
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
     Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 => id int64: direct sales.orders.id
 => who string(100): direct customer -> sales.customers.name
+=> id int32: direct customer -> sales.customers.id
 
 ### sales.orders.select(status).distinct().orderBy(status).take(3)
 Limit take 3
   Sort status#3
     Distinct
       Project status#3
-        Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+        Project status#3, id#1
+          Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
 => status string(20,ansi): direct sales.orders.status
 
 ### sales.orders.skip(5)
@@ -357,7 +370,8 @@ Limit skip 5 take 0
 Limit skip 1
   Distinct
     Project status#3
-      Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+      Project status#3, id#1
+        Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
 => status string(20,ansi): direct sales.orders.status
 
 ### sales.orders.select(id, x: 'k', f: false).orderBy(x, f, desc(id))
@@ -439,7 +453,7 @@ Project y#9, status#3, n#12 = count#10, big#14 = any#13 == 1, mean#16 = avg#15
 => mean decimal?: aggregated (avg(total)) from sales.orders.total
 
 ### sales.orders.groupBy(customer).select(customer.name, customer.city, n: count())
-Project name#11, city#12, n#19 = count#18
+Project name#11, city#12, n#19 = count#18, id#9
   Aggregate by id#9 = customer_id#2, name#11, city#12: count#18 = count(*)
     Join inner via customer: customer_id#2 == id#10
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
@@ -447,6 +461,7 @@ Project name#11, city#12, n#19 = count#18
 => name string(100): direct customer -> sales.customers.name
 => city string?: direct customer -> sales.customers.city
 => n int64: aggregated (count())
+=> id int32: direct sales.orders.customer_id
 
 ### sales.orders.groupBy(customer).select(customer.id, n: count())
 Project id#9, n#11 = count#10
@@ -465,7 +480,7 @@ Project customer_id#2, n#10
 => n int64: aggregated (count())
 
 ### sales.order_lines.groupBy(order).select(order.status, n: count(), qty: qty.sum(), priced: price.countDistinct(), all: all(qty > 0))
-Project status#9, n#16 = count#15, qty#18 = sum#17, priced#20 = countDistinct#19, all#22 = all#21 == 1
+Project status#9, n#16 = count#15, qty#18 = sum#17, priced#20 = countDistinct#19, all#22 = all#21 == 1, id#6
   Aggregate by id#6 = order_id#1, status#9: count#15 = count(*), sum#17 = sum(qty#4), countDistinct#19 = countDistinct(price#5), all#21 = min((qty#4 > 0) ? 1 : 0)
     Join inner via order: order_id#1 == id#7
       Scan sales.order_lines (order_id#1, line_no#2, product_code#3, qty#4, price#5)
@@ -475,6 +490,7 @@ Project status#9, n#16 = count#15, qty#18 = sum#17, priced#20 = countDistinct#19
 => qty int64: aggregated (qty.sum()) from sales.order_lines.qty
 => priced int64: aggregated (price.countDistinct()) from sales.order_lines.price
 => all boolean: computed (all(qty > 0)) from sales.order_lines.qty
+=> id int64: direct sales.order_lines.order_id
 
 ### sales.orders.groupBy().select(n: count(), total: sum(total))
 Project n#10 = count#9, total#12 = sum#11
@@ -491,7 +507,7 @@ Project big#9, n#11 = count#10
 => n int64: aggregated (count())
 
 ### sales.customers.select(name, n: orders_by_customer.count(), spend: orders_by_customer.sum(total), last: orders_by_customer.max(order_date))
-Project name#2, n#18 = value[1], spend#28 = value[2], last#38 = value[3]
+Project name#2, n#18 = value[1], spend#28 = value[2], last#38 = value[3], id#1
   [1] scalar
     Aggregate: count#17 = count(*)
       Filter customer_id#10 == id#1
@@ -509,9 +525,10 @@ Project name#2, n#18 = value[1], spend#28 = value[2], last#38 = value[3]
 => n int64: aggregated (orders_by_customer.count())
 => spend decimal(38,2): aggregated (orders_by_customer.sum(total)) from orders_by_customer -> sales.orders.total
 => last date?: aggregated (orders_by_customer.max(order_date)) from orders_by_customer -> sales.orders.order_date
+=> id int32: direct sales.customers.id
 
 ### sales.customers.where(orders_by_customer.any(status == 'open')).select(name)
-Project name#2
+Project name#2, id#1
   Filter exists[1]
     [1] exists
       Filter status#11 == 'open'
@@ -519,15 +536,17 @@ Project name#2
           Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
     Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
 => name string(100): direct sales.customers.name
+=> id int32: direct sales.customers.id
 
 ### sales.customers.where(not orders_by_customer.any()).select(name)
-Project name#2
+Project name#2, id#1
   Filter not exists[1]
     [1] exists
       Filter customer_id#10 == id#1
         Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
     Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
 => name string(100): direct sales.customers.name
+=> id int32: direct sales.customers.id
 
 ### sales.customers.where(c => sales.orders.all(o => o.customer_id != c.id or o.total > 0))
 Filter not exists[1]
@@ -584,7 +603,7 @@ Project value#10 = value[1]
 => value int64: aggregated (sales.orders.count())
 
 ### sales.customers.select(name, big: orders_by_customer.any(total > 100))
-Project name#2, big#17 = exists[1]
+Project name#2, big#17 = exists[1], id#1
   [1] exists
     Filter total#12 > 100
       Filter customer_id#10 == id#1
@@ -592,9 +611,10 @@ Project name#2, big#17 = exists[1]
   Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
 => name string(100): direct sales.customers.name
 => big boolean: computed (orders_by_customer.any(total > 100))
+=> id int32: direct sales.customers.id
 
 ### sales.orders.leftJoin(sales.regions, (o, r) => o.customer.region_code == r.code, id: outer.id, region: inner.name)
-Project id#1, region#19 = name#10
+Project id#1, region#19 = name#10, code#9
   Join left: region_code#16 == code#9
     Join inner via customer: customer_id#2 == id#11
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
@@ -602,9 +622,10 @@ Project id#1, region#19 = name#10
     Scan sales.regions (code#9, name#10)
 => id int64: direct sales.orders.id
 => region string?: direct sales.regions.name
+=> code string(3): direct sales.regions.code
 
 ### sales.orders.join(sales.order_lines, outer.id == inner.order_id and inner.qty > 1, id: outer.id, line: inner.line_no, product: inner.product.name)
-Project id#1, line#14 = line_no#10, product#18 = name#16
+Project id#1, line#14 = line_no#10, product#18 = name#16, order_id#9, code#15
   Join inner via product: product_code#11 == code#15
     Join inner: (id#1 == order_id#9) and (qty#12 > 1)
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
@@ -613,6 +634,8 @@ Project id#1, line#14 = line_no#10, product#18 = name#16
 => id int64: direct sales.orders.id
 => line int32: direct sales.order_lines.line_no
 => product string: direct product -> sales.products.name
+=> order_id int64: direct sales.order_lines.order_id
+=> code string(20): direct product -> sales.products.code
 
 ### sales.customers.selectMany(orders_by_customer).select(id, total)
 Project id#9, total#12
@@ -624,13 +647,15 @@ Project id#9, total#12
 => total decimal(10,2): direct orders_by_customer -> sales.orders.total
 
 ### sales.customers.selectMany(orders_by_customer, who: outer.name, total: inner.total)
-Project who#17 = name#2, total#12
+Project who#17 = name#2, total#12, id#1, id#9
   Join inner
     Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
     Filter customer_id#10 == id#1
       Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
 => who string(100): direct sales.customers.name
 => total decimal(10,2): direct orders_by_customer -> sales.orders.total
+=> id int32: direct sales.customers.id
+=> id int64: direct orders_by_customer -> sales.orders.id
 
 ### sales.orders.select(id, status).union(sales.orders.where(total > 100).select(status, id))
 Union (id#17, status#18)
@@ -644,7 +669,7 @@ Union (id#17, status#18)
 => status string(20,ansi): union from sales.orders.status
 
 ### sales.orders.where(total > 100).concat(sales.orders.where(status == 'open')).select(id, customer.name)
-Project id#17, name#26
+Project id#17, name#26, id#25
   Join inner via customer: customer_id#18 == id#25
     UnionAll (id#17, customer_id#18, status#19, total#20, order_date#21, shipped_at#22, ship_customer_id#23, attachment#24)
       Filter total#4 > 100
@@ -654,13 +679,15 @@ Project id#17, name#26
     Scan sales.customers (id#25, name#26, city#27, credit_limit#28, created#29, region_code#30, uid#31, notes#32)
 => id int64: union from sales.orders.id
 => name string(100): direct customer -> sales.customers.name
+=> id int32: direct customer -> sales.customers.id
 
 ### sales.orders.select(customer_id).intersect(sales.customers.select(customer_id: id)).orderBy(customer_id).take(5)
 Limit take 5
   Sort customer_id#18
     Intersect (customer_id#18)
       Project customer_id#2
-        Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+        Project customer_id#2, id#1
+          Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
       Project customer_id#17 = id#9
         Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 => customer_id int32: union from sales.orders.customer_id, sales.customers.id
@@ -668,7 +695,8 @@ Limit take 5
 ### sales.orders.select(customer_id).except(sales.customers.where(city == null).select(customer_id: id))
 Except (customer_id#18)
   Project customer_id#2
-    Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+    Project customer_id#2, id#1
+      Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
   Project customer_id#17 = id#9
     Filter city#11 is null
       Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
@@ -700,12 +728,13 @@ Project value#10 = value[1]
 => value int64: aggregated (sales.orders.take(2).count())
 
 ### sales.customers.extend(k: $n).select(name, l: left(name, k), d: addDays(created, k))
-Project name#2, l#10 = left(name#2, k#9), d#11 = addDays(created#5, k#9)
+Project name#2, l#10 = left(name#2, k#9), d#11 = addDays(created#5, k#9), id#1
   Project id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8, k#9 = $n
     Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
 => name string(100): direct sales.customers.name
 => l string: computed (left(name, k)) from sales.customers.name
 => d date?: computed (addDays(created, k)) from sales.customers.created
+=> id int32: direct sales.customers.id
 
 ### xl['Budget 2024']['Sheet 1'].where(Amount > 0).select(it['Line Item'], Amount)
 Project Line Item#1, Amount#2
@@ -722,14 +751,15 @@ Project id#1, total#4
 => total decimal(10,2): direct sales.orders.total
 
 ### limit := 1000; cutoff := $rate * 2; sales.customers.where(credit_limit > limit).select(name, cutoff)
-Project name#2, cutoff#9 = $rate * 2
+Project name#2, cutoff#9 = $rate * 2, id#1
   Filter credit_limit#4 > 1000
     Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
 => name string(100): direct sales.customers.name
 => cutoff decimal: constant (cutoff)
+=> id int32: direct sales.customers.id
 
 ### reports.big_orders.where(status == 'open').select(id, who: customer.name)
-Project id#1, who#17 = name#10
+Project id#1, who#17 = name#10, id#9
   Join inner via customer: customer_id#2 == id#9
     Filter status#3 == 'open'
       Filter total#4 > 100
@@ -737,6 +767,7 @@ Project id#1, who#17 = name#10
     Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 => id int64: direct sales.orders.id
 => who string(100): direct customer -> sales.customers.name
+=> id int32: direct customer -> sales.customers.id
 
 ### reports.customer_cities.orderBy(city)
 Sort city#9
@@ -763,3 +794,205 @@ Filter ((total#4 > 3.5) and (total#4 < 1000)) and (id#1 > -1)
 => shipped_at datetime?: direct sales.orders.shipped_at
 => ship_customer_id int32?: direct sales.orders.ship_customer_id
 => attachment binary?: direct sales.orders.attachment
+
+### sales.orders.orderBy(desc(total)).first()
+Limit take 1
+  Sort total#4 desc, id#1
+    Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+=> id int64: direct sales.orders.id
+=> customer_id int32: direct sales.orders.customer_id
+=> status string(20,ansi): direct sales.orders.status
+=> total decimal(10,2): direct sales.orders.total
+=> order_date date: direct sales.orders.order_date
+=> shipped_at datetime?: direct sales.orders.shipped_at
+=> ship_customer_id int32?: direct sales.orders.ship_customer_id
+=> attachment binary?: direct sales.orders.attachment
+
+### sales.orders.firstOrDefault(status == 'open').customer
+Project id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16
+  Join inner via customer: customer_id#2 == id#9
+    Limit take 1
+      Sort id#1
+        Filter status#3 == 'open'
+          Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+    Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
+=> id int32: direct customer -> sales.customers.id
+=> name string(100): direct customer -> sales.customers.name
+=> city string?: direct customer -> sales.customers.city
+=> credit_limit decimal(10,2)?: direct customer -> sales.customers.credit_limit
+=> created date?: direct customer -> sales.customers.created
+=> region_code string(3)?: direct customer -> sales.customers.region_code
+=> uid guid?: direct customer -> sales.customers.uid
+=> notes json?: direct customer -> sales.customers.notes
+
+### sales.customers.select(name, latest: orders_by_customer.orderBy(desc(order_date)).first())
+Project name#2, latest#81 = status#35, id#1, id#17
+  Project name#2, id#17 = value[1], customer_id#26 = value[2], status#35 = value[3], total#44 = value[4], order_date#53 = value[5], shipped_at#62 = value[6], ship_customer_id#71 = value[7], attachment#80 = value[8], id#1
+    [1] scalar
+      Project id#9
+        Limit take 1
+          Sort order_date#13 desc, id#9
+            Filter customer_id#10 == id#1
+              Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
+    [2] scalar
+      Project customer_id#19
+        Limit take 1
+          Sort order_date#22 desc, id#18
+            Filter customer_id#19 == id#1
+              Scan sales.orders (id#18, customer_id#19, status#20, total#21, order_date#22, shipped_at#23, ship_customer_id#24, attachment#25)
+    [3] scalar
+      Project status#29
+        Limit take 1
+          Sort order_date#31 desc, id#27
+            Filter customer_id#28 == id#1
+              Scan sales.orders (id#27, customer_id#28, status#29, total#30, order_date#31, shipped_at#32, ship_customer_id#33, attachment#34)
+    [4] scalar
+      Project total#39
+        Limit take 1
+          Sort order_date#40 desc, id#36
+            Filter customer_id#37 == id#1
+              Scan sales.orders (id#36, customer_id#37, status#38, total#39, order_date#40, shipped_at#41, ship_customer_id#42, attachment#43)
+    [5] scalar
+      Project order_date#49
+        Limit take 1
+          Sort order_date#49 desc, id#45
+            Filter customer_id#46 == id#1
+              Scan sales.orders (id#45, customer_id#46, status#47, total#48, order_date#49, shipped_at#50, ship_customer_id#51, attachment#52)
+    [6] scalar
+      Project shipped_at#59
+        Limit take 1
+          Sort order_date#58 desc, id#54
+            Filter customer_id#55 == id#1
+              Scan sales.orders (id#54, customer_id#55, status#56, total#57, order_date#58, shipped_at#59, ship_customer_id#60, attachment#61)
+    [7] scalar
+      Project ship_customer_id#69
+        Limit take 1
+          Sort order_date#67 desc, id#63
+            Filter customer_id#64 == id#1
+              Scan sales.orders (id#63, customer_id#64, status#65, total#66, order_date#67, shipped_at#68, ship_customer_id#69, attachment#70)
+    [8] scalar
+      Project attachment#79
+        Limit take 1
+          Sort order_date#76 desc, id#72
+            Filter customer_id#73 == id#1
+              Scan sales.orders (id#72, customer_id#73, status#74, total#75, order_date#76, shipped_at#77, ship_customer_id#78, attachment#79)
+    Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
+=> name string(100): direct sales.customers.name
+=> latest string(20,ansi)?: direct orders_by_customer -> sales.orders.status
+=> id int32: direct sales.customers.id
+=> id int64?: direct orders_by_customer -> sales.orders.id
+
+### sales.customers.select(name, last_total: orders_by_customer.orderBy(desc(order_date)).firstOrDefault().total, last_city: orders_by_customer.orderBy(desc(order_date)).first().ship_customer.city)
+Project name#2, last_total#17 = value[1], last_city#34 = value[2], id#1
+  [1] scalar
+    Project total#12
+      Limit take 1
+        Sort order_date#13 desc, id#9
+          Filter customer_id#10 == id#1
+            Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
+  [2] scalar
+    Project city#28
+      Join left via ship_customer: ship_customer_id#24 == id#26
+        Limit take 1
+          Sort order_date#22 desc, id#18
+            Filter customer_id#19 == id#1
+              Scan sales.orders (id#18, customer_id#19, status#20, total#21, order_date#22, shipped_at#23, ship_customer_id#24, attachment#25)
+        Scan sales.customers (id#26, name#27, city#28, credit_limit#29, created#30, region_code#31, uid#32, notes#33)
+  Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
+=> name string(100): direct sales.customers.name
+=> last_total decimal(10,2)?: direct orders_by_customer -> sales.orders.total
+=> last_city string?: direct orders_by_customer.ship_customer -> sales.customers.city
+=> id int32: direct sales.customers.id
+
+### sales.customers.where(orders_by_customer.orderBy(desc(order_date)).firstOrDefault() == null).select(name)
+Project name#2, id#1
+  Filter not exists[1]
+    [1] exists
+      Sort order_date#13 desc
+        Filter customer_id#10 == id#1
+          Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
+    Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
+=> name string(100): direct sales.customers.name
+=> id int32: direct sales.customers.id
+
+### sales.customers.select(name, lines: orders_by_customer.orderBy(id).first().order_lines.count())
+Project name#2, lines#23 = value[1], id#1
+  [1] scalar
+    Aggregate: count#22 = count(*)
+      Filter order_id#9 == value[2]
+        [2] scalar
+          Project id#14
+            Limit take 1
+              Sort id#14
+                Filter customer_id#15 == id#1
+                  Scan sales.orders (id#14, customer_id#15, status#16, total#17, order_date#18, shipped_at#19, ship_customer_id#20, attachment#21)
+        Scan sales.order_lines (order_id#9, line_no#10, product_code#11, qty#12, price#13)
+  Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
+=> name string(100): direct sales.customers.name
+=> lines int64: aggregated (orders_by_customer.orderBy(id).first().order_lines.count())
+=> id int32: direct sales.customers.id
+
+### sales.orders.select(id, c: customer).select(id, c)
+Project id#1, c#17 = name#10, id#9
+  Project id#1, id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16
+    Project id#1, id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16
+      Join inner via customer: customer_id#2 == id#9
+        Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+        Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
+=> id int64: direct sales.orders.id
+=> c string(100): direct customer -> sales.customers.name
+=> id int32: direct customer -> sales.customers.id
+
+### g := sales.orders.where(total > 3); g.groupBy(o => o.customer_id).select(k: key, n: count())
+Project k#9 = customer_id#2, n#11 = count#10
+  Aggregate by customer_id#2: count#10 = count(*)
+    Filter total#4 > 3
+      Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+=> k int32: direct sales.orders.customer_id
+=> n int64: aggregated (count())
+
+### sales.orders.groupBy(customer, big: total > 100).select(customer, big, n: count(), s: sum(total))
+Project customer#23 = name#12, big#10, n#20, s#22, id#9
+  Project id#9, name#12, city#13, credit_limit#14, created#15, region_code#16, uid#17, notes#18, big#10, n#20 = count#19, s#22 = sum#21
+    Aggregate by id#9 = customer_id#2, big#10 = total#4 > 100, name#12, city#13, credit_limit#14, created#15, region_code#16, uid#17, notes#18: count#19 = count(*), sum#21 = sum(total#4)
+      Join inner via customer: customer_id#2 == id#11
+        Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+        Scan sales.customers (id#11, name#12, city#13, credit_limit#14, created#15, region_code#16, uid#17, notes#18)
+=> customer string(100): direct customer -> sales.customers.name
+=> big boolean: computed (total > 100) from sales.orders.total
+=> n int64: aggregated (count())
+=> s decimal(38,2): aggregated (sum(total)) from sales.orders.total
+=> id int32: direct sales.orders.customer_id
+
+### sales.order_lines.select(order_id, qty, product)
+Project order_id#1, qty#4, product#9 = name#7, line_no#2, code#6
+  Project order_id#1, qty#4, code#6, name#7, price#8, line_no#2
+    Join inner via product: product_code#3 == code#6
+      Scan sales.order_lines (order_id#1, line_no#2, product_code#3, qty#4, price#5)
+      Scan sales.products (code#6, name#7, price#8)
+=> order_id int64: direct sales.order_lines.order_id
+=> qty int32: direct sales.order_lines.qty
+=> product string: direct product -> sales.products.name
+=> line_no int32: direct sales.order_lines.line_no
+=> code string(20): direct product -> sales.products.code
+
+### sales.orders.select(id, status).distinct()
+Distinct
+  Project id#1, status#3
+    Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+=> id int64: direct sales.orders.id
+=> status string(20,ansi): direct sales.orders.status
+
+### sales.customers.select(name, t: orders_by_customer.orderBy(id).first().total).groupBy(name).select(name, s: sum(t))
+Project name#2, s#19 = sum#18
+  Aggregate by name#2: sum#18 = sum(t#17)
+    Project name#2, t#17 = value[1], id#1
+      [1] scalar
+        Project total#12
+          Limit take 1
+            Sort id#9
+              Filter customer_id#10 == id#1
+                Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
+      Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
+=> name string(100): direct sales.customers.name
+=> s decimal(38,2): aggregated (sum(t)) from orders_by_customer -> sales.orders.total

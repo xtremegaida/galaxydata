@@ -42,6 +42,9 @@ internal sealed partial class BinderRun
                throw Error(body, DiagnosticCodes.TypeMismatch, $"Rows can't be grouped by {TypeRules.Describe(scalar.Scalar)}; convert it first, e.g. toString(...)");
             case ScalarBoundType:
                break;
+            case RecordBoundType when IsFirstRow(key):
+               throw Error(body, DiagnosticCodes.UnsupportedSyntax,
+                  $"'{SourceText(body)}' is a row from first(), which can't be a group key; group by one of its values, e.g. {SourceText(body)}{MemberText(Pick(((RecordBoundType)key.Type).Shape))}");
             case RecordBoundType { Shape.Entity.Key: not null }:
                break;
             case RecordBoundType:
@@ -67,6 +70,13 @@ internal sealed partial class BinderRun
       }
       GroupInfo group = new(row, keys) { SyntheticKey = syntheticKey };
       return new BoundGroupBy(input, row, keys, new RowShape(members, null, group), call);
+   }
+
+   /// <summary>Whether an expression is a query's first row, or a record reached from one.</summary>
+   private static bool IsFirstRow(BoundExpr expr)
+   {
+      while (expr is BoundMemberAccess access) { expr = access.Target; }
+      return expr is BoundFirst;
    }
 
    /// <summary>A member of the grouped rows, seen from a group: a collection of its values.</summary>

@@ -1,0 +1,38 @@
+### sales.orders.where(status == 'open').select(id, total, who: customer.name, city: customer.city).orderBy(who)
+Aggregate: count#18 = count(*)
+  Filter status#3 == 'open'
+    Scan sales.orders (status#3)
+
+### sales.orders.select(id, ship_to: ship_customer.name).orderBy(ship_to)
+Aggregate: count#18 = count(*)
+  Scan sales.orders ()
+
+### sales.orders.orderBy(total).take(3)
+Aggregate: count#9 = count(*)
+  Limit take 3
+    Sort total#4
+      Scan sales.orders (total#4)
+
+### sales.orders.groupBy(customer_id).select(customer_id: key, n: count())
+Aggregate: count#11 = count(*)
+  Aggregate by customer_id#2
+    Scan sales.orders (customer_id#2)
+
+### sales.customers.select(name, n: orders_by_customer.count())
+Aggregate: count#19 = count(*)
+  Scan sales.customers ()
+
+### sales.orders.select(status).distinct()
+Aggregate: count#9 = count(*)
+  Distinct
+    Scan sales.orders (status#3)
+
+### sales.orders.orderBy(desc(total)).first()
+Aggregate: count#9 = count(*)
+  Limit take 1
+    Sort total#4 desc, id#1
+      Scan sales.orders (id#1, total#4)
+
+### sales.orders.count()
+Aggregate: count#11 = count(*)
+  OneRow

@@ -19,7 +19,7 @@ internal static class PlanRewriter
          SortNode sort => new SortNode(inputs[0], sort.Keys),
          LimitNode limit => new LimitNode(inputs[0], limit.Count, limit.Offset),
          DistinctNode => new DistinctNode(inputs[0]),
-         AggregateNode aggregate => new AggregateNode(inputs[0], aggregate.Keys, aggregate.Aggregates),
+         AggregateNode aggregate => new AggregateNode(inputs[0], aggregate.Keys, aggregate.Aggregates, aggregate.DependentKeys),
          SetOpNode set => new SetOpNode(set.Operation, inputs[0], inputs[1], set.Output),
          _ => node,
       };
@@ -56,7 +56,7 @@ internal static class PlanRewriter
             List<AggregateItem> aggregates = aggregate.Aggregates
                .Select(a => a.Argument != null && map(a.Argument) is var e && !ReferenceEquals(e, a.Argument) ? a with { Argument = e } : a).ToList();
             bool same = keys.Zip(aggregate.Keys).All(p => ReferenceEquals(p.First, p.Second)) && aggregates.Zip(aggregate.Aggregates).All(p => ReferenceEquals(p.First, p.Second));
-            return same ? node : new AggregateNode(aggregate.Input, keys, aggregates);
+            return same ? node : new AggregateNode(aggregate.Input, keys, aggregates, aggregate.DependentKeys);
          }
          default:
             return node;

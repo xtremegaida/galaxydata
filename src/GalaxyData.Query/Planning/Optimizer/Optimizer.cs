@@ -62,7 +62,7 @@ public static class PlanOptimizer
       }
       root = ColumnPruner.Prune(root);
       trace?.Add("prune", [], root);
-      return new LogicalPlan(root, plan.Schema);
+      return plan.WithRoot(root);
    }
 
    /// <summary>One bottom-up pass: inputs and subqueries first, then the first rule that applies to the node.</summary>

@@ -179,12 +179,12 @@ A lambda argument disables the implicit row scope. Join conditions must use `out
 
 | Link | Produced for |
 |---|---|
-| `RowLink(target, keyOrdinals)` | FK columns, and nav-valued items with hidden target-PK columns |
-| `CollectionLink(target, targetColumns, valueOrdinals)` | collection navs and nav aggregates |
-| `DrillDownLink(queryText, keyExprs, valueOrdinals)` | groupBy aggregates |
-| `EditTarget(entity, column, keyOrdinals)` | direct columns whose PK is available |
+| `RowLink(target, targetColumns, keyOrdinals, navigation)` | FK columns, and nav-valued items (`select(customer)`, shown by the display column) with hidden target-key columns |
+| `CollectionLink(navigation, valueOrdinals)` | aggregates and `any()` of a bare collection nav (`orders.count()`), and `RowIdentity.Related` |
+| `DrillDownLink(queryText, keys)` | groupBy aggregates: the query before groupBy (named subtrees included), filtered on each key part as written (lambda keys keep their parameter) |
+| `EditTarget(entity, column, keyOrdinals)` | table columns (not views) whose row's key is in the result |
 
-  `ResultSchema.RowIdentity` exposes the inverse navs for rows that belong to a single entity. Hidden key columns are added only along row-preserving paths.
+  Every link has `Query(row, parameters)`, which composes the query for the rows it leads to (key values as `$key1`… parameters; a null group key becomes `== null`; a null foreign key leads nowhere). `ResultSchema.RowIdentity` exposes the key and the inverse navs for rows that belong to a single entity. Hidden key columns are added only along row-preserving paths: each scanned column carries its scan's row origin through renaming projections, joins, navigations and group keys; distinct, set operations and aggregates drop it, and never see hidden columns, so these can't change results.
 
 ### 4.4 Optimizer and federation (`Planning/Optimizer/`)
 Rules implement `IRewriteRule` and run in phases to a fixpoint.
@@ -233,13 +233,13 @@ Rules implement `IRewriteRule` and run in phases to a fixpoint.
 ### 4.6 Execution
 - **API:**
   - `QueryEngine(ICatalog, ISourceRegistry, IMergeEngine, options)`.
-  - `.Prepare(QueryRequest{Text, Parameters, Paging})` is pure and returns a `PreparedQuery`, which offers `Schema`, `Explain()`, `ExecuteAsync(ct)`, and `ForCount()` (no sort or paging, nav joins eliminated).
+  - `.Prepare(QueryRequest{Text, Parameters, Paging})` is pure and returns a `PreparedQuery`, which offers `Schema`, `Explain(verbose)`, `ExecuteAsync(ct)`, and `ForCount()` (no final sort or paging; nav joins, unused group joins and unused dependent group keys eliminated; a `take` in the query still counts).
   - `QueryResult` is an async row stream with `ResultSchema`, `ExecutionStats` and `Warnings`.
 - **Providers:** `ISourceProvider` has Dialect, Affinity, Introspector, TypeMapper, BindParameters and typed `ColumnReader`s. The app implements `IConnectionFactory.OpenAsync(alias)`, so the library never holds secrets.
 - **`QueryText` helpers:**
   - `QuoteName` and `IsBareIdentifier`, following the engine's operator table.
-  - `Compose(text, filters, sort)`, which wraps the last statement as `(<last>).where(..).orderBy(..)` using `SplitStatements`.
-  - With paging, the sort is stabilized by appending the row-identity key.
+  - `Compose(text, filters, sort, tiebreak)`, which wraps the last statement as `(<last>).where(..).orderBy(..)` using `SplitStatements`.
+  - With paging, the sort is stabilized by appending the row-identity key (inside the query's own sort, under its filters and `take`).
 - **Merge engine:** one process-wide DuckDB in-memory instance.
   - It is configured with `memory_limit`, `temp_directory` and `threads`.
   - Each query gets its own schema `q_<n>`, dropped on dispose.
@@ -477,7 +477,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | M2 | Binder core: where/select/extend/orderBy/take/skip/distinct, scopes, lambdas, `$params`, lets, coercion, functions, many-to-one navs; virtual entities bound in the catalog (dependency order, inherited key/navs) | Bound-tree and diagnostic snapshots; example 1 binds |
 | M3 | Lowering, SQL AST, `SqlBuilder`, 4 dialects, single-site execution, Direct lineage, `gdq` CLI (run, sql, schema, repl) | Golden plans and golden SQL per dialect; example 1 end-to-end on SQLite and DuckDB; SQLite and DuckDB return identical rows for a shared conformance set |
 | M4 | Group scope and HAVING, joins, selectMany, collection navs, any/all/in/subqueries, set ops, decorrelation (semi/anti joins, merged group joins, correlated joins), pushdown and prune rules; `first`/`firstOrDefault` moved to M5 | Examples 2–4 golden and end-to-end on SQLite and DuckDB; optimizer phase snapshots |
-| M5 | Links, hidden keys, EditTarget, RowIdentity, full lineage, `QueryText.Compose`, `ForCount`, explain model and renderer, `first`/`firstOrDefault` | Link and lineage snapshots; composed filter reaches the scan |
+| M5 | Links, hidden keys, EditTarget, RowIdentity, full lineage, `QueryText.Compose`, `ForCount`, explain model and renderer (`gdq explain`), stable paging, `first`/`firstOrDefault` (as the result: the first row, and `first()` of none fails; in expressions: scalar subqueries, null when there is no row) | Link and lineage snapshots; composed filter reaches the scan |
 | M6 | Federation: SiteAssigner, fragmenter, DuckDB merge engine, full fetch | Differential suite: same data all-DuckDB, all-SQLite and split, identical results; spill test at 64 MB; cancellation test |
 | M7 | Adaptive bind-join, runtime scalar params, TopN through navs, cardinality estimates | A 50-row page sends ≤ 50 keys (`ExecutionStats`); k = 0 early-out; fallback above the key limit |
 | M8 | Excel Folder provider | OpenXml-generated fixtures (multiple, hidden and spaced sheets); Excel ⋈ SQLite join |

@@ -56,6 +56,9 @@ public sealed class QueryResult : IAsyncDisposable, IAsyncEnumerable<object?[]>
 
    public ExecutionStats Stats { get; }
 
+   /// <summary>The query is <c>first()</c>: reading to the end without finding a row fails.</summary>
+   internal bool RequiresRow { get; init; }
+
    /// <summary>The row the last successful <see cref="ReadAsync"/> read.</summary>
    public object?[] Current { get; private set; } = [];
 
@@ -75,6 +78,10 @@ public sealed class QueryResult : IAsyncDisposable, IAsyncEnumerable<object?[]>
       if (!read)
       {
          finished = true;
+         if (RequiresRow && Stats.Rows == 0)
+         {
+            throw new QueryExecutionException("first() found no rows; use firstOrDefault() when there may be none");
+         }
          return false;
       }
       IReadOnlyList<ResultColumn> columns = Schema.Columns;

@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Text;
 using GalaxyData.Common.Ast;
 using GalaxyData.Query.Binding;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Functions;
+using GalaxyData.Query.Language;
 using GalaxyData.Query.Results;
 using GalaxyData.Query.Types;
 
@@ -13,82 +16,349 @@ namespace GalaxyData.Query.Planning;
 /// <summary>A query's logical plan; the root's output columns line up with the schema's columns.</summary>
 public sealed class LogicalPlan
 {
-   internal LogicalPlan(PlanNode root, ResultSchema schema)
+   internal LogicalPlan(PlanNode root, ResultSchema schema, bool requiresRow = false)
    {
       Root = root;
       Schema = schema;
+      RequiresRow = requiresRow;
    }
 
    public PlanNode Root { get; }
 
    public ResultSchema Schema { get; }
 
+   /// <summary>The query's result is <c>first()</c>, so finding no row is an error.</summary>
+   public bool RequiresRow { get; }
+
+   internal LogicalPlan WithRoot(PlanNode root) => new(root, Schema, RequiresRow);
+
    public override string ToString() => PlanPrinter.Print(Root);
 }
 
 /// <summary>
 /// Turns a bound query into a logical plan. Entity scans read every column; navigations become joins, made once
-/// per row and reused; virtual entities and named subtrees are expanded afresh at each use. Lineage is worked
-/// out as columns are created, so it is known before anything runs.
+/// per row and reused; virtual entities and named subtrees are expanded afresh at each use. Lineage, links and edit
+/// targets are worked out as columns are created, so they are known before anything runs; the key values links
+/// need travel along as hidden columns.
 /// </summary>
 internal sealed class Lowerer
 {
    private readonly PlanIds ids;
+   private readonly LinkTable links;
    private readonly string text;
    private readonly bool spans;
    private readonly IReadOnlyList<NavigationDef> pathPrefix;
    private readonly Dictionary<RowVariable, RowValue> rows = [];
    private readonly Dictionary<RowVariable, GroupValue> groups = [];
 
-   private Lowerer(PlanIds ids, string text, bool spans, IReadOnlyList<NavigationDef> pathPrefix)
+   /// <summary>The text of the statements before the result (the named subtrees), for queries that drill down.</summary>
+   private readonly string definitions;
+
+   private bool requiresRow;
+
+   private Lowerer(PlanIds ids, LinkTable links, BoundProgram program, bool spans, IReadOnlyList<NavigationDef> pathPrefix)
    {
       this.ids = ids;
-      this.text = text;
+      this.links = links;
       this.spans = spans;
       this.pathPrefix = pathPrefix;
+      text = program.Text;
+      int start = program.Result?.Syntax?.Start ?? 0;
+      definitions = start > 0 && start <= text.Length ? text[..start] : string.Empty;
    }
 
-   /// <summary>Lowers a program that bound successfully; <paramref name="offset"/> and <paramref name="limit"/> page the result.</summary>
+   /// <summary>
+   /// Lowers a program that bound successfully; <paramref name="offset"/> and <paramref name="limit"/> page the result.
+   /// Pages of an entity's rows are sorted by its key after any sort of the query's, so each page is the same every time.
+   /// </summary>
    public static LogicalPlan Lower(BoundProgram program, long? offset = null, long? limit = null)
    {
       ArgumentNullException.ThrowIfNull(program);
-      Lowerer lowerer = new(new PlanIds(), program.Text, spans: true, []);
-      (Cursor cursor, ResultSchema schema) = program.Result switch
-      {
-         BoundQuery query => lowerer.Result(query),
-         BoundExpr { IsScalar: true } value => lowerer.Result(value),
-         _ => throw new ArgumentException("The program has no result to plan; bind it without errors first", nameof(program)),
-      };
+      Lowerer lowerer = new(new PlanIds(), new LinkTable(), program, spans: true, []);
+      (Cursor cursor, ResultSchema schema) = lowerer.Result(program.Result);
       if (offset > 0 || limit != null)
       {
+         if (schema.RowIdentity is { } identity) { cursor.Node = Stabilize(cursor.Node, identity.KeyOrdinals.Select(i => cursor.Node.Output[i]).ToList()); }
          cursor.Node = new LimitNode(cursor.Node, limit == null ? null : Int64(limit.Value), offset > 0 ? Int64(offset.Value) : null);
       }
-      return new LogicalPlan(cursor.Node, schema);
+      // first() of no rows fails, but a later page of its one row is just empty.
+      return new LogicalPlan(cursor.Node, schema, lowerer.requiresRow && !(offset > 0));
    }
 
+   /// <summary>A one-row plan counting the rows of a program's result; the result's own order doesn't matter to it.</summary>
+   public static LogicalPlan LowerCount(BoundProgram program)
+   {
+      ArgumentNullException.ThrowIfNull(program);
+      Lowerer lowerer = new(new PlanIds(), new LinkTable(), program, spans: true, []);
+      (Cursor cursor, _) = lowerer.Result(program.Result);
+      ColumnLineage lineage = ColumnLineage.Computed([], "count()", LineageKind.Aggregated);
+      PlanColumn count = new(lowerer.ids.Next(), "count", ScalarType.Int64.AsNonNullable(), lineage);
+      AggregateNode node = new(Unsorted(cursor.Node), [], [new AggregateItem(count, AggregateFunction.CountRows, null)]);
+      return new LogicalPlan(node, new ResultSchema([new ResultColumn(0, count.Name, count.Type, lineage)], null));
+   }
+
+   /// <summary>The plan without the sorts that only order its result (those not under a limit).</summary>
+   private static PlanNode Unsorted(PlanNode node) => node switch
+   {
+      SortNode sort => Unsorted(sort.Input),
+      FilterNode filter => new FilterNode(Unsorted(filter.Input), filter.Predicate),
+      ProjectNode project => new ProjectNode(Unsorted(project.Input), project.Items),
+      JoinNode { Kind: JoinKind.Inner or JoinKind.Left } join => new JoinNode(join.Kind, Unsorted(join.Left), join.Right, join.Condition, join.Navigation),
+      _ => node,
+   };
+
    #region Results
+
+   private (Cursor, ResultSchema) Result(BoundNode? result) => result switch
+   {
+      BoundQuery query => Result(query),
+      BoundFirst first => FirstResult(first, []),
+      BoundMemberAccess { Type: RecordBoundType } access when FirstChain(access, out BoundFirst? first, out List<ShapeMember>? members) => FirstResult(first, members),
+      BoundExpr { IsScalar: true } value => Result(value),
+      _ => throw new ArgumentException("The program has no result to plan; bind it without errors first", nameof(result)),
+   };
 
    private (Cursor, ResultSchema) Result(BoundQuery query)
    {
       (Cursor cursor, RowValue row) = Query(query);
-      List<ProjectItem> items = [];
-      List<ResultColumn> columns = [];
-      foreach (ShapeMember member in query.Shape.Members)
+      return Result(cursor, row, query.Shape);
+   }
+
+   /// <summary>
+   /// <c>first()</c> as the result, or a record of it (<c>orders.first().customer</c>): the query's first row; with
+   /// <c>first()</c> finding none is an error when it runs.
+   /// </summary>
+   private (Cursor, ResultSchema) FirstResult(BoundFirst first, List<ShapeMember> members)
+   {
+      (Cursor cursor, RowValue row) = FirstRow(first);
+      requiresRow = !first.OrDefault;
+      if (members.Count == 0) { return Result(cursor, row, first.Source.Shape); }
+      RowValue record = (RowValue)Members(row, members);
+      if (record.Nullable)
       {
-         if (query.Shape.Group is { SyntheticKey: true } && member.Name == KeyName) { continue; }
-         PlanColumnRef? value = member switch
-         {
-            ColumnMember scalar => row.Column(scalar.Name),
-            RecordMember record => Display(row.Record(record.Name)),
-            _ => null,
-         };
-         if (value == null) { continue; }
-         PlanColumn column = Output(member.Name, value, value.Type, value.Column.Lineage);
-         items.Add(new ProjectItem(column, value));
-         columns.Add(new ResultColumn(columns.Count, member.Name, column.Type, column.Lineage));
+         // A record that isn't there (the first order has no ship address) is no row. No rows then no longer tells
+         // whether first() found none, so it isn't an error.
+         PlanExpr present = record.Indicator != null
+            ? new PlanIsNull(record.Indicator, negated: true)
+            : AllNull(record.Columns().Select(c => (PlanExpr)new PlanColumnRef(c)), negated: true);
+         cursor.Node = new FilterNode(cursor.Node, present);
+         requiresRow = false;
       }
+      return Result(cursor, record, record.Shape);
+   }
+
+   /// <summary>
+   /// The result's projection: the shape's columns, records shown by their display column, then hidden columns for
+   /// the keys the visible ones' links and edit targets need.
+   /// </summary>
+   private (Cursor, ResultSchema) Result(Cursor cursor, RowValue row, RowShape shape)
+   {
+      List<ProjectItem> items = [];
+      List<string> names = [];
+      foreach (ShapeMember member in shape.Members)
+      {
+         if (shape.Group is { SyntheticKey: true } && member.Name == KeyName) { continue; }
+         PlanColumnRef value;
+         PlanColumn column;
+         switch (member)
+         {
+            case ColumnMember scalar:
+               value = row.Column(scalar.Name);
+               column = Output(member.Name, value, value.Type, value.Column.Lineage);
+               break;
+            case RecordMember record:
+            {
+               RowValue recordValue = row.Record(record.Name);
+               if (Display(recordValue) is not { } display) { continue; }
+               value = display;
+               // A column of its own, so that the link is the record's, not the display column's.
+               column = new PlanColumn(ids.Next(), member.Name, value.Type, value.Column.Lineage, value.Column.Origin);
+               if (RecordLink(recordValue) is { } link) { links.Set(column, link); }
+               break;
+            }
+            default:
+               continue;
+         }
+         items.Add(new ProjectItem(column, value));
+         names.Add(member.Name);
+      }
+      int visible = items.Count;
+      links.AddHidden(items, visible, cursor.Node.Output);
       cursor.Node = Project(cursor.Node, items);
-      return (cursor, new ResultSchema(columns, query.Shape.Entity));
+      List<PlanColumn> output = items.Select(i => i.Column).ToList();
+      List<ResultColumn> columns = [];
+      for (int i = 0; i < output.Count; i++)
+      {
+         PlanColumn column = output[i];
+         bool hidden = i >= visible;
+         columns.Add(new ResultColumn(i, hidden ? column.Name : names[i], column.Type, column.Lineage)
+         {
+            IsHidden = hidden,
+            Link = hidden ? null : links.Link(column, output),
+            EditTarget = hidden ? null : links.EditTarget(column, output),
+         });
+      }
+      return (cursor, new ResultSchema(columns, shape.Entity, Identity(shape.Entity, names)));
+   }
+
+   /// <summary>The key of the rows when they are an entity's rows, and the entity's inverse navigations from them.</summary>
+   private static RowIdentity? Identity(EntityDef? entity, List<string> names)
+   {
+      if (entity?.Key is not { } key || ByName(key.Columns, names) is not { } keyOrdinals) { return null; }
+      List<ColumnLink> related = [];
+      foreach (NavigationDef navigation in entity.Navigations.Concat(entity.InheritedNavigations))
+      {
+         if (!navigation.IsInverse || navigation.Hidden || ByName(navigation.OwnerColumns, names) is not { } values) { continue; }
+         related.Add(navigation.IsCollection
+            ? new CollectionLink(navigation, values)
+            : new RowLink(navigation.Target, navigation.TargetColumns, values, navigation));
+      }
+      return new RowIdentity(entity, keyOrdinals, related);
+   }
+
+   private static List<int>? ByName(IReadOnlyList<ColumnDef> columns, List<string> names)
+   {
+      List<int> ordinals = [];
+      foreach (ColumnDef column in columns)
+      {
+         int ordinal = names.IndexOf(column.Name);
+         if (ordinal < 0) { return null; }
+         ordinals.Add(ordinal);
+      }
+      return ordinals;
+   }
+
+   /// <summary>The link of a record shown by its display column: the row itself, by its entity's key.</summary>
+   private static RowLinkSpec? RecordLink(RowValue record)
+   {
+      if (record.Shape.Entity is not { Key: { } key } entity) { return null; }
+      List<PlanColumn> values = key.Columns.Select(c => record.Column(c.Name).Column).ToList();
+      return new RowLinkSpec(entity, key.Columns, record.Path.Count > 0 ? record.Path[^1] : null, values);
+   }
+
+   /// <summary>
+   /// Rows in a total order, for pages and first rows: the keys are added to the sort that orders the rows (under
+   /// filters, projections, limits and joins, which keep the order) when they are known there; otherwise the rows are
+   /// sorted again on top, by the same sort and then the keys. Rows in no order are sorted by the keys; rows whose
+   /// order can't be restated on top (sorted by a value projected away) are left as they are.
+   /// </summary>
+   private static PlanNode Stabilize(PlanNode root, IReadOnlyList<PlanColumn> keys)
+   {
+      if (keys.Count == 0) { return root; }
+      if (Tiebreak(root, keys) is { } extended) { return extended; }
+      if (!OrderOf(root).Sorted) { return new SortNode(root, keys.Select(k => new PlanSortKey(new PlanColumnRef(k), false)).ToList()); }
+      return Resort(root, keys) ?? root;
+   }
+
+   /// <summary>
+   /// Sorts ordered rows again by their order and then the keys, as high up as both can be written: down through
+   /// projections that pass the keys on, to where the order's columns are still there (a projection may drop them).
+   /// </summary>
+   private static PlanNode? Resort(PlanNode node, IReadOnlyList<PlanColumn> keys)
+   {
+      (bool sorted, List<PlanSortKey>? order) = OrderOf(node);
+      if (!sorted) { return null; }
+      if (order != null)
+      {
+         HashSet<PlanColumn> present = [.. order.Select(k => (k.Expr as PlanColumnRef)?.Column).OfType<PlanColumn>()];
+         return new SortNode(node, [.. order, .. keys.Where(k => !present.Contains(k)).Select(k => new PlanSortKey(new PlanColumnRef(k), false))]);
+      }
+      switch (node)
+      {
+         case ProjectNode project:
+         {
+            List<PlanColumn> below = [];
+            foreach (PlanColumn key in keys)
+            {
+               if (project.Items.FirstOrDefault(i => ReferenceEquals(i.Column, key))?.Expr is not PlanColumnRef reference) { return null; }
+               below.Add(reference.Column);
+            }
+            return Resort(project.Input, below) is { } input ? new ProjectNode(input, project.Items) : null;
+         }
+         case FilterNode filter:
+            return Resort(filter.Input, keys) is { } filtered ? new FilterNode(filtered, filter.Predicate) : null;
+         case LimitNode limit:
+            return Resort(limit.Input, keys) is { } limited ? new LimitNode(limited, limit.Count, limit.Offset) : null;
+         case JoinNode { Kind: JoinKind.Inner or JoinKind.Left } join when keys.All(join.Left.Output.Contains):
+            return Resort(join.Left, keys) is { } left ? new JoinNode(join.Kind, left, join.Right, join.Condition, join.Navigation) : null;
+         default:
+            return null;
+      }
+   }
+
+   /// <summary>
+   /// The sort that orders a plan's rows, restated over the plan's output (through renaming projections): not sorted
+   /// when nothing orders them, sorted with no keys when the order can't be restated.
+   /// </summary>
+   private static (bool Sorted, List<PlanSortKey>? Keys) OrderOf(PlanNode node)
+   {
+      switch (node)
+      {
+         case SortNode sort:
+            return (true, [.. sort.Keys]);
+         case FilterNode filter:
+            return OrderOf(filter.Input);
+         case LimitNode limit:
+            return OrderOf(limit.Input);
+         case JoinNode { Kind: JoinKind.Inner or JoinKind.Left } join:
+            // The left side's columns pass through the join.
+            return OrderOf(join.Left);
+         case ProjectNode project:
+         {
+            (bool sorted, List<PlanSortKey>? keys) = OrderOf(project.Input);
+            if (keys == null) { return (sorted, null); }
+            Dictionary<PlanColumn, PlanExpr> renamed = [];
+            foreach (ProjectItem item in project.Items)
+            {
+               if (item.Expr is PlanColumnRef reference) { renamed.TryAdd(reference.Column, new PlanColumnRef(item.Column)); }
+            }
+            List<PlanSortKey> restated = [];
+            foreach (PlanSortKey key in keys)
+            {
+               if (!PlanAnalysis.Columns(key.Expr).All(renamed.ContainsKey)) { return (true, null); }
+               restated.Add(key with { Expr = Optimizer.PlanRewriter.Substitute(key.Expr, renamed) });
+            }
+            return (true, restated);
+         }
+         default:
+            return (false, null);
+      }
+   }
+
+   /// <summary>Columns that tell a query's rows apart: an entity's key, a group's key parts, else every sortable column.</summary>
+   private static List<PlanColumn> Distinguishing(RowValue row, RowShape shape, PlanNode plan)
+   {
+      IEnumerable<PlanColumn> columns = shape.Entity?.Key is { } key
+         ? key.Columns.Select(c => row.Column(c.Name).Column)
+         : row.Group is { } group
+            ? group.Node.Keys.Where(k => !group.Node.DependentKeys.Contains(k.Column)).Select(k => k.Column)
+            : row.Columns().Where(c => TypeRules.IsOrderable(c.Type));
+      HashSet<PlanColumn> available = [.. plan.Output];
+      return columns.Where(available.Contains).Distinct().ToList();
+   }
+
+   private static PlanNode? Tiebreak(PlanNode node, IReadOnlyList<PlanColumn> keys)
+   {
+      switch (node)
+      {
+         case SortNode sort:
+         {
+            if (!keys.All(sort.Input.Output.Contains)) { return null; }
+            HashSet<PlanColumn> sorted = [.. sort.Keys.Select(k => (k.Expr as PlanColumnRef)?.Column).OfType<PlanColumn>()];
+            List<PlanSortKey> added = keys.Where(k => !sorted.Contains(k)).Select(k => new PlanSortKey(new PlanColumnRef(k), false)).ToList();
+            return added.Count == 0 ? sort : new SortNode(sort.Input, [.. sort.Keys, .. added]);
+         }
+         case FilterNode filter:
+            return Tiebreak(filter.Input, keys) is { } filtered ? new FilterNode(filtered, filter.Predicate) : null;
+         case LimitNode limit:
+            return Tiebreak(limit.Input, keys) is { } limited ? new LimitNode(limited, limit.Count, limit.Offset) : null;
+         case ProjectNode project:
+            return Tiebreak(project.Input, keys) is { } projected ? new ProjectNode(projected, project.Items) : null;
+         case JoinNode { Kind: JoinKind.Inner or JoinKind.Left } join when keys.All(join.Left.Output.Contains):
+            return Tiebreak(join.Left, keys) is { } left ? new JoinNode(join.Kind, left, join.Right, join.Condition, join.Navigation) : null;
+         default:
+            return null;
+      }
    }
 
    private (Cursor, ResultSchema) Result(BoundExpr value)
@@ -190,6 +460,11 @@ internal sealed class Lowerer
       List<ProjectItem> projected = [];
       foreach (BoundProjection item in items)
       {
+         if (FirstRecord(item.Expr, out BoundFirst? first, out List<ShapeMember>? members))
+         {
+            output.Set(item.Name, FirstRecord(first, members, ((RecordBoundType)item.Expr.Type).Shape, cursor, projected));
+            continue;
+         }
          switch (Value(item.Expr))
          {
             case PlanExpr expr:
@@ -202,6 +477,7 @@ internal sealed class Lowerer
                break;
          }
       }
+      links.AddHidden(projected, projected.Count, cursor.Node.Output);
       cursor.Node = new ProjectNode(cursor.Node, projected);
       return output;
    }
@@ -215,6 +491,11 @@ internal sealed class Lowerer
       {
          foreach (BoundProjection item in extend.Items)
          {
+            if (FirstRecord(item.Expr, out BoundFirst? first, out List<ShapeMember>? members))
+            {
+               output.Set(item.Name, FirstRecord(first, members, ((RecordBoundType)item.Expr.Type).Shape, cursor, added));
+               continue;
+            }
             switch (Value(item.Expr))
             {
                case PlanExpr expr:
@@ -279,9 +560,52 @@ internal sealed class Lowerer
          }
       }
       aggregate.Input = elements.Node;
+      value.DrillDown = DrillDown(group, parts, elements.Node);
       groups[group.Row] = value;
       return (cursor, row);
    }
+
+   /// <summary>
+   /// How to list one group's rows: the query before groupBy, filtered on each key part written as it was. Only for
+   /// a query that stands on its own (it reads no rows around it) and whose text is known.
+   /// </summary>
+   private DrillDownSpec? DrillDown(BoundGroupBy group, List<object> parts, PlanNode elements)
+   {
+      if (group.Syntax is not CallSyntax call || call.Arguments.Length != parts.Count) { return null; }
+      if (group.Input.Syntax is not { } input || !InText(input) || PlanAnalysis.IsCorrelated(elements)) { return null; }
+      List<DrillDownKeySpec> keys = [];
+      List<PlanColumn> values = [];
+      for (int i = 0; i < parts.Count; i++)
+      {
+         SyntaxNode argument = call.Arguments[i] is NamedArgumentSyntax named ? named.Value : call.Arguments[i];
+         (string? parameter, SyntaxNode body) = argument is LambdaSyntax { Parameters: [IdentifierSyntax lambdaParameter] } lambda
+            ? (lambdaParameter.Name, lambda.Body)
+            : ((string?)null, argument);
+         if (!InText(body)) { return null; }
+         string expression = IsPath(body) ? text[body.Start..body.End] : "(" + text[body.Start..body.End] + ")";
+         switch (parts[i])
+         {
+            case PlanColumnRef column:
+               keys.Add(new DrillDownKeySpec(expression, parameter, column.Type));
+               values.Add(column.Column);
+               break;
+            case RowValue record:
+               foreach (ColumnDef keyColumn in record.Shape.Entity!.Key!.Columns)
+               {
+                  PlanColumnRef column = record.Column(keyColumn.Name);
+                  keys.Add(new DrillDownKeySpec(QueryText.AppendMember(new StringBuilder(expression), keyColumn.Name).ToString(), parameter, column.Type));
+                  values.Add(column.Column);
+               }
+               break;
+         }
+      }
+      return new DrillDownSpec(definitions + text[input.Start..input.End], keys, values);
+   }
+
+   /// <summary>A name, member path or call, which needs no parentheses in front of <c>==</c>.</summary>
+   private static bool IsPath(SyntaxNode node) => node is IdentifierSyntax or BinarySyntax { Op: "." } or CallSyntax;
+
+   private bool InText(SyntaxNode node) => node.Start >= 0 && node.End > node.Start && node.End <= text.Length;
 
    private static void Set(RowValue row, string name, object value)
    {
@@ -301,6 +625,9 @@ internal sealed class Lowerer
       EntityDef entity = type.Shape.Entity!;
       Func<string, PlanColumnRef> source;
       IReadOnlyList<NavigationDef> path;
+      // The columns that make the groups: the foreign key's values through a navigation (a key the target may not
+      // have, or a unique key rather than the primary one), else the record's key.
+      List<string> identity;
       if (key.Expr is BoundMemberAccess { Member: NavigationMember { Navigation: { IsCollection: false } navigation } } access)
       {
          RowValue owner = (RowValue)Value(access.Target);
@@ -308,20 +635,25 @@ internal sealed class Lowerer
          for (int i = 0; i < navigation.TargetColumns.Count; i++) { foreignKey[navigation.TargetColumns[i].Name] = owner.Column(navigation.OwnerColumns[i].Name); }
          source = name => foreignKey.TryGetValue(name, out PlanColumnRef? column) ? column : Navigate(owner, navigation).Column(name);
          path = [.. owner.Path, navigation];
+         identity = [.. navigation.TargetColumns.Select(c => c.Name)];
       }
       else
       {
          RowValue record = (RowValue)Value(key.Expr);
          source = record.Column;
          path = record.Path;
+         identity = [.. entity.Key!.Columns.Select(c => c.Name)];
       }
+      // The identity columns group; the record's other columns follow from them, and are keys only for being read.
       PlanColumnRef KeyOf(string name)
       {
          PlanColumnRef column = source(name);
          ScalarType columnType = column.Type.WithNullable(column.Type.Nullable || type.IsNullable);
-         return group.Key(column, name, columnType, column.Column.Lineage);
+         bool dependent = !identity.Contains(name, StringComparer.Ordinal);
+         return group.Key(column, name, columnType, column.Column.Lineage, dependent);
       }
       RowValue value = new(cursor, type.Shape, path, type.IsNullable) { Lazy = KeyOf };
+      foreach (string name in identity) { value.Column(name); }
       foreach (ColumnDef column in entity.Key!.Columns) { value.Column(column.Name); }
       value.Indicator = value.Column(entity.Key.Columns[0].Name);
       return value;
@@ -359,7 +691,11 @@ internal sealed class Lowerer
             return new PlanBinary(BinaryOp.Equal, reduced, Int64(1), ScalarType.Boolean.AsNonNullable());
          }
          default:
-            return group.Aggregate(Function(aggregate.Kind, argument), argument, name, aggregate.Scalar, lineage);
+         {
+            PlanColumnRef result = group.Aggregate(Function(aggregate.Kind, argument), argument, name, aggregate.Scalar, lineage);
+            if (group.DrillDown != null) { links.Set(result.Column, group.DrillDown); }
+            return result;
+         }
       }
    }
 
@@ -396,7 +732,17 @@ internal sealed class Lowerer
       PlanColumn column = new(ids.Next(), AggregateName(aggregate.Kind), aggregate.Scalar,
          Lineage(argument, aggregate.Syntax, LineageKind.Aggregated));
       AggregateNode node = new(cursor.Node, [], [new AggregateItem(column, Function(aggregate.Kind, argument), argument)]);
-      return new PlanSubquery(SubqueryKind.Scalar, node, null, negated: false, aggregate.Scalar);
+      PlanSubquery subquery = new(SubqueryKind.Scalar, node, null, negated: false, aggregate.Scalar);
+      LinkCollection(subquery, aggregate.Source);
+      return subquery;
+   }
+
+   /// <summary>An aggregate or test of a whole collection (<c>orders.count()</c>, <c>orders.any()</c>) links to its rows.</summary>
+   private void LinkCollection(PlanSubquery subquery, BoundQuery source)
+   {
+      if (source is not BoundNavigationQuery navigation || FirstRecord(navigation.Owner, out _, out _)) { return; }
+      RowValue owner = (RowValue)Value(navigation.Owner);
+      links.Set(subquery, new CollectionLinkSpec(navigation.Navigation, navigation.Navigation.OwnerColumns.Select(c => owner.Column(c.Name).Column).ToList()));
    }
 
    private PlanExpr InQuery(BoundInQuery inQuery)
@@ -411,14 +757,28 @@ internal sealed class Lowerer
    /// <summary>The rows a collection navigation leads to: the target, filtered on the owner's key (correlated).</summary>
    private (Cursor, RowValue) NavigationQuery(BoundNavigationQuery query)
    {
-      RowValue owner = (RowValue)Value(query.Owner);
       NavigationDef navigation = query.Navigation;
-      (Cursor cursor, RowValue target) = Scan(navigation.Target, [.. owner.Path, navigation], nullable: false);
+      // From a query's first row (orders.first().order_lines), the owner's values are read from that row.
+      Func<ColumnDef, PlanExpr> ownerValue;
+      IReadOnlyList<NavigationDef> path;
+      if (FirstRecord(query.Owner, out BoundFirst? first, out List<ShapeMember>? members))
+      {
+         RowShape shape = ((RecordBoundType)query.Owner.Type).Shape;
+         ownerValue = c => FirstValue(first, [.. members, shape.Find(c.Name).Item!], c.Type);
+         path = [];
+      }
+      else
+      {
+         RowValue owner = (RowValue)Value(query.Owner);
+         ownerValue = c => owner.Column(c.Name);
+         path = owner.Path;
+      }
+      (Cursor cursor, RowValue target) = Scan(navigation.Target, [.. path, navigation], nullable: false);
       PlanExpr? condition = null;
       for (int i = 0; i < navigation.OwnerColumns.Count; i++)
       {
          PlanColumnRef inner = target.Column(navigation.TargetColumns[i].Name);
-         PlanColumnRef outer = owner.Column(navigation.OwnerColumns[i].Name);
+         PlanExpr outer = ownerValue(navigation.OwnerColumns[i]);
          PlanExpr equal = new PlanBinary(BinaryOp.Equal, inner, outer, ScalarType.Boolean.WithNullable(inner.Type.Nullable || outer.Type.Nullable));
          condition = condition == null ? equal : And(condition, equal);
       }
@@ -520,11 +880,20 @@ internal sealed class Lowerer
       return same ? input : new ProjectNode(input, items);
    }
 
-   /// <summary>The column a projection item produces: the input column itself when name and type are unchanged.</summary>
-   private PlanColumn Output(string name, PlanExpr expr, ScalarType type, ColumnLineage lineage) =>
-      expr is PlanColumnRef reference && string.Equals(reference.Column.Name, name, StringComparison.Ordinal) && reference.Column.Type == type
-         ? reference.Column
-         : new PlanColumn(ids.Next(), name, type, lineage);
+   /// <summary>
+   /// The column a projection item produces: the input column itself when name and type are unchanged. A renamed
+   /// column still stands for the row it was read from, and keeps its link.
+   /// </summary>
+   private PlanColumn Output(string name, PlanExpr expr, ScalarType type, ColumnLineage lineage)
+   {
+      if (expr is PlanColumnRef reference && string.Equals(reference.Column.Name, name, StringComparison.Ordinal) && reference.Column.Type == type)
+      {
+         return reference.Column;
+      }
+      PlanColumn column = new(ids.Next(), name, type, lineage, (expr as PlanColumnRef)?.Column.Origin);
+      links.Inherit(column, expr);
+      return column;
+   }
 
    private static PlanNode Take(PlanNode input, PlanExpr count)
    {
@@ -561,18 +930,22 @@ internal sealed class Lowerer
       {
          case TableEntity table:
          {
-            List<ScanColumn> columns = table.Columns
-               .Select(c => new ScanColumn(c, new PlanColumn(ids.Next(), c.Name, c.Type.WithNullable(c.Type.Nullable || nullable),
-                                                             ColumnLineage.Direct(new ColumnSource(c, path)))))
-               .ToList();
+            RowOrigin origin = new(table);
+            List<ScanColumn> columns = [];
+            foreach (ColumnDef c in table.Columns)
+            {
+               PlanColumn output = new(ids.Next(), c.Name, c.Type.WithNullable(c.Type.Nullable || nullable), ColumnLineage.Direct(new ColumnSource(c, path)), origin);
+               origin.Add(c, output);
+               columns.Add(new ScanColumn(c, output));
+            }
             Cursor cursor = new(new ScanNode(table, columns));
             RowValue row = new(cursor, RowShape.ForEntity(table), path, nullable);
             foreach (ScanColumn column in columns) { row.Set(column.Column.Name, new PlanColumnRef(column.Output)); }
             return (cursor, row);
          }
-         case VirtualEntity { Definition.Query: { } definition } virtualEntity:
+         case VirtualEntity { Definition: { Query: { } definition } program } virtualEntity:
          {
-            Lowerer nested = new(ids, virtualEntity.QueryText, spans: false, path);
+            Lowerer nested = new(ids, links, program, spans: false, path);
             (Cursor cursor, RowValue inner) = nested.Query(definition);
             RowValue row = new(cursor, RowShape.ForEntity(virtualEntity), path, nullable,
                                virtualEntity.BaseEntity != null ? inner.Navigations : null);
@@ -626,19 +999,138 @@ internal sealed class Lowerer
             return rows.TryGetValue(reference.Row, out RowValue? row)
                ? row
                : throw new InvalidOperationException($"The row '{reference.Row}' is not in scope");
+         case BoundMemberAccess access when FirstChain(access, out BoundFirst? first, out List<ShapeMember>? members):
+            return access.IsScalar ? FirstValue(first, members, access.Scalar) : throw WholeFirstRow();
+         case BoundFirst:
+            throw WholeFirstRow();
          case BoundMemberAccess access:
-            RowValue target = (RowValue)Value(access.Target);
-            return access.Member switch
-            {
-               ColumnMember column => new PlanColumnRef(target.Column(column.Name).Column, access.Scalar),
-               NavigationMember navigation => Navigate(target, navigation.Navigation),
-               RecordMember record => target.Record(record.Name),
-               _ => throw new InvalidOperationException($"Unexpected member {access.Member}"),
-            };
+            return Member((RowValue)Value(access.Target), access.Member, access.IsScalar ? access.Scalar : null);
          default:
             return Scalar(expr);
       }
    }
+
+   private object Member(RowValue target, ShapeMember member, ScalarType? type = null) => member switch
+   {
+      ColumnMember column => type is { } scalar ? new PlanColumnRef(target.Column(column.Name).Column, scalar) : target.Column(column.Name),
+      NavigationMember navigation => Navigate(target, navigation.Navigation),
+      RecordMember record => target.Record(record.Name),
+      _ => throw new InvalidOperationException($"Unexpected member {member}"),
+   };
+
+   private object Members(RowValue row, IReadOnlyList<ShapeMember> members)
+   {
+      object value = row;
+      foreach (ShapeMember member in members) { value = Member((RowValue)value, member); }
+      return value;
+   }
+
+   private static NotSupportedException WholeFirstRow() =>
+      new("a whole row from first() can be selected or be the result, but not used here; use one of its values, as in first().total");
+
+   #endregion
+
+   #region First rows
+
+   /// <summary>Whether the expression is a query's first row or a member path from one: <c>q.first()</c>, <c>q.first().customer</c>.</summary>
+   private static bool FirstChain(BoundExpr expr, [NotNullWhen(true)] out BoundFirst? first, [NotNullWhen(true)] out List<ShapeMember>? members)
+   {
+      List<ShapeMember> path = [];
+      BoundExpr current = expr;
+      while (current is BoundMemberAccess access)
+      {
+         path.Add(access.Member);
+         current = access.Target;
+      }
+      if (current is BoundFirst found)
+      {
+         path.Reverse();
+         first = found;
+         members = path;
+         return true;
+      }
+      first = null;
+      members = null;
+      return false;
+   }
+
+   /// <summary>A record read from a query's first row (rather than a scalar of it).</summary>
+   private static bool FirstRecord(BoundExpr expr, [NotNullWhen(true)] out BoundFirst? first, [NotNullWhen(true)] out List<ShapeMember>? members)
+   {
+      if (expr.Type is RecordBoundType && FirstChain(expr, out first, out members)) { return true; }
+      first = null;
+      members = null;
+      return false;
+   }
+
+   /// <summary>
+   /// A value of a query's first row: a scalar subquery over the query's rows, taking one and reading the member
+   /// path from it (navigations join inside the subquery). Null when there is no row, for first() as well.
+   /// </summary>
+   private PlanExpr FirstValue(BoundFirst first, IReadOnlyList<ShapeMember> members, ScalarType type)
+   {
+      (Cursor cursor, RowValue row) = FirstRow(first);
+      PlanColumnRef value = (PlanColumnRef)Members(row, members);
+      PlanNode plan = new ProjectNode(cursor.Node, [new ProjectItem(value.Column, value)]);
+      return new PlanSubquery(SubqueryKind.Scalar, plan, null, negated: false, type.AsNullable());
+   }
+
+   /// <summary>
+   /// The query's first row: its rows in a total order (the query's sort, then what tells rows apart), taking one. Each
+   /// value read from a first row lowers this afresh, so the order must pick the same row every time.
+   /// </summary>
+   private (Cursor, RowValue) FirstRow(BoundFirst first)
+   {
+      (Cursor cursor, RowValue row) = Query(first.Source);
+      cursor.Node = Take(Stabilize(cursor.Node, Distinguishing(row, first.Source.Shape, cursor.Node)), Int64(1));
+      return (cursor, row);
+   }
+
+   /// <summary>
+   /// A record of a query's first row, as columns of the projection being built: one scalar subquery per column (those
+   /// nothing uses are pruned later), so the record can be shown, linked and passed on like any other.
+   /// </summary>
+   private RowValue FirstRecord(BoundFirst first, List<ShapeMember> members, RowShape shape, Cursor cursor, List<ProjectItem> projected)
+   {
+      RowValue record = new(cursor, shape, [], nullable: true);
+      foreach (ShapeMember member in shape.Members)
+      {
+         switch (member)
+         {
+            case ColumnMember column:
+            {
+               PlanExpr value = FirstValue(first, [.. members, member], column.Type);
+               PlanColumn output = new(ids.Next(), column.Name, value.Type, Lineage(value, null));
+               projected.Add(new ProjectItem(output, value));
+               record.Set(column.Name, new PlanColumnRef(output));
+               break;
+            }
+            case RecordMember nested:
+               record.Set(nested.Name, FirstRecord(first, [.. members, member], nested.Shape, cursor, projected));
+               break;
+         }
+      }
+      if (shape.Entity?.Key is { } key)
+      {
+         // A row that exists has its key.
+         record.Indicator = record.Column(key.Columns[0].Name);
+      }
+      else
+      {
+         // Without a key, a value that is 1 when there is a first row and null when there is none.
+         (Cursor cursor2, _) = FirstRow(first);
+         PlanColumn one = new(ids.Next(), "present", ScalarType.Int64.AsNonNullable(), ColumnLineage.Constant(null));
+         PlanSubquery exists = new(SubqueryKind.Scalar, new ProjectNode(cursor2.Node, [new ProjectItem(one, Int64(1))]), null, negated: false, ScalarType.Int64.AsNullable());
+         PlanColumn present = new(ids.Next(), "present", exists.Type, ColumnLineage.Constant(null));
+         projected.Add(new ProjectItem(present, exists));
+         record.Indicator = new PlanColumnRef(present);
+      }
+      return record;
+   }
+
+   #endregion
+
+   #region Scalars
 
    private PlanExpr Scalar(BoundExpr expr)
    {
@@ -673,7 +1165,11 @@ internal sealed class Lowerer
          case BoundQueryAggregate aggregate:
             return QueryAggregate(aggregate);
          case BoundExists exists:
-            return new PlanSubquery(SubqueryKind.Exists, Query(exists.Source).Item1.Node, null, exists.Negated, exists.Scalar);
+         {
+            PlanSubquery subquery = new(SubqueryKind.Exists, Query(exists.Source).Item1.Node, null, exists.Negated, exists.Scalar);
+            if (!exists.Negated) { LinkCollection(subquery, exists.Source); }
+            return subquery;
+         }
          case BoundInQuery inQuery:
             return InQuery(inQuery);
          default:
@@ -687,6 +1183,17 @@ internal sealed class Lowerer
    /// </summary>
    private PlanExpr RecordIsNull(BoundExpr operand, bool negated)
    {
+      if (operand is BoundFirst first)
+      {
+         // q.first() == null: q has no rows.
+         return new PlanSubquery(SubqueryKind.Exists, Query(first.Source).Item1.Node, null, !negated, ScalarType.Boolean.AsNonNullable());
+      }
+      if (FirstChain(operand, out BoundFirst? from, out List<ShapeMember>? members))
+      {
+         RowShape shape = ((RecordBoundType)operand.Type).Shape;
+         IEnumerable<ColumnMember> present = shape.Entity?.Key is { } key ? [(ColumnMember)shape.Find(key.Columns[0].Name).Item!] : shape.Columns;
+         return AllNull(present.Select(c => FirstValue(from, [.. members, c], c.Type)), negated);
+      }
       if (operand is BoundMemberAccess { Member: NavigationMember { Navigation: { IsInverse: false, Relation.IsEnforced: true } navigation } } access)
       {
          RowValue owner = (RowValue)Value(access.Target);

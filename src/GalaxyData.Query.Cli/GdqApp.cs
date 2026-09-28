@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 using GalaxyData.Query.Binding;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Execution;
-using GalaxyData.Query.Planning;
+using GalaxyData.Query.Explain;
 
 namespace GalaxyData.Query.Cli;
 
@@ -21,7 +21,8 @@ internal sealed class Settings
 
    public bool ShowSql { get; set; }
 
-   public bool ShowPlan { get; set; }
+   /// <summary>Print the explain (plan, columns with lineage and links, SQL) before the rows.</summary>
+   public bool ShowExplain { get; set; }
 
    public int MaxRows { get; set; } = 1000;
 }
@@ -73,14 +74,19 @@ internal static class GdqApp
       Option<bool> sql = new("--sql") { Description = "Print the SQL each source runs." };
       Option<int> maxRows = new("--max-rows") { Description = "Print at most this many rows.", DefaultValueFactory = _ => 1000 };
       Option<FileInfo?> file = new("--file", "-f") { Description = "Read the query from a file." };
+      Option<bool> verbose = new("--verbose", "-v") { Description = "Also print the plan as lowered and after each optimizer phase." };
       Argument<string?> query = new("query") { Description = "The query.", Arity = ArgumentArity.ZeroOrOne };
       Argument<string?> filter = new("filter") { Description = "Only entities whose names contain this.", Arity = ArgumentArity.ZeroOrOne };
 
       Command run = new("run", "Run a query and print its rows.") { sources, overlay, parameters, format, sql, maxRows, file, query };
-      Command explain = new("sql", "Print a query's plan, lineage and SQL without running it.") { sources, overlay, parameters, file, query };
+      Command sqlCommand = new("sql", "Print the SQL each source runs for a query, without running it.") { sources, overlay, parameters, file, query };
+      Command explain = new("explain", "Explain a query without running it: plan, columns with lineage, links and edit targets, and SQL.")
+      {
+         sources, overlay, parameters, file, verbose, query,
+      };
       Command schema = new("schema", "List the entities of the catalog with their columns and navigations.") { sources, overlay, filter };
       Command repl = new("repl", "Run queries interactively.") { sources, overlay, parameters, format, maxRows };
-      RootCommand root = new("gdq: query SQLite and DuckDB databases with the GalaxyData query language.") { run, explain, schema, repl };
+      RootCommand root = new("gdq: query SQLite and DuckDB databases with the GalaxyData query language.") { run, sqlCommand, explain, schema, repl };
 
       run.SetAction((parse, token) => Guarded(error, async () =>
       {
@@ -89,11 +95,21 @@ internal static class GdqApp
          Settings settings = new() { Format = parse.GetValue(format), ShowSql = parse.GetValue(sql), MaxRows = parse.GetValue(maxRows) };
          return await ExecuteAsync(session, text, settings, output, error, token);
       }));
+      sqlCommand.SetAction((parse, token) => Guarded(error, async () =>
+      {
+         string text = await QueryText(parse.GetValue(query), parse.GetValue(file), token);
+         await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), parse.GetValue(parameters) ?? [], token);
+         PreparedQuery prepared = session.Engine.Prepare(text, session.Parameters);
+         Output.Diagnostics(error, text, prepared.Diagnostics);
+         if (!prepared.Success) { return 1; }
+         Output.Fragments(output, prepared);
+         return 0;
+      }));
       explain.SetAction((parse, token) => Guarded(error, async () =>
       {
          string text = await QueryText(parse.GetValue(query), parse.GetValue(file), token);
          await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), parse.GetValue(parameters) ?? [], token);
-         return Explain(session, text, output, error);
+         return Explain(session, text, parse.GetValue(verbose), output);
       }));
       schema.SetAction((parse, token) => Guarded(error, async () =>
       {
@@ -143,8 +159,8 @@ internal static class GdqApp
       PreparedQuery prepared = session.Engine.Prepare(text, session.Parameters);
       Output.Diagnostics(error, text, prepared.Diagnostics);
       if (!prepared.Success) { return 1; }
-      if (settings.ShowPlan) { PrintPlan(output, prepared); }
-      if (settings.ShowSql) { Output.Fragments(output, prepared); }
+      if (settings.ShowExplain) { output.WriteLine(ExplainTextRenderer.Render(prepared.Explain())); }
+      else if (settings.ShowSql) { Output.Fragments(output, prepared); }
       try
       {
          await using QueryResult result = await prepared.ExecuteAsync(cancellationToken);
@@ -174,25 +190,12 @@ internal static class GdqApp
       }
    }
 
-   public static int Explain(Session session, string text, TextWriter output, TextWriter error)
+   /// <summary>Explains a query; 1 when it doesn't bind or plan (the explain says why).</summary>
+   public static int Explain(Session session, string text, bool verbose, TextWriter output)
    {
       PreparedQuery prepared = session.Engine.Prepare(text, session.Parameters);
-      Output.Diagnostics(error, text, prepared.Diagnostics);
-      if (!prepared.Success) { return 1; }
-      PrintPlan(output, prepared);
-      Output.Fragments(output, prepared);
-      return 0;
-   }
-
-   private static void PrintPlan(TextWriter output, PreparedQuery prepared)
-   {
-      output.WriteLine("-- plan");
-      foreach (string line in PlanPrinter.Print(prepared.Plan!.Root).Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
-      {
-         output.WriteLine("-- " + line);
-      }
-      output.WriteLine("-- lineage");
-      Output.Lineage(output, prepared.Schema!);
+      output.Write(ExplainTextRenderer.Render(prepared.Explain(verbose)));
+      return prepared.Success ? 0 : 1;
    }
 }
 

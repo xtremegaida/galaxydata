@@ -214,7 +214,7 @@ internal sealed partial class BinderRun
       BoundNode bound = BindNode(statement, root);
       return bound switch
       {
-         BoundQuery or BoundExpr { IsScalar: true } => bound,
+         BoundQuery or BoundExpr { IsScalar: true } or BoundExpr { Type: RecordBoundType } => bound,
          BoundNamespace ns => throw Error(statement, DiagnosticCodes.NotAValue,
             $"'{Describe(ns.Namespace)}' is a namespace; name one of its entities, e.g. {Example(ns.Namespace)}"),
          _ => throw NotScalar((BoundExpr)bound, statement),

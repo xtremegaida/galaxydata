@@ -1,7 +1,7 @@
 ### shop.orders.where(status == 'open').select(id, total, who: customer.name, city: customer.city).orderBy(id)
-id | total | who | city
-1001 | 250.00 | 'Acme Ltd' | 'Cape Town'
-1003 | 12.25 | 'Beta Corp' | 'Johannesburg'
+id | total | who | city || id
+1001 | 250.00 | 'Acme Ltd' | 'Cape Town' || 1
+1003 | 12.25 | 'Beta Corp' | 'Johannesburg' || 2
 
 ### shop.orders.orderBy(desc(total)).take(2).select(id, total)
 id | total
@@ -18,39 +18,39 @@ id | total
 1003 | 12.25
 
 ### shop.customers.orderBy(city).select(name, city)
-name | city
-'Gamma Inc' | null
-'Acme Ltd' | 'Cape Town'
-'Beta Corp' | 'Johannesburg'
+name | city || id
+'Gamma Inc' | null || 3
+'Acme Ltd' | 'Cape Town' || 1
+'Beta Corp' | 'Johannesburg' || 2
 
 ### shop.customers.orderBy(desc(city)).select(name, city)
-name | city
-'Beta Corp' | 'Johannesburg'
-'Acme Ltd' | 'Cape Town'
-'Gamma Inc' | null
+name | city || id
+'Beta Corp' | 'Johannesburg' || 2
+'Acme Ltd' | 'Cape Town' || 1
+'Gamma Inc' | null || 3
 
 ### shop.orders.where(ship_address == null).select(id)
 id
 1004
 
 ### shop.orders.select(id, ship: ship_address.city, bill: bill_address.line1).orderBy(id)
-id | ship | bill
-1001 | 'Cape Town' | '1 Main Rd'
-1002 | 'Cape Town' | null
-1003 | 'Johannesburg' | '9 High St'
-1004 | null | null
+id | ship | bill || id | id
+1001 | 'Cape Town' | '1 Main Rd' || 1 | 1
+1002 | 'Cape Town' | null || 1 | null
+1003 | 'Johannesburg' | '9 High St' || 2 | 2
+1004 | null | null || null | null
 
 ### shop.orders.where(customer.city == 'Cape Town').select(id, customer.name).orderBy(id)
-id | name
-1001 | 'Acme Ltd'
-1002 | 'Acme Ltd'
+id | name || id
+1001 | 'Acme Ltd' || 1
+1002 | 'Acme Ltd' || 1
 
 ### shop.order_lines.select(order_id, line_no, city: order.customer.city).orderBy(order_id, line_no)
-order_id | line_no | city
-1001 | 1 | 'Cape Town'
-1001 | 2 | 'Cape Town'
-1002 | 1 | 'Cape Town'
-1003 | 1 | 'Johannesburg'
+order_id | line_no | city || id
+1001 | 1 | 'Cape Town' || 1
+1001 | 2 | 'Cape Town' || 1
+1002 | 1 | 'Cape Town' || 1
+1003 | 1 | 'Johannesburg' || 2
 
 ### shop.order_lines.select(order_id, line_no, amount: qty * price, share: qty / 2, r: round(price, 1)).orderBy(order_id, line_no)
 order_id | line_no | amount | share | r
@@ -60,10 +60,10 @@ order_id | line_no | amount | share | r
 1003 | 1 | 12.25 | 2.5 | 2.50
 
 ### shop.customers.select(name, label: name + ' (' + (city ?? 'unknown') + ')', size: credit_limit > 1000 ? 'big' : 'small').orderBy(name)
-name | label | size
-'Acme Ltd' | 'Acme Ltd (Cape Town)' | 'big'
-'Beta Corp' | 'Beta Corp (Johannesburg)' | 'small'
-'Gamma Inc' | 'Gamma Inc (unknown)' | 'small'
+name | label | size || id
+'Acme Ltd' | 'Acme Ltd (Cape Town)' | 'big' || 1
+'Beta Corp' | 'Beta Corp (Johannesburg)' | 'small' || 2
+'Gamma Inc' | 'Gamma Inc (unknown)' | 'small' || 3
 
 ### shop.customers.select(n: upper(name), l: length(name), f: left(name, 3), r: right(name, 3), s: substring(name, 2, 3), i: indexOf(name, ' ')).orderBy(n)
 n | l | f | r | s | i
@@ -72,21 +72,21 @@ n | l | f | r | s | i
 'GAMMA INC' | 9 | 'Gam' | 'Inc' | 'amm' | 6
 
 ### shop.customers.where(startsWith(name, 'Ac') or endsWith(name, 'Inc') or contains(name, 'eta')).select(name).orderBy(name)
-name
-'Acme Ltd'
-'Beta Corp'
-'Gamma Inc'
+name || id
+'Acme Ltd' || 1
+'Beta Corp' || 2
+'Gamma Inc' || 3
 
 ### shop.customers.where(startsWith(name, 'ac') or contains(name, 'ETA')).select(name)
-name
+name || id
 
 ### shop.customers.where(icontains(name, 'CORP')).select(name)
-name
-'Beta Corp'
+name || id
+'Beta Corp' || 2
 
 ### shop.customers.where(like(name, '%Ltd')).select(name)
-name
-'Acme Ltd'
+name || id
+'Acme Ltd' || 1
 
 ### shop.orders.select(id, y: year(order_date), m: month(order_date), d: day(order_date), plus: addDays(order_date, 30), next: addMonths(order_date, 1), days: daysBetween(order_date, toDate('2026-03-01'))).orderBy(id)
 id | y | m | d | plus | next | days
@@ -118,13 +118,13 @@ id
 1002
 
 ### shop.customers.where(credit_limit == null).select(name)
-name
-'Gamma Inc'
+name || id
+'Gamma Inc' || 3
 
 ### shop.addresses.select(line1, who: customer.name).orderBy(line1)
-line1 | who
-'1 Main Rd' | 'Acme Ltd'
-'9 High St' | 'Beta Corp'
+line1 | who || id | id
+'1 Main Rd' | 'Acme Ltd' || 1 | 1
+'9 High St' | 'Beta Corp' || 2 | 2
 
 ### big := shop.orders.where(total > 50); big.select(id, total).orderBy(id)
 id | total
@@ -175,10 +175,10 @@ id | same | before
 1004 | false | false
 
 ### shop.customers.select(name, l: left(name, $n), d: addDays(toDate('2026-01-01'), $n)).orderBy(name)
-name | l | d
-'Acme Ltd' | 'Acm' | 2026-01-04
-'Beta Corp' | 'Bet' | 2026-01-04
-'Gamma Inc' | 'Gam' | 2026-01-04
+name | l | d || id
+'Acme Ltd' | 'Acm' | 2026-01-04 || 1
+'Beta Corp' | 'Bet' | 2026-01-04 || 2
+'Gamma Inc' | 'Gam' | 2026-01-04 || 3
 
 ### shop.orders.groupBy(customer_id).select(customer_id: key, spend: sum(total), orders: count()).orderBy(customer_id)
 customer_id | spend | orders
@@ -193,29 +193,29 @@ name | count | total
 'Gamma Inc' | 1 | 0.00
 
 ### x := shop.orders.where(total > 3); shop.customers.where(cust => x.any(order => cust.id == order.customer_id)).select(name).orderBy(name)
-name
-'Acme Ltd'
-'Beta Corp'
+name || id
+'Acme Ltd' || 1
+'Beta Corp' || 2
 
 ### shop.customers.select(name, n: addresses.count(), orders: orders.count(), spend: orders.sum(total), last: orders.max(order_date)).orderBy(name)
-name | n | orders | spend | last
-'Acme Ltd' | 1 | 2 | 349.50 | 2026-01-09
-'Beta Corp' | 1 | 1 | 12.25 | 2026-02-01
-'Gamma Inc' | 0 | 1 | 0.00 | 2026-02-14
+name | n | orders | spend | last || id
+'Acme Ltd' | 1 | 2 | 349.50 | 2026-01-09 || 1
+'Beta Corp' | 1 | 1 | 12.25 | 2026-02-01 || 2
+'Gamma Inc' | 0 | 1 | 0.00 | 2026-02-14 || 3
 
 ### shop.customers.where(not orders.any(status == 'open')).select(name)
-name
-'Gamma Inc'
+name || id
+'Gamma Inc' || 3
 
 ### shop.customers.where(c => shop.orders.all(o => o.customer_id != c.id or o.total > 50)).select(name).orderBy(name)
-name
-'Acme Ltd'
+name || id
+'Acme Ltd' || 1
 
 ### shop.customers.select(name, big: orders.any(total > 100)).orderBy(name)
-name | big
-'Acme Ltd' | true
-'Beta Corp' | false
-'Gamma Inc' | false
+name | big || id
+'Acme Ltd' | true || 1
+'Beta Corp' | false || 2
+'Gamma Inc' | false || 3
 
 ### shop.orders.where(customer_id in shop.customers.where(city == 'Cape Town').select(id)).select(id).orderBy(id)
 id
@@ -236,10 +236,10 @@ status | n | mean | big | all
 'open' | 2 | 131.125 | true | true
 
 ### shop.orders.groupBy(customer).select(customer.name, n: count(), total: sum(total)).orderBy(name)
-name | n | total
-'Acme Ltd' | 2 | 349.50
-'Beta Corp' | 1 | 12.25
-'Gamma Inc' | 1 | 0.00
+name | n | total || id
+'Acme Ltd' | 2 | 349.50 || 1
+'Beta Corp' | 1 | 12.25 || 2
+'Gamma Inc' | 1 | 0.00 || 3
 
 ### shop.orders.groupBy(y: year(order_date), m: month(order_date)).select(y, m, n: count()).orderBy(y, m)
 y | m | n
@@ -257,18 +257,18 @@ n | total | low | high
 4 | 361.75 | 0.00 | 250.00
 
 ### shop.orders.leftJoin(shop.addresses, outer.bill_address_id == inner.id, o: outer, a: inner).select(o.id, line: a.line1).orderBy(id)
-id | line
-1001 | '1 Main Rd'
-1002 | null
-1003 | '9 High St'
-1004 | null
+id | line || id
+1001 | '1 Main Rd' || 1
+1002 | null || null
+1003 | '9 High St' || 2
+1004 | null || null
 
 ### shop.customers.selectMany(orders, who: outer.name, total: inner.total).orderBy(who, total)
-who | total
-'Acme Ltd' | 99.50
-'Acme Ltd' | 250.00
-'Beta Corp' | 12.25
-'Gamma Inc' | 0.00
+who | total || id | id
+'Acme Ltd' | 99.50 || 1 | 1002
+'Acme Ltd' | 250.00 || 1 | 1001
+'Beta Corp' | 12.25 || 2 | 1003
+'Gamma Inc' | 0.00 || 3 | 1004
 
 ### shop.orders.select(id, status).union(shop.orders.where(total > 50).select(status, id)).orderBy(id)
 id | status
@@ -294,14 +294,14 @@ customer_id
 3
 
 ### shop.customers.select(name, n: addresses.countDistinct(city)).orderBy(name)
-name | n
-'Acme Ltd' | 1
-'Beta Corp' | 1
-'Gamma Inc' | 0
+name | n || id
+'Acme Ltd' | 1 || 1
+'Beta Corp' | 1 || 2
+'Gamma Inc' | 0 || 3
 
 ### shop.customers.where(addresses.countDistinct(city) == 0).select(name)
-name
-'Gamma Inc'
+name || id
+'Gamma Inc' || 3
 
 ### shop.orders.take(2).count()
 value
@@ -316,20 +316,20 @@ value
 8
 
 ### shop.customers.where(shop.orders.concat(shop.orders).any()).select(name).orderBy(name)
-name
-'Acme Ltd'
-'Beta Corp'
-'Gamma Inc'
+name || id
+'Acme Ltd' || 1
+'Beta Corp' || 2
+'Gamma Inc' || 3
 
 ### shop.orders.where(total > 100000).groupBy().select(n: count()).count()
 value
 1
 
 ### shop.customers.where(shop.orders.where(total > 100000).groupBy().select(n: count()).any()).select(name).orderBy(name)
-name
-'Acme Ltd'
-'Beta Corp'
-'Gamma Inc'
+name || id
+'Acme Ltd' || 1
+'Beta Corp' || 2
+'Gamma Inc' || 3
 
 ### shop.orders.leftJoin(shop.customers, outer.customer_id == inner.id and inner.city == 'Cape Town', o: outer, c: inner).where(between(o.total, c.credit_limit, 10) == false).select(o.id).orderBy(id)
 id
@@ -338,10 +338,10 @@ id
 1003
 
 ### shop.customers.select(name, s: orders.sum(total * credit_limit)).orderBy(name)
-name | s
-'Acme Ltd' | 1747500
-'Beta Corp' | 12250
-'Gamma Inc' | 0
+name | s || id
+'Acme Ltd' | 1747500 || 1
+'Beta Corp' | 12250 || 2
+'Gamma Inc' | 0 || 3
 
 ### shop.orders.groupBy(customer_id).extend(n: count()).select(customer_id, m: shop.customers.where(c => c.credit_limit > n).count()).orderBy(customer_id)
 customer_id | m
@@ -354,10 +354,10 @@ value
 3
 
 ### shop.customers.select(name, n: orders.count(ship_address)).orderBy(name)
-name | n
-'Acme Ltd' | 2
-'Beta Corp' | 1
-'Gamma Inc' | 0
+name | n || id
+'Acme Ltd' | 2 || 1
+'Beta Corp' | 1 || 2
+'Gamma Inc' | 0 || 3
 
 ### shop.customers.groupBy(city).select(city, s: sum(orders.count())).orderBy(city)
 city | s
@@ -366,11 +366,55 @@ null | 1
 'Johannesburg' | 1
 
 ### shop.customers.extend(k: $n).select(name, l: left(name, k), d: addDays(toDate('2026-01-01'), k)).orderBy(name)
-name | l | d
-'Acme Ltd' | 'Acm' | 2026-01-04
-'Beta Corp' | 'Bet' | 2026-01-04
-'Gamma Inc' | 'Gam' | 2026-01-04
+name | l | d || id
+'Acme Ltd' | 'Acm' | 2026-01-04 || 1
+'Beta Corp' | 'Bet' | 2026-01-04 || 2
+'Gamma Inc' | 'Gam' | 2026-01-04 || 3
 
 ### 1 + 2 * 3
 value
 7
+
+### shop.orders.select(id, total, status).orderBy(desc(total)).first()
+id | total | status
+1001 | 250.00 | 'open'
+
+### shop.orders.where(status == 'open').orderBy(order_date).firstOrDefault().customer.name
+value
+'Acme Ltd'
+
+### shop.customers.select(name, latest: orders.orderBy(desc(order_date)).first(), last_total: orders.orderBy(desc(order_date)).firstOrDefault().total).orderBy(name)
+name | latest | last_total || id | id
+'Acme Ltd' | 'shipped' | 99.50 || 1 | 1002
+'Beta Corp' | 'open' | 12.25 || 2 | 1003
+'Gamma Inc' | 'cancelled' | 0.00 || 3 | 1004
+
+### shop.customers.where(orders.orderBy(order_date).firstOrDefault(status == 'open') == null).select(name).orderBy(name)
+name || id
+'Gamma Inc' || 3
+
+### shop.customers.select(name, lines: orders.orderBy(id).first().order_lines.count(), city: orders.orderBy(id).first().ship_address.city).orderBy(name)
+name | lines | city || id
+'Acme Ltd' | 2 | 'Cape Town' || 1
+'Beta Corp' | 1 | 'Johannesburg' || 2
+'Gamma Inc' | 0 | null || 3
+
+### shop.orders.select(id, c: customer, a: ship_address).orderBy(id)
+id | c | a || id | id
+1001 | 'Acme Ltd' | '1 Main Rd' || 1 | 1
+1002 | 'Acme Ltd' | '1 Main Rd' || 1 | 1
+1003 | 'Beta Corp' | '9 High St' || 2 | 2
+1004 | 'Gamma Inc' | null || 3 | null
+
+### shop.order_lines.select(qty, price).orderBy(qty, price)
+qty | price || order_id | line_no
+1 | 50.00 || 1001 | 2
+1 | 99.50 || 1002 | 1
+2 | 100.00 || 1001 | 1
+5 | 2.45 || 1003 | 1
+
+### shop.orders.groupBy(customer).select(customer, n: count()).orderBy(customer.name)
+customer | n || id
+'Acme Ltd' | 2 || 1
+'Beta Corp' | 1 || 2
+'Gamma Inc' | 1 || 3

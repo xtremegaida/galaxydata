@@ -78,6 +78,11 @@ public sealed class BinderReportTests
          "sales.orders.select(id, status).union(sales.orders.where(total > 100).select(status, id))",
          "sales.orders.where(total > 100).concat(sales.orders.where(status == 'open'))",
          "sales.orders.select(customer_id).intersect(sales.customers.select(customer_id: id))",
+         "sales.orders.orderBy(desc(total)).first()",
+         "sales.orders.firstOrDefault(status == 'open').customer",
+         "sales.customers.select(name, latest: orders_by_customer.orderBy(desc(order_date)).first())",
+         "sales.customers.where(c => c.orders_by_customer.orderBy(desc(order_date)).firstOrDefault(o => o.status == 'open').total > 100)",
+         "sales.orders.groupBy(status).orderBy(desc(count())).first().status",
       ];
       QueryReport report = new();
       foreach (string query in queries) { report.Case(query, Bind(query)); }
@@ -147,7 +152,13 @@ public sealed class BinderReportTests
          "sales.orders.select(id, customer).union(sales.orders.select(id, customer))",
          "sales.orders.where(total in sales.customers)",
          "sales.customers.select(n: orders_by_customer.sum())",
-         "sales.orders.first()",
+         "sales.orders.first(status == 'open', total > 1)",
+         "sales.orders.first().where(total > 1)",
+         "sales.orders.first().totl",
+         "sales.orders.groupBy(status).first().count()",
+         "sales.orders.groupBy(status).select(status, f: total.first())",
+         "sales.orders.groupBy(x: sales.customers.first())",
+         "sales.orders.groupBy(customer.orders_by_customer.first().customer)",
          "sales.customers.selectMany(name)",
          "sales.orders.groupBy(status).select(status, x: sales.customers.where(c => c.credit_limit > count()).count())",
          "sales.orders.groupBy(k: customer_id).select(k, s: sum(k))",

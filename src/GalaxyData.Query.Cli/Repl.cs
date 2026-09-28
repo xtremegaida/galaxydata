@@ -21,7 +21,8 @@ internal sealed class Repl(Session session, TextReader input, TextWriter output,
       Type a query and press Enter; it runs once it is complete. An empty line runs what you have typed, and a
       line starting with '.' continues the last query: shop.orders, then .where(total > 100).
         :sql              show or hide the SQL each source runs
-        :plan             show or hide the plan and lineage
+        :explain [query]  explain a query (or the last one) without running it
+        :plan             show or hide the explain of each query as it runs
         :schema [text]    list entities, or those whose names contain text
         :param name=value set a parameter, used as $name
         :params           list the parameters
@@ -35,7 +36,6 @@ internal sealed class Repl(Session session, TextReader input, TextWriter output,
       string sources = string.Join(", ", session.Engine.Catalog.Sources.Select(s => $"{s.Alias} ({s.ProviderKind})"));
       await output.WriteLineAsync($"gdq: {sources}. Type :help for commands.");
       StringBuilder buffer = new();
-      string? last = null;
       while (true)
       {
          await output.WriteAsync(buffer.Length == 0 ? "gdq> " : "...> ");
@@ -47,7 +47,7 @@ internal sealed class Repl(Session session, TextReader input, TextWriter output,
             if (trimmed.Length == 0) { continue; }
             if (trimmed.StartsWith(':'))
             {
-               if (!await CommandAsync(trimmed)) { break; }
+               if (!await CommandAsync(trimmed, cancellationToken)) { break; }
                continue;
             }
             if (trimmed.StartsWith('.') && last != null) { buffer.AppendLine(last); }
@@ -74,7 +74,9 @@ internal sealed class Repl(Session session, TextReader input, TextWriter output,
       return parsed.Diagnostics.Any(d => d.IsError && d.Start >= text.Length);
    }
 
-   private async Task<bool> CommandAsync(string line)
+   private string? last;
+
+   private async Task<bool> CommandAsync(string line, CancellationToken cancellationToken)
    {
       int space = line.IndexOf(' ', StringComparison.Ordinal);
       string command = (space < 0 ? line : line[..space]).ToLowerInvariant();
@@ -91,9 +93,21 @@ internal sealed class Repl(Session session, TextReader input, TextWriter output,
             await output.WriteLineAsync(settings.ShowSql ? "Showing SQL." : "Not showing SQL.");
             break;
          case ":plan":
-            settings.ShowPlan = !settings.ShowPlan;
-            await output.WriteLineAsync(settings.ShowPlan ? "Showing plans." : "Not showing plans.");
+            settings.ShowExplain = !settings.ShowExplain;
+            await output.WriteLineAsync(settings.ShowExplain ? "Explaining queries as they run." : "Not explaining queries.");
             break;
+         case ":explain":
+         {
+            string? text = argument.Length > 0 ? argument : last;
+            if (text == null)
+            {
+               await error.WriteLineAsync("gdq: there is no query to explain yet; give one, as in :explain shop.orders");
+               break;
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            GdqApp.Explain(session, text, verbose: false, output);
+            break;
+         }
          case ":schema":
             Output.Catalog(output, session.Engine.Catalog, argument.Length == 0 ? null : argument);
             break;

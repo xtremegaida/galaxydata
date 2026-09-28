@@ -70,15 +70,52 @@ public sealed class QueryEngine
       ArgumentNullException.ThrowIfNull(request);
       QueryParameters parameters = request.Parameters ?? QueryParameters.Empty;
       BoundProgram program = Binder.Bind(request.Text, Catalog, parameters);
-      List<QueryDiagnostic> diagnostics = [.. program.Diagnostics];
-      if (!program.Success) { return new PreparedQuery(this, request.Text, parameters, diagnostics, null, []); }
+      if (!program.Success) { return new PreparedQuery(this, request, parameters, program, [.. program.Diagnostics], null, []); }
+      LogicalPlan plan;
+      try
+      {
+         plan = Lowerer.Lower(program, request.Paging?.Offset, request.Paging?.Limit);
+      }
+      catch (NotSupportedException e)
+      {
+         return Unplanned(request, parameters, program, e);
+      }
+      return Plan(request, parameters, program, plan);
+   }
 
-      LogicalPlan plan = Lowerer.Lower(program, request.Paging?.Offset, request.Paging?.Limit);
+   /// <summary>A query that binds but can't be planned yet: the reason as a diagnostic.</summary>
+   private PreparedQuery Unplanned(QueryRequest request, QueryParameters parameters, BoundProgram program, NotSupportedException e) =>
+      new(this, request, parameters, program,
+          [.. program.Diagnostics, QueryDiagnostic.Error(DiagnosticCodes.NotTranslatable, $"This query can't be planned yet: {e.Message}", 0, request.Text.Length)],
+          null, []);
+
+   /// <summary>The count of a prepared query's rows, from the same binding: see <see cref="PreparedQuery.ForCount"/>.</summary>
+   internal PreparedQuery PrepareCount(PreparedQuery query)
+   {
+      QueryRequest request = new(query.Text) { Parameters = query.Parameters };
+      if (query.Program is not { Success: true } program) { return new PreparedQuery(this, request, query.Parameters, query.Program, query.Diagnostics, null, []) { IsCount = true }; }
+      LogicalPlan plan;
+      try
+      {
+         plan = Lowerer.LowerCount(program);
+      }
+      catch (NotSupportedException e)
+      {
+         return Unplanned(request, query.Parameters, program, e);
+      }
+      PreparedQuery count = Plan(request, query.Parameters, program, plan);
+      count.IsCount = true;
+      return count;
+   }
+
+   private PreparedQuery Plan(QueryRequest request, QueryParameters parameters, BoundProgram program, LogicalPlan plan)
+   {
+      List<QueryDiagnostic> diagnostics = [.. program.Diagnostics];
       if (Options.Optimize) { plan = Planning.Optimizer.PlanOptimizer.Optimize(plan); }
       List<QueryFragment> fragments = [];
       QueryFragment? fragment = Fragment(request.Text, plan, diagnostics);
       if (fragment != null) { fragments.Add(fragment); }
-      return new PreparedQuery(this, request.Text, parameters, diagnostics, plan, fragments);
+      return new PreparedQuery(this, request, parameters, program, diagnostics, plan, fragments);
    }
 
    public async Task<QueryResult> ExecuteAsync(QueryRequest request, CancellationToken cancellationToken = default) =>

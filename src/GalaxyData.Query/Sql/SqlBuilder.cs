@@ -301,16 +301,21 @@ internal sealed class SqlBuilder
       Frame frame = Build(aggregate.Input, below);
       if (frame.HasPaging || frame.DistinctColumns != null || frame.Aggregated) { frame = Wrap(frame, aggregate.Input.Output, below); }
       bool computed = aggregate.Keys.Any(k => k.Expr is not PlanColumnRef reference || !(frame.Columns.TryGetValue(reference.Column, out SqlExpr? sql) && sql is SqlColumn));
-      // Some databases (SQL Server) take no subquery inside an aggregate; such arguments are computed first too.
-      Dictionary<AggregateItem, PlanColumn> arguments = aggregates
-         .Where(a => a.Argument != null && PlanRewriter.ContainsSubquery(a.Argument))
-         .ToDictionary(a => a, a => new PlanColumn(0, a.Column.Name + "_value", a.Argument!.Type, Results.ColumnLineage.Unknown));
+      // Some databases (SQL Server) take no subquery inside an aggregate; such arguments are computed first too. The
+      // SQL tells: a column of the frame may be a subquery (a projected first().total).
+      Dictionary<AggregateItem, SqlExpr> translated = aggregates.Where(a => a.Argument != null).ToDictionary(a => a, a => Value(a.Argument!, frame.Columns));
+      Dictionary<AggregateItem, PlanColumn> arguments = translated
+         .Where(a => HasSubquery(a.Value))
+         .ToDictionary(a => a.Key, a => new PlanColumn(0, a.Key.Column.Name + "_value", a.Key.Argument!.Type, Results.ColumnLineage.Unknown));
       if (computed || arguments.Count > 0)
       {
          // Compute the keys in a derived table, with the aggregated columns passed through.
          List<(PlanColumn, SqlExpr)> extra = aggregate.Keys.Where(k => !k.IsPassThrough).Select(k => (k.Column, Value(k.Expr, frame.Columns))).ToList();
-         extra.AddRange(arguments.Select(a => (a.Value, Value(a.Key.Argument!, frame.Columns))));
-         frame = Wrap(frame, aggregate.Input.Output, below, extra);
+         extra.AddRange(arguments.Select(a => (a.Value, translated[a.Key])));
+         // Above, the grouping reads the computed values and what the keys and other arguments pass through.
+         HashSet<PlanColumn> kept = With([], aggregate.Keys.Where(k => k.IsPassThrough).Select(k => k.Expr)
+            .Concat(aggregates.Where(a => !arguments.ContainsKey(a)).Select(a => a.Argument).OfType<PlanExpr>()));
+         frame = Wrap(frame, aggregate.Input.Output, kept, extra);
       }
       Dictionary<PlanColumn, SqlExpr> columns = [];
       foreach (ProjectItem key in aggregate.Keys)
@@ -602,6 +607,23 @@ internal sealed class SqlBuilder
    #endregion
 
    private static SqlExpr? AndAlso(SqlExpr? a, SqlExpr? b) => a == null ? b : b == null ? a : new SqlBinary(SqlBinaryOp.And, a, b);
+
+   private static bool HasSubquery(SqlExpr expr) => expr switch
+   {
+      SqlExists or SqlScalarSubquery or SqlInSubquery => true,
+      SqlUnary unary => HasSubquery(unary.Operand),
+      SqlBinary binary => HasSubquery(binary.Left) || HasSubquery(binary.Right),
+      SqlIsNull isNull => HasSubquery(isNull.Operand),
+      SqlIn inList => HasSubquery(inList.Operand) || inList.Items.Any(HasSubquery),
+      SqlBetween between => HasSubquery(between.Operand) || HasSubquery(between.Low) || HasSubquery(between.High),
+      SqlLike like => HasSubquery(like.Operand) || HasSubquery(like.Pattern),
+      SqlCase caseExpr => caseExpr.Whens.Any(w => HasSubquery(w.Condition) || HasSubquery(w.Result)) || (caseExpr.Else != null && HasSubquery(caseExpr.Else)),
+      SqlAggregate aggregate => aggregate.Argument != null && HasSubquery(aggregate.Argument),
+      SqlCast cast => HasSubquery(cast.Operand),
+      SqlFunctionCall call => call.Arguments.Any(HasSubquery),
+      SqlTemplate template => template.Arguments.Any(HasSubquery),
+      _ => false,
+   };
 
    private static bool ReadsColumns(SqlExpr expr) => expr switch
    {

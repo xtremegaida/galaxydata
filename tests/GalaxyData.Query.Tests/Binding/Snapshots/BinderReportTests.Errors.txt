@@ -288,10 +288,40 @@ GDQ2005 Error: sum(...) needs the value to aggregate, as in sum(customer_id)
   sales.customers.select(n: orders_by_customer.sum())
                                                ^^^
 
-### sales.orders.first()
-GDQ2099 Error: first(...) is not supported yet
-  sales.orders.first()
-               ^^^^^
+### sales.orders.first(status == 'open', total > 1)
+GDQ2005 Error: first(...) takes at most one condition, as in first(status == 'open')
+  sales.orders.first(status == 'open', total > 1)
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+### sales.orders.first().where(total > 1)
+GDQ2003 Error: 'sales.orders.first()' is one row, not a query, so it has no methods; call where(...) before first(), or on one of its columns
+  sales.orders.first().where(total > 1)
+                       ^^^^^
+
+### sales.orders.first().totl
+GDQ2001 Error: sales.orders has no 'totl'. Did you mean 'total'?. It has id, customer_id, status, total, order_date, shipped_at, ship_customer_id, attachment, customer, ship_customer, order_lines
+  sales.orders.first().totl
+  ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+### sales.orders.groupBy(status).first().count()
+GDQ2003 Error: 'sales.orders.groupBy(status).first()' is one row, not a query, so it has no methods; call count(...) before first(), or on one of its columns
+  sales.orders.groupBy(status).first().count()
+                                       ^^^^^
+
+### sales.orders.groupBy(status).select(status, f: total.first())
+GDQ2003 Error: A group's collection has no method 'first'; it can be aggregated with count(), sum(...), min(...), max(...), avg(...), any(...) or all(...)
+  sales.orders.groupBy(status).select(status, f: total.first())
+                                                       ^^^^^
+
+### sales.orders.groupBy(x: sales.customers.first())
+GDQ2008 Error: 'sales.customers.first()' is a row from first(), which can't be a group key; group by one of its values, e.g. sales.customers.first().name
+  sales.orders.groupBy(x: sales.customers.first())
+                          ^^^^^^^^^^^^^^^^^^^^^^^
+
+### sales.orders.groupBy(customer.orders_by_customer.first().customer)
+GDQ2008 Error: 'customer.orders_by_customer.first().customer' is a row from first(), which can't be a group key; group by one of its values, e.g. customer.orders_by_customer.first().customer.name
+  sales.orders.groupBy(customer.orders_by_customer.first().customer)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ### sales.customers.selectMany(name)
 GDQ2016 Error: selectMany(...) flattens a collection, such as a collection navigation; 'name' is not one

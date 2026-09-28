@@ -95,6 +95,14 @@ public sealed class ExecutionTests
       "shop.customers.groupBy(city).select(city, s: sum(orders.count())).orderBy(city)",
       "shop.customers.extend(k: $n).select(name, l: left(name, k), d: addDays(toDate('2026-01-01'), k)).orderBy(name)",
       "1 + 2 * 3",
+      "shop.orders.select(id, total, status).orderBy(desc(total)).first()",
+      "shop.orders.where(status == 'open').orderBy(order_date).firstOrDefault().customer.name",
+      "shop.customers.select(name, latest: orders.orderBy(desc(order_date)).first(), last_total: orders.orderBy(desc(order_date)).firstOrDefault().total).orderBy(name)",
+      "shop.customers.where(orders.orderBy(order_date).firstOrDefault(status == 'open') == null).select(name).orderBy(name)",
+      "shop.customers.select(name, lines: orders.orderBy(id).first().order_lines.count(), city: orders.orderBy(id).first().ship_address.city).orderBy(name)",
+      "shop.orders.select(id, c: customer, a: ship_address).orderBy(id)",
+      "shop.order_lines.select(qty, price).orderBy(qty, price)",
+      "shop.orders.groupBy(customer).select(customer, n: count()).orderBy(customer.name)",
    ];
 
    private static readonly QueryParameters Parameters = new QueryParameters().Add("min", 50L).Add("since", "2026-01-06").Add("n", 3L);
@@ -117,7 +125,7 @@ public sealed class ExecutionTests
       {
          await using QueryResult result = await engine.ExecuteAsync(new QueryRequest(query) { Parameters = Parameters }, TestContext.Current.CancellationToken);
          IReadOnlyList<object?[]> rows = await result.ToListAsync(TestContext.Current.CancellationToken);
-         report.Append("### ").AppendLine(query).AppendLine(TestSources.Header(result.Schema)).AppendLine(TestSources.Format(rows));
+         report.Append("### ").AppendLine(query).AppendLine(TestSources.Header(result.Schema)).AppendLine(TestSources.Format(rows, result.Schema, hidden: true));
       }
       return report.ToString();
    }
@@ -144,14 +152,14 @@ public sealed class ExecutionTests
       prepared.Fragments.ShouldHaveSingleItem().Source.Alias.ShouldBe("shop");
 
       await using QueryResult result = await prepared.ExecuteAsync(TestContext.Current.CancellationToken);
-      result.Schema.Columns.Select(c => c.Name).ShouldBe(["id", "total", "who", "city"]);
+      result.Schema.VisibleColumns.Select(c => c.Name).ShouldBe(["id", "total", "who", "city"]);
       ResultColumn who = result.Schema.Columns[2];
       who.Lineage.Kind.ShouldBe(LineageKind.Direct);
       who.Lineage.NavigationPath.ShouldBe("customer");
       who.Lineage.Sources.ShouldHaveSingleItem().Column.ToString().ShouldBe("shop.customers.name");
 
       IReadOnlyList<object?[]> rows = await result.ToListAsync(TestContext.Current.CancellationToken);
-      TestSources.Format(rows).ShouldBe(
+      TestSources.Format(rows, result.Schema).ShouldBe(
          "1001 | 250.00 | 'Acme Ltd' | 'Cape Town'" + Environment.NewLine +
          "1003 | 12.25 | 'Beta Corp' | 'Johannesburg'" + Environment.NewLine);
       result.Stats.Rows.ShouldBe(2);
@@ -164,7 +172,7 @@ public sealed class ExecutionTests
       await using TestSources sources = await TestSources.SqliteShopAsync();
       QueryRequest request = new("shop.orders.orderBy(id).select(id)") { Paging = new PageRequest(1, 2) };
       await using QueryResult result = await sources.Engine().ExecuteAsync(request, TestContext.Current.CancellationToken);
-      TestSources.Format(await result.ToListAsync(TestContext.Current.CancellationToken)).ShouldBe($"1002{Environment.NewLine}1003{Environment.NewLine}");
+      (await TestSources.RowsAsync(result)).ShouldBe($"1002{Environment.NewLine}1003{Environment.NewLine}");
    }
 
    [Fact]
@@ -176,7 +184,7 @@ public sealed class ExecutionTests
       await using QueryResult result = await engine.ExecuteAsync(
          new QueryRequest("shop.orders.where(order_date < today()).select(id, at: now(), age: daysBetween(order_date, today())).take(1)"),
          TestContext.Current.CancellationToken);
-      TestSources.Format(await result.ToListAsync(TestContext.Current.CancellationToken)).ShouldBe($"1001 | 2026-03-01 09:30:00 | 55{Environment.NewLine}");
+      (await TestSources.RowsAsync(result)).ShouldBe($"1001 | 2026-03-01 09:30:00 | 55{Environment.NewLine}");
    }
 
    [Fact]
@@ -201,7 +209,7 @@ public sealed class ExecutionTests
       }
       QueryEngine lenient = sources.Engine(options: new QueryEngineOptions { LenientConversion = true });
       await using QueryResult result = await lenient.ExecuteAsync(new QueryRequest("log.events.orderBy(id)"), TestContext.Current.CancellationToken);
-      TestSources.Format(await result.ToListAsync(TestContext.Current.CancellationToken)).ShouldBe($"1 | 2026-01-05{Environment.NewLine}2 | null{Environment.NewLine}");
+      (await TestSources.RowsAsync(result)).ShouldBe($"1 | 2026-01-05{Environment.NewLine}2 | null{Environment.NewLine}");
    }
 
    [Fact]
@@ -241,7 +249,7 @@ public sealed class ExecutionTests
       QueryEngine engine = sources.Engine(options: new QueryEngineOptions { Clock = new FixedClock(new DateTimeOffset(2026, 3, 1, 9, 30, 0, TimeSpan.Zero)) });
       await using QueryResult result = await engine.ExecuteAsync(
          new QueryRequest("log.events.select(id, past: happened < now(), h: hour(happened), n: now()).orderBy(id)"), TestContext.Current.CancellationToken);
-      TestSources.Format(await result.ToListAsync(TestContext.Current.CancellationToken)).ShouldBe(
+      (await TestSources.RowsAsync(result)).ShouldBe(
          "1 | true | 9 | 2026-03-01 09:30:00" + Environment.NewLine +
          "2 | false | 10 | 2026-03-01 09:30:00" + Environment.NewLine);
    }
@@ -262,7 +270,7 @@ public sealed class ExecutionTests
       QueryEngine plain = sources.Engine(options: new QueryEngineOptions { Optimize = false });
       const string query = "shop.customers.select(name, n: orders.count(), spend: orders.sum(total), big: orders.any(total > 100)).orderBy(name)";
       await using QueryResult result = await plain.ExecuteAsync(new QueryRequest(query), TestContext.Current.CancellationToken);
-      TestSources.Format(await result.ToListAsync(TestContext.Current.CancellationToken)).ShouldBe(
+      (await TestSources.RowsAsync(result)).ShouldBe(
          "'Acme Ltd' | 2 | 349.50 | true" + Environment.NewLine +
          "'Beta Corp' | 1 | 12.25 | false" + Environment.NewLine +
          "'Gamma Inc' | 1 | 0.00 | false" + Environment.NewLine);

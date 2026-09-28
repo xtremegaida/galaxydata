@@ -24,26 +24,26 @@ Join semi: id#1 == customer_id#10
 
 ### sales.customers.where(not orders_by_customer.any() and city != null).select(name)
 -- lowered
-Project name#2
+Project name#2, id#1
   Filter not exists[1] and (city#3 is not null)
     [1] exists
       Filter customer_id#10 == id#1
         Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
     Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
 -- normalize: exists to semi join
-Project name#2
+Project name#2, id#1
   Filter city#3 is not null
     Join anti: customer_id#10 == id#1
       Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
       Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
 -- pushdown: push filter into join
-Project name#2
+Project name#2, id#1
   Join anti: customer_id#10 == id#1
     Filter city#3 is not null
       Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
     Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
 -- prune
-Project name#2
+Project name#2, id#1
   Join anti: customer_id#10 == id#1
     Filter city#3 is not null
       Scan sales.customers (id#1, name#2, city#3)
@@ -98,7 +98,7 @@ Join semi: customer_id#2 == id#9
 
 ### sales.customers.select(name, n: orders_by_customer.count(), spend: orders_by_customer.sum(total), last: orders_by_customer.max(order_date))
 -- lowered
-Project name#2, n#18 = value[1], spend#28 = value[2], last#38 = value[3]
+Project name#2, n#18 = value[1], spend#28 = value[2], last#38 = value[3], id#1
   [1] scalar
     Aggregate: count#17 = count(*)
       Filter customer_id#10 == id#1
@@ -113,19 +113,19 @@ Project name#2, n#18 = value[1], spend#28 = value[2], last#38 = value[3]
         Scan sales.orders (id#29, customer_id#30, status#31, total#32, order_date#33, shipped_at#34, ship_customer_id#35, attachment#36)
   Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
 -- normalize: aggregate to group join, aggregate to group join, aggregate to group join
-Project name#2, n#18 = coalesce(count#17, 0), spend#28 = coalesce(sum#27, 0), last#38 = max#37
+Project name#2, n#18 = coalesce(count#17, 0), spend#28 = coalesce(sum#27, 0), last#38 = max#37, id#1
   Join left: id#1 == customer_id#10
     Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
     Aggregate by customer_id#10: count#17 = count(*), sum#27 = sum(total#12), max#37 = max(order_date#13)
       Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
 -- pushdown
-Project name#2, n#18 = coalesce(count#17, 0), spend#28 = coalesce(sum#27, 0), last#38 = max#37
+Project name#2, n#18 = coalesce(count#17, 0), spend#28 = coalesce(sum#27, 0), last#38 = max#37, id#1
   Join left: id#1 == customer_id#10
     Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
     Aggregate by customer_id#10: count#17 = count(*), sum#27 = sum(total#12), max#37 = max(order_date#13)
       Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
 -- prune
-Project name#2, n#18 = coalesce(count#17, 0), spend#28 = coalesce(sum#27, 0), last#38 = max#37
+Project name#2, n#18 = coalesce(count#17, 0), spend#28 = coalesce(sum#27, 0), last#38 = max#37, id#1
   Join left: id#1 == customer_id#10
     Scan sales.customers (id#1, name#2)
     Aggregate by customer_id#10: count#17 = count(*), sum#27 = sum(total#12), max#37 = max(order_date#13)
@@ -133,7 +133,7 @@ Project name#2, n#18 = coalesce(count#17, 0), spend#28 = coalesce(sum#27, 0), la
 
 ### sales.customers.where(orders_by_customer.sum(total) > 100).select(name)
 -- lowered
-Project name#2
+Project name#2, id#1
   Filter value[1] > 100
     [1] scalar
       Aggregate: sum#17 = sum(total#12)
@@ -141,7 +141,7 @@ Project name#2
           Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
     Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
 -- normalize: aggregate to group join
-Project name#2
+Project name#2, id#1
   Project id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8
     Filter coalesce(sum#17, 0) > 100
       Join left: id#1 == customer_id#10
@@ -149,7 +149,7 @@ Project name#2
         Aggregate by customer_id#10: sum#17 = sum(total#12)
           Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
 -- pushdown
-Project name#2
+Project name#2, id#1
   Project id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8
     Filter coalesce(sum#17, 0) > 100
       Join left: id#1 == customer_id#10
@@ -157,58 +157,59 @@ Project name#2
         Aggregate by customer_id#10: sum#17 = sum(total#12)
           Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
 -- prune
-Project name#2
-  Filter coalesce(sum#17, 0) > 100
-    Join left: id#1 == customer_id#10
-      Scan sales.customers (id#1, name#2)
-      Aggregate by customer_id#10: sum#17 = sum(total#12)
-        Scan sales.orders (customer_id#10, total#12)
+Project name#2, id#1
+  Project id#1, name#2
+    Filter coalesce(sum#17, 0) > 100
+      Join left: id#1 == customer_id#10
+        Scan sales.customers (id#1, name#2)
+        Aggregate by customer_id#10: sum#17 = sum(total#12)
+          Scan sales.orders (customer_id#10, total#12)
 
 ### sales.customers.selectMany(orders_by_customer, who: outer.name, total: inner.total)
 -- lowered
-Project who#17 = name#2, total#12
+Project who#17 = name#2, total#12, id#1, id#9
   Join inner
     Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
     Filter customer_id#10 == id#1
       Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
 -- normalize: correlated join to join
-Project who#17 = name#2, total#12
+Project who#17 = name#2, total#12, id#1, id#9
   Join inner: customer_id#10 == id#1
     Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
     Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
 -- pushdown
-Project who#17 = name#2, total#12
+Project who#17 = name#2, total#12, id#1, id#9
   Join inner: customer_id#10 == id#1
     Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
     Scan sales.orders (id#9, customer_id#10, status#11, total#12, order_date#13, shipped_at#14, ship_customer_id#15, attachment#16)
 -- prune
-Project who#17 = name#2, total#12
+Project who#17 = name#2, total#12, id#1, id#9
   Join inner: customer_id#10 == id#1
     Scan sales.customers (id#1, name#2)
-    Scan sales.orders (customer_id#10, total#12)
+    Scan sales.orders (id#9, customer_id#10, total#12)
 
 ### sales.orders.select(id, who: customer.name, cid: customer_id).where(cid == 7 and who != 'x')
 -- lowered
 Filter (cid#18 == 7) and (who#17 != 'x')
-  Project id#1, who#17 = name#10, cid#18 = customer_id#2
+  Project id#1, who#17 = name#10, cid#18 = customer_id#2, id#9
     Join inner via customer: customer_id#2 == id#9
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
       Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 -- normalize
 Filter (cid#18 == 7) and (who#17 != 'x')
-  Project id#1, who#17 = name#10, cid#18 = customer_id#2
+  Project id#1, who#17 = name#10, cid#18 = customer_id#2, id#9
     Join inner via customer: customer_id#2 == id#9
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
       Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 -- pushdown: push filter through projection, push filter into join
-Project id#1, who#17 = name#10, cid#18 = customer_id#2
+Project id#1, who#17 = name#10, cid#18 = customer_id#2, id#9
   Join inner: customer_id#2 == id#9
     Filter customer_id#2 == 7
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
     Filter (name#10 != 'x') and (id#9 == 7)
       Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 -- prune
-Project id#1, who#17 = name#10, cid#18 = customer_id#2
+Project id#1, who#17 = name#10, cid#18 = customer_id#2, id#9
   Join inner: customer_id#2 == id#9
     Filter customer_id#2 == 7
       Scan sales.orders (id#1, customer_id#2)
@@ -294,25 +295,25 @@ Union (id#17, status#18)
 
 ### sales.orders.where(ship_customer.city == 'Durban').select(id, ship_customer.name)
 -- lowered
-Project id#1, name#10
+Project id#1, name#10, id#9
   Filter city#11 == 'Durban'
     Join left via ship_customer: ship_customer_id#7 == id#9
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
       Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 -- normalize
-Project id#1, name#10
+Project id#1, name#10, id#9
   Filter city#11 == 'Durban'
     Join left via ship_customer: ship_customer_id#7 == id#9
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
       Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 -- pushdown: outer to inner join, push filter into join
-Project id#1, name#10
+Project id#1, name#10, id#9
   Join inner: ship_customer_id#7 == id#9
     Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
     Filter city#11 == 'Durban'
       Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 -- prune
-Project id#1, name#10
+Project id#1, name#10, id#9
   Join inner: ship_customer_id#7 == id#9
     Scan sales.orders (id#1, ship_customer_id#7)
     Filter city#11 == 'Durban'
@@ -320,29 +321,29 @@ Project id#1, name#10
 
 ### sales.orders.leftJoin(sales.customers, outer.ship_customer_id == inner.id, o: outer, c: inner).where(c.city != null).select(o.id, c.name)
 -- lowered
-Project id#1, name#17 = name#10
+Project id#1, name#17 = name#10, id#9
   Filter city#11 is not null
     Project id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8, id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16
       Join left: ship_customer_id#7 == id#9
         Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
         Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 -- normalize
-Project id#1, name#17 = name#10
+Project id#1, name#17 = name#10, id#9
   Filter city#11 is not null
     Project id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8, id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16
       Join left: ship_customer_id#7 == id#9
         Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
         Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 -- pushdown: push filter through projection, outer to inner join, push filter into join
-Project id#1, name#17 = name#10
+Project id#1, name#17 = name#10, id#9
   Project id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8, id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16
     Join inner: ship_customer_id#7 == id#9
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
       Filter city#11 is not null
         Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 -- prune
-Project id#1, name#17 = name#10
-  Project id#1, name#10
+Project id#1, name#17 = name#10, id#9
+  Project id#1, id#9, name#10
     Join inner: ship_customer_id#7 == id#9
       Scan sales.orders (id#1, ship_customer_id#7)
       Filter city#11 is not null
@@ -351,19 +352,19 @@ Project id#1, name#17 = name#10
 ### sales.orders.select(id, who: customer.name).select(id)
 -- lowered
 Project id#1
-  Project id#1, who#17 = name#10
+  Project id#1, who#17 = name#10, id#9
     Join inner via customer: customer_id#2 == id#9
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
       Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 -- normalize
 Project id#1
-  Project id#1, who#17 = name#10
+  Project id#1, who#17 = name#10, id#9
     Join inner via customer: customer_id#2 == id#9
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
       Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)
 -- pushdown
 Project id#1
-  Project id#1, who#17 = name#10
+  Project id#1, who#17 = name#10, id#9
     Join inner via customer: customer_id#2 == id#9
       Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
       Scan sales.customers (id#9, name#10, city#11, credit_limit#12, created#13, region_code#14, uid#15, notes#16)

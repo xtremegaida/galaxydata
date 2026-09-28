@@ -1,0 +1,178 @@
+### sales.orders.where(status == 'open').select(id, total, who: customer.name, city: customer.city)
+  0 id int64: direct sales.orders.id; edits sales.orders.id by id = [0]
+  1 total decimal(10,2): direct sales.orders.total; edits sales.orders.total by id = [0]
+  2 who string(100): direct customer -> sales.customers.name; edits sales.customers.name by id = [4]
+  3 city string?: direct customer -> sales.customers.city; edits sales.customers.city by id = [4]
+  4 id int32 (hidden): direct customer -> sales.customers.id
+
+### sales.orders.groupBy(customer_id).select(customer_id: key, spend: sum(total), orders: count())
+  0 customer_id int32: direct sales.orders.customer_id; links to row sales.customers(id) = [0] via customer
+  1 spend decimal(38,2): aggregated (sum(total)) from sales.orders.total; links to rows of sales.orders where customer_id == [0]
+  2 orders int64: aggregated (count()); links to rows of sales.orders where customer_id == [0]
+
+### sales.orders.join(sales.customers, outer.customer_id == inner.id, orders: outer, cust: inner).groupBy(cust.name).select(name: cust.name, count: orders.count(), total: orders.sum(total))
+  0 name string(100): direct sales.customers.name
+  1 count int64: aggregated (orders.count()); links to rows of sales.orders.join(sales.customers, outer.customer_id == inner.id, orders: outer, cust: inner) where cust.name == [0]
+  2 total decimal(38,2): aggregated (orders.sum(total)) from sales.orders.total; links to rows of sales.orders.join(sales.customers, outer.customer_id == inner.id, orders: outer, cust: inner) where cust.name == [0]
+
+### x := sales.orders.where(total > 3); sales.customers.where(cust => x.any(order => cust.id == order.customer_id))
+  0 id int32: direct sales.customers.id; edits sales.customers.id by id = [0]
+  1 name string(100): direct sales.customers.name; edits sales.customers.name by id = [0]
+  2 city string?: direct sales.customers.city; edits sales.customers.city by id = [0]
+  3 credit_limit decimal(10,2)?: direct sales.customers.credit_limit; edits sales.customers.credit_limit by id = [0]
+  4 created date?: direct sales.customers.created; edits sales.customers.created by id = [0]
+  5 region_code string(3)?: direct sales.customers.region_code; edits sales.customers.region_code by id = [0]; links to row sales.regions(code) = [5] via region
+  6 uid guid?: direct sales.customers.uid; edits sales.customers.uid by id = [0]
+  7 notes json?: direct sales.customers.notes; edits sales.customers.notes by id = [0]
+  rows: sales.customers by id = [0]; related: rows crm.contacts(customer_ref) = [0] via contacts; rows sales.orders(customer_id) = [0] via orders_by_customer; rows sales.orders(ship_customer_id) = [0] via orders_by_ship_customer
+
+### sales.orders
+  0 id int64: direct sales.orders.id; edits sales.orders.id by id = [0]
+  1 customer_id int32: direct sales.orders.customer_id; edits sales.orders.customer_id by id = [0]; links to row sales.customers(id) = [1] via customer
+  2 status string(20,ansi): direct sales.orders.status; edits sales.orders.status by id = [0]
+  3 total decimal(10,2): direct sales.orders.total; edits sales.orders.total by id = [0]
+  4 order_date date: direct sales.orders.order_date; edits sales.orders.order_date by id = [0]
+  5 shipped_at datetime?: direct sales.orders.shipped_at; edits sales.orders.shipped_at by id = [0]
+  6 ship_customer_id int32?: direct sales.orders.ship_customer_id; edits sales.orders.ship_customer_id by id = [0]; links to row sales.customers(id) = [6] via ship_customer
+  7 attachment binary?: direct sales.orders.attachment; edits sales.orders.attachment by id = [0]
+  rows: sales.orders by id = [0]; related: rows sales.order_lines(order_id) = [0] via order_lines
+
+### sales.order_lines.where(qty > 1)
+  0 order_id int64: direct sales.order_lines.order_id; edits sales.order_lines.order_id by order_id, line_no = [0, 1]; links to row sales.orders(id) = [0] via order
+  1 line_no int32: direct sales.order_lines.line_no; edits sales.order_lines.line_no by order_id, line_no = [0, 1]
+  2 product_code string(20): direct sales.order_lines.product_code; edits sales.order_lines.product_code by order_id, line_no = [0, 1]; links to row sales.products(code) = [2] via product
+  3 qty int32: direct sales.order_lines.qty; edits sales.order_lines.qty by order_id, line_no = [0, 1]
+  4 price decimal(10,2): direct sales.order_lines.price; edits sales.order_lines.price by order_id, line_no = [0, 1]
+  rows: sales.order_lines by order_id, line_no = [0, 1]
+
+### sales.customers.extend(big: credit_limit > 1000)
+  0 id int32: direct sales.customers.id; edits sales.customers.id by id = [0]
+  1 name string(100): direct sales.customers.name; edits sales.customers.name by id = [0]
+  2 city string?: direct sales.customers.city; edits sales.customers.city by id = [0]
+  3 credit_limit decimal(10,2)?: direct sales.customers.credit_limit; edits sales.customers.credit_limit by id = [0]
+  4 created date?: direct sales.customers.created; edits sales.customers.created by id = [0]
+  5 region_code string(3)?: direct sales.customers.region_code; edits sales.customers.region_code by id = [0]; links to row sales.regions(code) = [5] via region
+  6 uid guid?: direct sales.customers.uid; edits sales.customers.uid by id = [0]
+  7 notes json?: direct sales.customers.notes; edits sales.customers.notes by id = [0]
+  8 big boolean?: computed (credit_limit > 1000) from sales.customers.credit_limit
+  rows: sales.customers by id = [0]; related: rows crm.contacts(customer_ref) = [0] via contacts; rows sales.orders(customer_id) = [0] via orders_by_customer; rows sales.orders(ship_customer_id) = [0] via orders_by_ship_customer
+
+### sales.orders.select(id, c: customer, ship_to: ship_customer)
+  0 id int64: direct sales.orders.id; edits sales.orders.id by id = [0]
+  1 c string(100): direct customer -> sales.customers.name; edits sales.customers.name by id = [3]; links to row sales.customers(id) = [3] via customer
+  2 ship_to string(100)?: direct ship_customer -> sales.customers.name; edits sales.customers.name by id = [4]; links to row sales.customers(id) = [4] via ship_customer
+  3 id int32 (hidden): direct customer -> sales.customers.id
+  4 id int32? (hidden): direct ship_customer -> sales.customers.id
+
+### sales.orders.select(id, c: customer).select(id, c)
+  0 id int64: direct sales.orders.id; edits sales.orders.id by id = [0]
+  1 c string(100): direct customer -> sales.customers.name; edits sales.customers.name by id = [2]; links to row sales.customers(id) = [2] via customer
+  2 id int32 (hidden): direct customer -> sales.customers.id
+
+### sales.order_lines.select(line_no, region: order.customer.region.name, product)
+  0 line_no int32: direct sales.order_lines.line_no; edits sales.order_lines.line_no by order_id, line_no = [3, 0]
+  1 region string?: direct order.customer.region -> sales.regions.name; edits sales.regions.name by code = [4]
+  2 product string: direct product -> sales.products.name; edits sales.products.name by code = [5]; links to row sales.products(code) = [5] via product
+  3 order_id int64 (hidden): direct sales.order_lines.order_id
+  4 code string(3)? (hidden): direct order.customer.region -> sales.regions.code
+  5 code string(20) (hidden): direct product -> sales.products.code
+
+### sales.orders.select(order_id: id, amount: total, cid: customer_id)
+  0 order_id int64: direct sales.orders.id; edits sales.orders.id by id = [0]
+  1 amount decimal(10,2): direct sales.orders.total; edits sales.orders.total by id = [0]
+  2 cid int32: direct sales.orders.customer_id; edits sales.orders.customer_id by id = [0]; links to row sales.customers(id) = [2] via customer
+
+### sales.order_lines.select(qty, price)
+  0 qty int32: direct sales.order_lines.qty; edits sales.order_lines.qty by order_id, line_no = [2, 3]
+  1 price decimal(10,2): direct sales.order_lines.price; edits sales.order_lines.price by order_id, line_no = [2, 3]
+  2 order_id int64 (hidden): direct sales.order_lines.order_id
+  3 line_no int32 (hidden): direct sales.order_lines.line_no
+
+### sales.customers.select(name, n: orders_by_customer.count(), any: orders_by_customer.any(), open: orders_by_customer.any(status == 'open'))
+  0 name string(100): direct sales.customers.name; edits sales.customers.name by id = [4]
+  1 n int64: aggregated (orders_by_customer.count()); links to rows sales.orders(customer_id) = [4] via orders_by_customer
+  2 any boolean: computed (orders_by_customer.any()); links to rows sales.orders(customer_id) = [4] via orders_by_customer
+  3 open boolean: computed (orders_by_customer.any(status == 'open'))
+  4 id int32 (hidden): direct sales.customers.id
+
+### sales.orders.groupBy(customer).select(customer, n: count())
+  0 customer string(100): direct customer -> sales.customers.name; links to row sales.customers(id) = [2] via customer
+  1 n int64: aggregated (count()); links to rows of sales.orders where customer.id == [2]
+  2 id int32 (hidden): direct sales.orders.customer_id
+
+### g := sales.orders.where(total > 3); g.groupBy(o => o.customer_id, big: o => o.total > 100).select(k: key, n: count(), s: sum(total))
+  0 k int32: direct sales.orders.customer_id; links to row sales.customers(id) = [0] via customer
+  1 n int64: aggregated (count()); links to rows of g := sales.orders.where(total > 3); g where o => o.customer_id == [0] and o => (o.total > 100) == [3]
+  2 s decimal(38,2): aggregated (sum(total)) from sales.orders.total; links to rows of g := sales.orders.where(total > 3); g where o => o.customer_id == [0] and o => (o.total > 100) == [3]
+  3 big boolean (hidden): computed (o.total > 100) from sales.orders.total
+
+### sales.orders.groupBy(y: year(order_date)).where(count() > 1).select(y, n: count())
+  0 y int32: computed (year(order_date)) from sales.orders.order_date
+  1 n int64: aggregated (count()); links to rows of sales.orders where year(order_date) == [0]
+
+### sales.orders.select(status).distinct()
+  0 status string(20,ansi): direct sales.orders.status
+
+### sales.orders.select(id, status).union(sales.orders.select(id, status))
+  0 id int64: union from sales.orders.id
+  1 status string(20,ansi): union from sales.orders.status
+
+### sales.orders.groupBy(status).select(status, n: count())
+  0 status string(20,ansi): direct sales.orders.status
+  1 n int64: aggregated (count()); links to rows of sales.orders where status == [0]
+
+### sales.orders.select(t: total * 2, s: upper(status))
+  0 t decimal: computed (total * 2) from sales.orders.total
+  1 s string: computed (upper(status)) from sales.orders.status
+
+### reports.customer_cities
+  0 id int32: direct sales.customers.id; edits sales.customers.id by id = [0]
+  1 name string(100): direct sales.customers.name; edits sales.customers.name by id = [0]
+  2 city string?: computed (upper(city)) from sales.customers.city
+  rows: reports.customer_cities by id = [0]
+
+### reports.big_orders.select(id, who: customer.name)
+  0 id int64: direct sales.orders.id; edits sales.orders.id by id = [0]
+  1 who string(100): direct customer -> sales.customers.name; edits sales.customers.name by id = [2]
+  2 id int32 (hidden): direct customer -> sales.customers.id
+
+### sales.orders.orderBy(desc(total)).first()
+  0 id int64: direct sales.orders.id; edits sales.orders.id by id = [0]
+  1 customer_id int32: direct sales.orders.customer_id; edits sales.orders.customer_id by id = [0]; links to row sales.customers(id) = [1] via customer
+  2 status string(20,ansi): direct sales.orders.status; edits sales.orders.status by id = [0]
+  3 total decimal(10,2): direct sales.orders.total; edits sales.orders.total by id = [0]
+  4 order_date date: direct sales.orders.order_date; edits sales.orders.order_date by id = [0]
+  5 shipped_at datetime?: direct sales.orders.shipped_at; edits sales.orders.shipped_at by id = [0]
+  6 ship_customer_id int32?: direct sales.orders.ship_customer_id; edits sales.orders.ship_customer_id by id = [0]; links to row sales.customers(id) = [6] via ship_customer
+  7 attachment binary?: direct sales.orders.attachment; edits sales.orders.attachment by id = [0]
+  rows: sales.orders by id = [0]; related: rows sales.order_lines(order_id) = [0] via order_lines
+
+### sales.orders.first().customer
+  0 id int32: direct customer -> sales.customers.id; edits sales.customers.id by id = [0]
+  1 name string(100): direct customer -> sales.customers.name; edits sales.customers.name by id = [0]
+  2 city string?: direct customer -> sales.customers.city; edits sales.customers.city by id = [0]
+  3 credit_limit decimal(10,2)?: direct customer -> sales.customers.credit_limit; edits sales.customers.credit_limit by id = [0]
+  4 created date?: direct customer -> sales.customers.created; edits sales.customers.created by id = [0]
+  5 region_code string(3)?: direct customer -> sales.customers.region_code; edits sales.customers.region_code by id = [0]; links to row sales.regions(code) = [5] via region
+  6 uid guid?: direct customer -> sales.customers.uid; edits sales.customers.uid by id = [0]
+  7 notes json?: direct customer -> sales.customers.notes; edits sales.customers.notes by id = [0]
+  rows: sales.customers by id = [0]; related: rows crm.contacts(customer_ref) = [0] via contacts; rows sales.orders(customer_id) = [0] via orders_by_customer; rows sales.orders(ship_customer_id) = [0] via orders_by_ship_customer
+
+### sales.customers.select(name, latest: orders_by_customer.orderBy(desc(order_date)).first(), last: orders_by_customer.orderBy(desc(order_date)).first().total)
+  0 name string(100): direct sales.customers.name; edits sales.customers.name by id = [3]
+  1 latest string(20,ansi)?: direct orders_by_customer -> sales.orders.status; links to row sales.orders(id) = [4]
+  2 last decimal(10,2)?: direct orders_by_customer -> sales.orders.total
+  3 id int32 (hidden): direct sales.customers.id
+  4 id int64? (hidden): direct orders_by_customer -> sales.orders.id
+
+### sales.orders.join(sales.customers, outer.customer_id == inner.id, o: outer.total, c: inner.name)
+  0 o decimal(10,2): direct sales.orders.total; edits sales.orders.total by id = [2]
+  1 c string(100): direct sales.customers.name; edits sales.customers.name by id = [3]
+  2 id int64 (hidden): direct sales.orders.id
+  3 id int32 (hidden): direct sales.customers.id
+
+### sales.customers.selectMany(orders_by_customer, who: outer.name, total: inner.total)
+  0 who string(100): direct sales.customers.name; edits sales.customers.name by id = [2]
+  1 total decimal(10,2): direct orders_by_customer -> sales.orders.total; edits sales.orders.total by id = [3]
+  2 id int32 (hidden): direct sales.customers.id
+  3 id int64 (hidden): direct orders_by_customer -> sales.orders.id

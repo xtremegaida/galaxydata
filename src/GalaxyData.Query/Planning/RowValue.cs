@@ -25,14 +25,21 @@ internal sealed class GroupValue(AggregateNode node, Cursor elements, RowValue e
    /// <summary>The grouped rows' value, for aggregate arguments.</summary>
    public RowValue Element { get; } = element;
 
-   public PlanColumnRef Key(PlanExpr expr, string name, ScalarType type, ColumnLineage lineage)
+   /// <summary>How to reach the rows behind a group from its key parts; null when they can't be written as a query.</summary>
+   public DrillDownSpec? DrillDown { get; set; }
+
+   /// <summary>A key part; <paramref name="dependent"/> when the other keys determine it (see <see cref="AggregateNode.DependentKeys"/>).</summary>
+   public PlanColumnRef Key(PlanExpr expr, string name, ScalarType type, ColumnLineage lineage, bool dependent = false)
    {
       string text = "key " + PlanPrinter.Expr(expr);
       if (made.TryGetValue(text, out PlanColumnRef? existing)) { return existing; }
-      PlanColumn column = expr is PlanColumnRef reference && string.Equals(reference.Column.Name, name, StringComparison.Ordinal) && reference.Column.Type == type
-         ? reference.Column
+      // A key column still holds its row's value: groups by a row's key keep the row, so its columns can be edited.
+      PlanColumn column = expr is PlanColumnRef reference
+         ? string.Equals(reference.Column.Name, name, StringComparison.Ordinal) && reference.Column.Type == type
+            ? reference.Column
+            : new PlanColumn(ids.Next(), name, type, lineage, reference.Column.Origin)
          : new PlanColumn(ids.Next(), name, type, lineage);
-      Node.AddKey(new ProjectItem(column, expr));
+      Node.AddKey(new ProjectItem(column, expr), dependent);
       return Added(text, column);
    }
 

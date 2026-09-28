@@ -97,6 +97,18 @@ internal static class PlanCases
       "reports.customer_cities.orderBy(city)",
       "1 + 2 * 3",
       "sales.orders.where(total > 3.5 and total < 1e3 and id > -1)",
+      "sales.orders.orderBy(desc(total)).first()",
+      "sales.orders.firstOrDefault(status == 'open').customer",
+      "sales.customers.select(name, latest: orders_by_customer.orderBy(desc(order_date)).first())",
+      "sales.customers.select(name, last_total: orders_by_customer.orderBy(desc(order_date)).firstOrDefault().total, last_city: orders_by_customer.orderBy(desc(order_date)).first().ship_customer.city)",
+      "sales.customers.where(orders_by_customer.orderBy(desc(order_date)).firstOrDefault() == null).select(name)",
+      "sales.customers.select(name, lines: orders_by_customer.orderBy(id).first().order_lines.count())",
+      "sales.orders.select(id, c: customer).select(id, c)",
+      "g := sales.orders.where(total > 3); g.groupBy(o => o.customer_id).select(k: key, n: count())",
+      "sales.orders.groupBy(customer, big: total > 100).select(customer, big, n: count(), s: sum(total))",
+      "sales.order_lines.select(order_id, qty, product)",
+      "sales.orders.select(id, status).distinct()",
+      "sales.customers.select(name, t: orders_by_customer.orderBy(id).first().total).groupBy(name).select(name, s: sum(t))",
    ];
 
    /// <summary>The plan as lowered, before the optimizer.</summary>
