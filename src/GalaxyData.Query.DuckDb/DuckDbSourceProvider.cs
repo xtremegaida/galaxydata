@@ -1,0 +1,50 @@
+using System;
+using System.Data.Common;
+using System.Threading;
+using System.Threading.Tasks;
+using GalaxyData.Query.Execution;
+using GalaxyData.Query.Introspection;
+using GalaxyData.Query.Providers;
+using GalaxyData.Query.Sql;
+
+namespace GalaxyData.Query.DuckDb;
+
+/// <summary>
+/// DuckDB sources. Each connection works in UTC, like <c>now()</c>, so mixing date-times with and without an offset
+/// gives the same answer on every machine. DuckDB.NET hands back <c>TIMESTAMPTZ</c> as a UTC <see cref="DateTime"/>,
+/// read as an offset of zero here, and BLOBs as streams.
+/// </summary>
+public sealed class DuckDbSourceProvider : SourceProvider
+{
+   public static DuckDbSourceProvider Instance { get; } = new();
+
+   public override string ProviderKind => "duckdb";
+
+   public override SqlDialect Dialect => SqlDialect.DuckDb;
+
+   public override ISchemaIntrospector Introspector { get; } = new DuckDbSchemaIntrospector();
+
+   public override async ValueTask PrepareConnectionAsync(DbConnection connection, CancellationToken cancellationToken)
+   {
+      try
+      {
+         await connection.ExecuteAsync("SET TimeZone = 'UTC'", cancellationToken).ConfigureAwait(false);
+      }
+      catch (DbException)
+      {
+         // Without the ICU extension there is no TimeZone setting, and DuckDB works in UTC anyway.
+      }
+   }
+
+   public override object? ReadValue(DbDataReader reader, int ordinal)
+   {
+      ArgumentNullException.ThrowIfNull(reader);
+      if (reader.IsDBNull(ordinal)) { return null; }
+      object value = reader.GetValue(ordinal);
+      if (value is DateTime dateTime && string.Equals(reader.GetDataTypeName(ordinal), "TimestampTz", StringComparison.OrdinalIgnoreCase))
+      {
+         return new DateTimeOffset(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc));
+      }
+      return value;
+   }
+}

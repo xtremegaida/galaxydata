@@ -138,7 +138,9 @@ internal sealed partial class BinderRun
          case BoundParameter parameter:
             bool textual = parameter.Scalar.Kind == ScalarKind.String &&
                target.Kind is ScalarKind.String or ScalarKind.Date or ScalarKind.DateTime or ScalarKind.DateTimeOffset or ScalarKind.Time or ScalarKind.Guid;
-            if (parameter.Scalar.Kind == ScalarKind.Unknown || textual)
+            // Whole numbers take the width they meet (a count of days is an int), checked against the value when the query runs.
+            bool whole = parameter.Scalar.IsInteger && target.IsInteger;
+            if (parameter.Scalar.Kind == ScalarKind.Unknown || textual || whole)
             {
                return new BoundParameter(parameter.Name, target.WithNullable(parameter.Scalar.Nullable), parameter.Syntax);
             }

@@ -35,7 +35,7 @@ src/
   GalaxyData.Query.PostgreSql/  Npgsql
   GalaxyData.Query.SqlServer/   Microsoft.Data.SqlClient
   GalaxyData.Query.Excel/       Excel Folder provider (on .DuckDb; no Excel library)
-  GalaxyData.Query.Cli/         `gdq` CLI/REPL (System.CommandLine, Spectre.Console)
+  GalaxyData.Query.Cli/         `gdq` CLI/REPL (System.CommandLine; plain-text tables, no Spectre.Console)
   GalaxyData.Web/               ASP.NET Core host, feature folders, serves Angular from wwwroot
   client/                       Angular workspace (builds into GalaxyData.Web/wwwroot)
 tests/
@@ -54,7 +54,7 @@ tests/
 | Microsoft.Data.SqlClient | 7.0.3 |
 | Microsoft.Data.Sqlite | 10.0.12 |
 | xunit.v3 | current in cache |
-| Verify.XunitV3 | current in cache |
+| Verify.XunitV3 | not used: golden files go through the in-house `Golden` helper |
 | Shouldly | current in cache |
 | Testcontainers | 4.x |
 | EF Core Sqlite | 10 |
@@ -475,7 +475,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | M0 | Solution skeleton, parser move and fixes, spans, options, `QueryOperatorTable` | Parser tests: spans, operators, depth, the 4 examples as snapshot trees |
 | M1 | Types, introspection DTOs, SQLite and DuckDB introspectors, `CatalogBuilder`, nav naming, overlay (no virtual entities) | Introspection JSON snapshots; nav-naming test table; ambiguity tests |
 | M2 | Binder core: where/select/extend/orderBy/take/skip/distinct, scopes, lambdas, `$params`, lets, coercion, functions, many-to-one navs; virtual entities bound in the catalog (dependency order, inherited key/navs) | Bound-tree and diagnostic snapshots; example 1 binds |
-| M3 | Lowering, SQL AST, `SqlBuilder`, 4 dialects, single-site execution, Direct lineage, `gdq` CLI | Golden SQL per dialect (Verify); example 1 end-to-end on SQLite and DuckDB |
+| M3 | Lowering, SQL AST, `SqlBuilder`, 4 dialects, single-site execution, Direct lineage, `gdq` CLI (run, sql, schema, repl) | Golden plans and golden SQL per dialect; example 1 end-to-end on SQLite and DuckDB; SQLite and DuckDB return identical rows for a shared conformance set |
 | M4 | Group scope and HAVING, joins, collection navs, any/all/in/subqueries, set ops, decorrelation, pushdown and prune rules | Examples 2–4 golden and end-to-end; per-rule plan snapshots |
 | M5 | Links, hidden keys, EditTarget, RowIdentity, full lineage, `QueryText.Compose`, `ForCount`, explain model and renderer | Link and lineage snapshots; composed filter reaches the scan |
 | M6 | Federation: SiteAssigner, fragmenter, DuckDB merge engine, full fetch | Differential suite: same data all-DuckDB, all-SQLite and split, identical results; spill test at 64 MB; cancellation test |

@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/GalaxyData.Common/GalaxyData.Common.csproj" />
     <Project Path="src/GalaxyData.Query/GalaxyData.Query.csproj" />
+    <Project Path="src/GalaxyData.Query.Cli/GalaxyData.Query.Cli.csproj" />
     <Project Path="src/GalaxyData.Query.DuckDb/GalaxyData.Query.DuckDb.csproj" />
     <Project Path="src/GalaxyData.Query.Sqlite/GalaxyData.Query.Sqlite.csproj" />
   </Folder>

@@ -126,7 +126,7 @@ public static class BoundTreePrinter
    private static string Operand(BoundExpr expr) =>
       expr is BoundBinary or BoundConditional or BoundIsNull or BoundInList ? "(" + Expr(expr) + ")" : Expr(expr);
 
-   private static string Literal(object? value) => value switch
+   internal static string Literal(object? value) => value switch
    {
       null => "null",
       bool flag => flag ? "true" : "false",

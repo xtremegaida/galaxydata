@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>gdq</AssemblyName>
+    <RootNamespace>GalaxyData.Query.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GalaxyData.Query\GalaxyData.Query.csproj" />
+    <ProjectReference Include="..\GalaxyData.Query.DuckDb\GalaxyData.Query.DuckDb.csproj" />
+    <ProjectReference Include="..\GalaxyData.Query.Sqlite\GalaxyData.Query.Sqlite.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="GalaxyData.Query.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using GalaxyData.Query.Binding;
 using GalaxyData.Query.Introspection;
+using GalaxyData.Query.Language;
 using GalaxyData.Query.Types;
 
 namespace GalaxyData.Query.Catalog;
@@ -264,7 +266,7 @@ public sealed class ColumnDef
 
    public bool IsKey => Owner.Key?.Columns.Contains(this) ?? false;
 
-   public override string ToString() => $"{Owner.DisplayName}.{Name}";
+   public override string ToString() => QueryText.AppendMember(new StringBuilder(Owner.DisplayName), Name).ToString();
 }
 
 public sealed class KeyDef

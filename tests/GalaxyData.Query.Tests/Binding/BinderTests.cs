@@ -80,6 +80,15 @@ public sealed class BinderTests
    }
 
    [Fact]
+   public void WholeNumberParametersTakeTheWidthTheyMeet()
+   {
+      BoundProgram program = Bind("sales.customers.where(id == $id).select(d: addDays(created, $n))", new QueryParameters().Add("n", 3L).Add("id", 7L));
+      BoundSelect select = program.Query.ShouldBeOfType<BoundSelect>();
+      select.Items[0].Expr.ShouldBeOfType<BoundFunctionCall>().Arguments[1].Scalar.Kind.ShouldBe(ScalarKind.Int32);
+      select.Input.ShouldBeOfType<BoundWhere>().Predicate.ShouldBeOfType<BoundBinary>().Right.Scalar.Kind.ShouldBe(ScalarKind.Int32);
+   }
+
+   [Fact]
    public void NullParametersTakeTheTypeTheyMeet()
    {
       BoundProgram program = Bind("sales.orders.where(total > $floor)", new QueryParameters().Add("floor", null));

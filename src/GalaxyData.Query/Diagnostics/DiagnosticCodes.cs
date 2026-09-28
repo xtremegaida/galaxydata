@@ -34,6 +34,11 @@ public static class DiagnosticCodes
    public const string NotSupportedYet = "GDQ2099";
    public const string ShadowedName = "GDQ2101";
 
+   public const string CrossSourceQuery = "GDQ3001";
+   public const string NoProvider = "GDQ3002";
+   public const string NotTranslatable = "GDQ3003";
+   public const string NoSource = "GDQ3004";
+
    public const string InvalidSourceAlias = "GDQ5001";
    public const string DuplicateSource = "GDQ5002";
    public const string ShortcutSuppressed = "GDQ5003";

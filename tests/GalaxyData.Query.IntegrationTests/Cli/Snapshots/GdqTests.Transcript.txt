@@ -1,0 +1,146 @@
+### run example 1 with its SQL
+exit 0
+--- out
+-- shop (SQLite)
+SELECT o.id, o.total, c.name AS who, c.city
+FROM orders AS o
+LEFT JOIN customers AS c ON o.customer_id = c.id
+WHERE o.status = @p0
+ORDER BY o.id
+-- @p0 string = 'open'
+
+id   | total  | who       | city
+-----+--------+-----------+-------------
+1001 | 250.00 | Acme Ltd  | Cape Town
+1003 |  12.25 | Beta Corp | Johannesburg
+(2 rows; (time))
+
+### run with a parameter, as JSON
+exit 0
+--- out
+[
+  {
+    "id": 1002,
+    "total": 99.50,
+    "paid": true
+  },
+  {
+    "id": 1003,
+    "total": 12.25,
+    "paid": false
+  },
+  {
+    "id": 1004,
+    "total": 0.00,
+    "paid": false
+  }
+]
+
+### run as CSV with a row limit
+exit 0
+--- out
+name,city
+Acme Ltd,Cape Town
+Beta Corp,Johannesburg
+
+### sql: plan, lineage and SQL
+exit 0
+--- out
+-- plan
+-- Limit take 3
+--   Project line_no#2, city#17
+--     Join inner via customer: customer_id#7 == id#15
+--       Join inner via order: order_id#1 == id#6
+--         Scan shop.order_lines (order_id#1, line_no#2, product_code#3, qty#4, price#5)
+--         Scan shop.orders (id#6, customer_id#7, ship_address_id#8, bill_address_id#9, status#10, total#11, order_date#12, placed_at#13, tags#14)
+--       Scan shop.customers (id#15, name#16, city#17, credit_limit#18, created_at#19)
+-- lineage
+-- line_no int32: direct shop.order_lines.line_no
+-- city string?: direct order.customer -> shop.customers.city
+
+-- shop (DuckDB)
+SELECT o.line_no, c.city
+FROM order_lines AS o
+INNER JOIN orders AS o2 ON o.order_id = o2.id
+INNER JOIN customers AS c ON o2.customer_id = c.id
+LIMIT 3
+
+### schema, filtered
+exit 0
+--- out
+shop.open_orders (view, no key)
+   id int64?, customer_id int64?, total decimal(10,2)?
+shop.orders (table, key id)
+   id int64, customer_id int64, ship_address_id int64?, bill_address_id int64?, status string, total decimal(10,2), order_date date
+   customer -> shop.customers?, ship_address -> shop.addresses?, bill_address -> shop.addresses?, order_lines -> shop.order_lines*
+shop.order_lines (table, key order_id, line_no)
+   order_id int64, line_no int64, product_code string(20), qty int64, price decimal(10,2)
+   order -> shop.orders?
+
+### a query that doesn't bind
+exit 1
+--- err
+error GDQ2001: There is no 'totl' here. Did you mean 'total'?
+    .where(totl > 5)
+           ^^^^
+
+### a source that isn't one
+exit 2
+--- err
+gdq: 'oracle' is not a source kind; use sqlite or duckdb
+
+### a database that doesn't exist
+exit 2
+--- err
+gdq: The sqlite database for 'shop' doesn't exist: missing.db
+
+### no query
+exit 2
+--- err
+gdq: Give a query, or a file with --file
+
+### repl
+exit 0
+--- out
+gdq: shop (sqlite). Type :help for commands.
+gdq> name      | city
+----------+-------------
+Acme Ltd  | Cape Town
+Beta Corp | Johannesburg
+Gamma Inc | null
+(3 rows; (time))
+gdq> name      | city
+----------+-------------
+Acme Ltd  | Cape Town
+Beta Corp | Johannesburg
+(2 rows; (time))
+gdq> name      | city
+----------+-------------
+Beta Corp | Johannesburg
+Acme Ltd  | Cape Town
+(2 rows; (time))
+gdq> $min = 50 (int64)
+gdq> id   | customer_id | ship_address_id | bill_address_id | status    | total  | order_date
+-----+-------------+-----------------+-----------------+-----------+--------+-----------
+1001 |           1 |               1 |               1 | open      | 250.00 | 2026-01-05
+1002 |           1 |               1 |            null | shipped   |  99.50 | 2026-01-09
+1003 |           2 |               2 |               2 | open      |  12.25 | 2026-02-01
+1004 |           3 |            null |            null | cancelled |   0.00 | 2026-02-14
+(4 rows; (time))
+gdq> id   | customer_id | ship_address_id | bill_address_id | status  | total  | order_date
+-----+-------------+-----------------+-----------------+---------+--------+-----------
+1001 |           1 |               1 |               1 | open    | 250.00 | 2026-01-05
+1002 |           1 |               1 |            null | shipped |  99.50 | 2026-01-09
+(2 rows; (time))
+gdq> ...> id   | total
+-----+-------
+1001 | 250.00
+1002 |  99.50
+(2 rows; (time))
+gdq> ...> id
+----
+1001
+(1 row; (time))
+gdq> gdq>
+--- err
+gdq: ':nope' is not a command; type :help
