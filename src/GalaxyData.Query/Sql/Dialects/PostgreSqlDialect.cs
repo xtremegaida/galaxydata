@@ -65,11 +65,11 @@ internal sealed class PostgreSqlDialect : SqlDialect
       FunctionId.LTrim => Call("ltrim", c.Arg(0)),
       FunctionId.RTrim => Call("rtrim", c.Arg(0)),
       FunctionId.Length => Call("length", c.Arg(0)),
-      FunctionId.Substring => Call("substr", c.Args()),
+      FunctionId.Substring => Call("substr", TextThenInts(c)),
       FunctionId.IndexOf => Call("strpos", c.Arg(0), c.Arg(1)),
       FunctionId.Replace => Call("replace", c.Args()),
-      FunctionId.Left => Call("left", c.Arg(0), c.Arg(1)),
-      FunctionId.Right => Call("right", c.Arg(0), c.Arg(1)),
+      FunctionId.Left => Call("left", c.Arg(0), Int(c, 1)),
+      FunctionId.Right => Call("right", c.Arg(0), Int(c, 1)),
       FunctionId.StartsWith => c.IsFixedText(1)
          ? Like(c.Arg(0), c.Pattern(1, PatternStyle.Like, PatternShape.Prefix))
          : Call("starts_with", c.Arg(0), c.Arg(1)),
@@ -100,7 +100,7 @@ internal sealed class PostgreSqlDialect : SqlDialect
       FunctionId.Second => Cast(Call("floor", Template("EXTRACT(SECOND FROM {0})", c.Arg(0))), ScalarType.Int32),
       FunctionId.Date => Cast(c.Arg(0), ScalarType.Date),
       FunctionId.AddDays => c.Type(0).Kind == ScalarKind.Date
-         ? Binary(SqlBinaryOp.Add, c.Arg(0), c.Arg(1))
+         ? Binary(SqlBinaryOp.Add, c.Arg(0), Int(c, 1))
          : Binary(SqlBinaryOp.Add, c.Arg(0), Binary(SqlBinaryOp.Multiply, c.Arg(1), Raw("INTERVAL '1 day'"))),
       FunctionId.AddMonths => c.Type(0).Kind == ScalarKind.Date
          ? Cast(Binary(SqlBinaryOp.Add, c.Arg(0), Binary(SqlBinaryOp.Multiply, c.Arg(1), Raw("INTERVAL '1 month'"))), ScalarType.Date)
@@ -130,9 +130,9 @@ internal sealed class PostgreSqlDialect : SqlDialect
       if (IsInteger(type)) { return c.Arg(0); }
       if (c.Count == 2 && type.Kind is ScalarKind.Double or ScalarKind.Single)
       {
-         return Cast(Call("round", Cast(c.Arg(0), ScalarType.Decimal()), c.Arg(1)), type);
+         return Cast(Call("round", Cast(c.Arg(0), ScalarType.Decimal()), Int(c, 1)), type);
       }
-      return Call("round", c.Args());
+      return Call("round", TextThenInts(c));
    }
 
    private SqlExpr Whole(SqlCall c, ScalarType type) =>

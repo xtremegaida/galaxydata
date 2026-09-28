@@ -13,14 +13,14 @@ internal sealed partial class BinderRun
    private static readonly HashSet<string> SupportedMethods = new(StringComparer.OrdinalIgnoreCase)
    {
       "where", "select", "extend", "orderBy", "orderByDescending", "orderByDesc", "thenBy", "thenByDescending", "thenByDesc",
-      "take", "skip", "distinct",
+      "take", "skip", "distinct", "groupBy", "join", "leftJoin", "selectMany", "union", "concat", "intersect", "except",
+      "count", "countDistinct", "sum", "avg", "min", "max", "any", "all", "contains",
    };
 
    /// <summary>Methods the language will have but this version can't bind yet.</summary>
    private static readonly HashSet<string> LaterMethods = new(StringComparer.OrdinalIgnoreCase)
    {
-      "groupBy", "join", "leftJoin", "selectMany", "union", "concat", "intersect", "except", "count", "countDistinct",
-      "sum", "avg", "min", "max", "any", "all", "contains", "first", "firstOrDefault",
+      "first", "firstOrDefault",
    };
 
    private static bool IsQueryMethod(string name) => SupportedMethods.Contains(name) || LaterMethods.Contains(name);
@@ -35,9 +35,12 @@ internal sealed partial class BinderRun
             return receiver switch
             {
                BoundQuery query => BindQueryMethod(query, method, call, scope),
+               BoundGroupCollection collection when !context.Functions.TryGet(method.Name, out _) || AggregateNames.Contains(method.Name) || method.Name.Equals("contains", StringComparison.OrdinalIgnoreCase)
+                  => BindGroupCollectionMethod(collection, method, call, scope),
+               BoundGroupCollection collection => BindFunction(method.Name, call, call.Arguments, Collapse(collection, member.Left), scope),
                BoundExpr { IsScalar: true } value => BindFunction(method.Name, call, call.Arguments, value, scope),
-               BoundExpr { Type: CollectionBoundType } collection => throw Error(call, DiagnosticCodes.NotSupportedYet,
-                  $"Methods on collections such as '{SourceText(member.Left)}' are not supported yet"),
+               BoundExpr { Type: RecordBoundType { Shape.Group: not null } } group when AggregateNames.Contains(method.Name)
+                  => BindGroupAggregate(method.Name, call, ((BoundRowRef)group).Row, scope),
                BoundExpr => throw Error(method, DiagnosticCodes.UnknownMethod,
                   $"'{SourceText(member.Left)}' is a row, which has no methods; call {method.Name}(...) on one of its columns"),
                BoundNamespace ns => throw Error(method, DiagnosticCodes.UnknownMethod,
@@ -50,13 +53,19 @@ internal sealed partial class BinderRun
             {
                throw Error(call, DiagnosticCodes.UnsupportedSyntax, $"{function.Name}(...) sets the direction of a sort key and only works inside orderBy(...) or thenBy(...)");
             }
+            if (AggregateNames.Contains(function.Name))
+            {
+               return GroupRowOf(scope) is { } groupRow
+                  ? BindGroupAggregate(function.Name, call, groupRow, scope)
+                  : throw Error(function, DiagnosticCodes.UnknownFunction, MisplacedAggregate(function.Name, scope));
+            }
             return BindFunction(function.Name, call, call.Arguments, null, scope);
          default:
             throw Error(call, DiagnosticCodes.UnsupportedSyntax, "Only functions and methods can be called");
       }
    }
 
-   private BoundQuery BindQueryMethod(BoundQuery input, IdentifierSyntax method, CallSyntax call, Scope scope)
+   private BoundNode BindQueryMethod(BoundQuery input, IdentifierSyntax method, CallSyntax call, Scope scope)
    {
       string name = method.Name;
       if (!SupportedMethods.Contains(name))
@@ -94,6 +103,24 @@ internal sealed partial class BinderRun
                throw Error(call, DiagnosticCodes.WrongArgumentCount, "distinct() takes no arguments; to keep distinct values of some columns, select them first: .select(a, b).distinct()");
             }
             return new BoundDistinct(input, call);
+         case "groupby":
+            return BindGroupBy(input, call, scope);
+         case "join":
+            return BindJoin(input, call, scope, leftJoin: false);
+         case "leftjoin":
+            return BindJoin(input, call, scope, leftJoin: true);
+         case "selectmany":
+            return BindSelectMany(input, call, scope);
+         case "union":
+            return BindSetOperation(input, call, scope, SetOperationKind.Union, "union");
+         case "concat":
+            return BindSetOperation(input, call, scope, SetOperationKind.UnionAll, "concat");
+         case "intersect":
+            return BindSetOperation(input, call, scope, SetOperationKind.Intersect, "intersect");
+         case "except":
+            return BindSetOperation(input, call, scope, SetOperationKind.Except, "except");
+         case "count" or "countdistinct" or "sum" or "avg" or "min" or "max" or "any" or "all" or "contains":
+            return BindQueryAggregate(input, method, call, scope);
          default:
             throw new InvalidOperationException($"Unhandled method {name}");
       }
@@ -137,7 +164,7 @@ internal sealed partial class BinderRun
          throw Error(named, DiagnosticCodes.NamedArgumentNotAllowed, "where(...) takes a condition, not a named value; did you mean '==' instead of ':'?");
       }
       RowVariable row = RowFor(input.Shape, call.Arguments);
-      BoundExpr predicate = BindRowArgument(argument, row, scope);
+      BoundExpr predicate = Collapse(BindRowArgument(argument, row, scope), Body(argument));
       if (!predicate.IsScalar) { throw NotScalar(predicate, Body(argument)); }
       predicate = Adopt(predicate, ScalarType.Boolean);
       if (predicate.Scalar.Kind != ScalarKind.Boolean)
@@ -158,68 +185,17 @@ internal sealed partial class BinderRun
          throw Error(call, DiagnosticCodes.WrongArgumentCount, $"{method}(...) needs at least one column, as in {method}(id, total: price * qty)");
       }
       RowVariable row = new(ItKeyword, input.Shape);
-      RowScope rowScope = new(scope, row);
-      List<BoundProjection> items = [];
-      NameTable<BoundProjection> names = new();
-
-      void Add(string name, BoundExpr value, SyntaxNode node)
-      {
-         if (names.Contains(name))
-         {
-            throw Error(node, DiagnosticCodes.DuplicateColumn, $"There is already a column '{name}' in this {method}; give this one another name, as in other_{name}: ...");
-         }
-         if (extend && input.Shape.Contains(name))
-         {
-            throw Error(node, DiagnosticCodes.DuplicateColumn, $"The rows already have '{name}'; extend(...) only adds new members, so pick another name or use select(...)");
-         }
-         BoundProjection projection = new(name, value);
-         names.Add(name, projection);
-         items.Add(projection);
-      }
-
-      foreach (SyntaxNode argument in call.Arguments)
-      {
-         switch (argument)
-         {
-            case LambdaSyntax lambda:
-               throw Error(lambda, DiagnosticCodes.UnsupportedSyntax, $"{method}(...) takes columns rather than a function; write {method}(id, total) or {method}(name: expression)");
-            case UnarySyntax { Kind: SyntaxKind.Postfix, Op: ".*" } spread:
-            {
-               BoundExpr target = BindExpr(spread.Operand, rowScope);
-               if (target.Type is not RecordBoundType record)
-               {
-                  throw Error(spread, DiagnosticCodes.SpreadNotAllowed, $"'.*' spreads the columns of a row, but '{SourceText(spread.Operand)}' is not a row");
-               }
-               foreach (ColumnMember column in record.Shape.Columns)
-               {
-                  if (column.Column?.Hidden == true) { continue; }
-                  Add(column.Name, Member(target, column, null), spread);
-               }
-               continue;
-            }
-            case NamedArgumentSyntax named:
-               if (named.Value is LambdaSyntax)
-               {
-                  throw Error(named.Value, DiagnosticCodes.UnsupportedSyntax, "A column is an expression, not a function; drop the 'x =>'");
-               }
-               Add(named.Name, Projectable(BindExpr(named.Value, rowScope), named.Value), named);
-               continue;
-            default:
-               Add(DefaultName(argument), Projectable(BindExpr(argument, rowScope), argument), argument);
-               continue;
-         }
-      }
-
+      List<BoundProjection> items = BindItems(call.Arguments, new RowScope(scope, row), method, extend ? input.Shape : null);
       List<ShapeMember> members = items.Select(Output).ToList();
       return extend
          ? new BoundExtend(input, row, items, input.Shape.Extend(members), call)
          : new BoundSelect(input, row, items, new RowShape(members), call);
    }
 
-   private BoundExpr Projectable(BoundExpr value, SyntaxNode node) => value.Type switch
+   private BoundExpr Projectable(BoundExpr value, SyntaxNode node) => Collapse(value, node).Type switch
    {
       CollectionBoundType => throw NotScalar(value, node),
-      _ => value,
+      _ => Collapse(value, node),
    };
 
    private static ShapeMember Output(BoundProjection projection) => projection.Expr.Type switch
@@ -271,7 +247,7 @@ internal sealed partial class BinderRun
          {
             throw Error(named, DiagnosticCodes.NamedArgumentNotAllowed, $"{method}(...) takes sort keys, not named values");
          }
-         BoundExpr key = BindRowArgument(keyNode, row, scope);
+         BoundExpr key = Collapse(BindRowArgument(keyNode, row, scope), Body(keyNode));
          if (!key.IsScalar)
          {
             throw key.Type is RecordBoundType

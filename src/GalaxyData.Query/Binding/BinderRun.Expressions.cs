@@ -15,6 +15,7 @@ internal sealed partial class BinderRun
    /// <summary>Binds any syntax to a query, an expression or (inside a path) a namespace.</summary>
    private BoundNode BindNode(SyntaxNode node, Scope scope)
    {
+      if (KeyByText(node, scope) is { } key) { return key; }
       switch (node)
       {
          case LiteralSyntax literal:
@@ -62,15 +63,17 @@ internal sealed partial class BinderRun
    private BoundExpr BindExpr(SyntaxNode node, Scope scope) => BindNode(node, scope) switch
    {
       BoundExpr expr => expr,
-      BoundQuery => throw Error(node, DiagnosticCodes.NotSupportedYet,
-         "A query can't be used as a value here; turning a query into a value (count(), any(), ...) is not supported yet"),
+      BoundNavigationQuery navigation => throw Error(node, DiagnosticCodes.NotAScalar,
+         $"'{SourceText(node)}' is a collection of {navigation.Navigation.Target.DisplayName}; turn it into a value with count(), sum(...), any(...) and the like, e.g. {SourceText(node)}.count()"),
+      BoundQuery => throw Error(node, DiagnosticCodes.NotAScalar,
+         $"'{SourceText(node)}' is a query, not a value; turn it into one with count(), sum(...), any(...) and the like"),
       BoundNamespace ns => throw Error(node, DiagnosticCodes.NotAValue, $"'{Describe(ns.Namespace)}' is a namespace, not a value"),
       _ => throw new InvalidOperationException("Unexpected bound node"),
    };
 
    private BoundExpr BindScalar(SyntaxNode node, Scope scope)
    {
-      BoundExpr expr = BindExpr(node, scope);
+      BoundExpr expr = Collapse(BindExpr(node, scope), node);
       return expr.IsScalar ? expr : throw NotScalar(expr, node);
    }
 
@@ -79,8 +82,8 @@ internal sealed partial class BinderRun
       RecordBoundType { Shape.Entity: { } entity } record => Error(node, DiagnosticCodes.NotAScalar,
          $"'{SourceText(node)}' is a row of {entity.DisplayName}, not a single value; pick one of its columns, e.g. {SourceText(node)}{MemberText(Pick(record.Shape))}"),
       RecordBoundType => Error(node, DiagnosticCodes.NotAScalar, $"'{SourceText(node)}' is a row, not a single value; pick one of its members"),
-      CollectionBoundType collection => Error(node, DiagnosticCodes.NotSupportedYet,
-         $"'{SourceText(node)}' is a collection of {collection.Element.Entity?.DisplayName ?? "rows"}; aggregating collections (count(), sum(...), any(...)) is not supported yet"),
+      CollectionBoundType collection => Error(node, DiagnosticCodes.NotAScalar,
+         $"'{SourceText(node)}' is a collection of {collection.Element.Entity?.DisplayName ?? "rows"}; turn it into a value with count(), sum(...), any(...) and the like"),
       _ => Error(node, DiagnosticCodes.NotAScalar, "Expected a single value"),
    };
 
@@ -219,7 +222,7 @@ internal sealed partial class BinderRun
       if (IsNullLiteral(binary.Left) || IsNullLiteral(binary.Right))
       {
          SyntaxNode operand = IsNullLiteral(binary.Left) ? binary.Right : binary.Left;
-         BoundExpr tested = BindExpr(operand, scope);
+         BoundExpr tested = Collapse(BindExpr(operand, scope), operand);
          if (tested.Type is CollectionBoundType) { throw NotScalar(tested, operand); }
          return new BoundIsNull(tested, negated, binary);
       }
@@ -357,7 +360,15 @@ internal sealed partial class BinderRun
    {
       if (binary.Right is not ArraySyntax list)
       {
-         throw Error(binary.Right, DiagnosticCodes.NotSupportedYet, "'in' takes a list such as ['a', 'b']; 'in' over a query is not supported yet");
+         BoundExpr value = BindScalar(binary.Left, scope);
+         return BindNode(binary.Right, scope) switch
+         {
+            BoundQuery query => InQuery(value, binary.Left, query, binary.Right, binary),
+            BoundGroupCollection { Projection.IsScalar: true } collection => GroupAggregate(AggregateKind.Any, "in", collection.GroupRow,
+               new BoundBinary(BinaryOp.Equal, Adopt(value, collection.Projection.Scalar), collection.Projection,
+                  ScalarType.Boolean.WithNullable(value.Scalar.Nullable || collection.Projection.Scalar.Nullable), binary), binary.Right, binary),
+            _ => throw Error(binary.Right, DiagnosticCodes.TypeMismatch, "'in' takes a list such as ['a', 'b'], or a query of one column"),
+         };
       }
       BoundExpr operand = BindScalar(binary.Left, scope);
       if (list.Elements.Length == 0) { return new BoundLiteral(false, ScalarType.Boolean.AsNonNullable(), binary); }

@@ -202,6 +202,50 @@ internal sealed class SqlCast(SqlExpr operand, string typeName) : SqlExpr
    public override int Precedence => SqlPrecedence.Atom;
 }
 
+/// <summary>An aggregate: <c>count(*)</c> when the argument is null, <c>count(DISTINCT x)</c>, <c>sum(x)</c>.</summary>
+internal sealed class SqlAggregate(string name, SqlExpr? argument, bool distinct = false) : SqlExpr
+{
+   public string Name { get; } = name;
+
+   public SqlExpr? Argument { get; } = argument;
+
+   public bool Distinct { get; } = distinct;
+
+   public override int Precedence => SqlPrecedence.Atom;
+}
+
+/// <summary><c>[NOT] EXISTS (select)</c>.</summary>
+internal sealed class SqlExists(SqlQuery query, bool negated) : SqlExpr
+{
+   public SqlQuery Query { get; } = query;
+
+   public bool Negated { get; } = negated;
+
+   public override int Precedence => Negated ? SqlPrecedence.Not : SqlPrecedence.Atom;
+
+   public override bool IsPredicate => true;
+}
+
+/// <summary>A subquery giving one value.</summary>
+internal sealed class SqlScalarSubquery(SqlQuery query) : SqlExpr
+{
+   public SqlQuery Query { get; } = query;
+
+   public override int Precedence => SqlPrecedence.Atom;
+}
+
+/// <summary><c>x IN (select)</c>.</summary>
+internal sealed class SqlInSubquery(SqlExpr operand, SqlQuery query) : SqlExpr
+{
+   public SqlExpr Operand { get; } = operand;
+
+   public SqlQuery Query { get; } = query;
+
+   public override int Precedence => SqlPrecedence.Comparison;
+
+   public override bool IsPredicate => true;
+}
+
 internal sealed class SqlFunctionCall(string name, IReadOnlyList<SqlExpr> arguments) : SqlExpr
 {
    public SqlFunctionCall(string name, params SqlExpr[] arguments) : this(name, (IReadOnlyList<SqlExpr>)arguments) { }
@@ -241,9 +285,9 @@ internal sealed class SqlTable(string? schema, string name, string alias) : SqlT
    public string Alias { get; } = alias;
 }
 
-internal sealed class SqlDerivedTable(SqlSelect select, string alias) : SqlTableSource
+internal sealed class SqlDerivedTable(SqlQuery query, string alias) : SqlTableSource
 {
-   public SqlSelect Select { get; } = select;
+   public SqlQuery Query { get; } = query;
 
    public string Alias { get; } = alias;
 }
@@ -271,7 +315,28 @@ internal sealed record SqlSelectItem(SqlExpr Expr, string? Alias);
 /// <summary>An ORDER BY key; <see cref="Nullable"/> tells the dialect whether null placement needs spelling out.</summary>
 internal sealed record SqlOrderItem(SqlExpr Expr, bool Descending, bool Nullable);
 
-internal sealed class SqlSelect
+/// <summary>A query: a SELECT, or a set operation of two.</summary>
+internal abstract class SqlQuery;
+
+internal enum SqlSetOperator : byte
+{
+   Union,
+   UnionAll,
+   Intersect,
+   Except,
+}
+
+/// <summary><c>left UNION right</c>; the sides are plain SELECTs with no ORDER BY or row limit.</summary>
+internal sealed class SqlCompound(SqlSetOperator op, SqlSelect left, SqlSelect right) : SqlQuery
+{
+   public SqlSetOperator Operator { get; } = op;
+
+   public SqlSelect Left { get; } = left;
+
+   public SqlSelect Right { get; } = right;
+}
+
+internal sealed class SqlSelect : SqlQuery
 {
    public bool Distinct { get; set; }
 
@@ -280,6 +345,10 @@ internal sealed class SqlSelect
    public SqlTableSource? From { get; set; }
 
    public SqlExpr? Where { get; set; }
+
+   public List<SqlExpr> GroupBy { get; } = [];
+
+   public SqlExpr? Having { get; set; }
 
    public List<SqlOrderItem> OrderBy { get; } = [];
 

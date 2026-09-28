@@ -91,6 +91,31 @@ public static class BoundTreePrinter
             text.AppendLine("Distinct");
             Query(text, distinct.Input, depth + 1);
             return;
+         case BoundNavigationQuery navigation:
+            text.Append("Navigate ").Append(Expr(navigation.Owner)).Append('.').Append(navigation.Navigation.Name).AppendLine();
+            return;
+         case BoundGroupBy group:
+            text.Append("GroupBy(").Append(group.Row.Name).Append(") ").AppendJoin(", ", group.Keys.Select(Projection)).AppendLine();
+            Query(text, group.Input, depth + 1);
+            return;
+         case BoundJoin join:
+            text.Append(join.Kind == BoundJoinKind.Left ? "LeftJoin" : "Join").Append(" on ").Append(Expr(join.Condition))
+                .Append(" => ").AppendJoin(", ", join.Items.Select(Projection)).AppendLine();
+            Query(text, join.Left, depth + 1);
+            Query(text, join.Right, depth + 1);
+            return;
+         case BoundSelectMany many:
+            text.Append("SelectMany(").Append(many.Row.Name).Append(')');
+            if (many.Items != null) { text.Append(" => ").AppendJoin(", ", many.Items.Select(Projection)); }
+            text.AppendLine();
+            Query(text, many.Input, depth + 1);
+            Query(text, many.Collection, depth + 1);
+            return;
+         case BoundSetOperation set:
+            text.AppendLine(set.Kind.ToString());
+            Query(text, set.Left, depth + 1);
+            Query(text, set.Right, depth + 1);
+            return;
          default:
             text.Append(query.GetType().Name).AppendLine();
             return;
@@ -114,7 +139,37 @@ public static class BoundTreePrinter
       BoundConditional conditional => $"{Operand(conditional.Condition)} ? {Operand(conditional.WhenTrue)} : {Operand(conditional.WhenFalse)}",
       BoundFunctionCall call => $"{call.Function.Name}({string.Join(", ", call.Arguments.Select(Expr))})",
       BoundLetValue let => let.Let.Name,
+      BoundGroupAggregate aggregate => $"{Aggregate(aggregate.Kind)}({(aggregate.Argument == null ? string.Empty : Expr(aggregate.Argument))})",
+      BoundQueryAggregate aggregate => $"{Chain(aggregate.Source)}.{Aggregate(aggregate.Kind)}({(aggregate.Argument == null ? string.Empty : Expr(aggregate.Argument))})",
+      BoundExists exists => $"{Chain(exists.Source)}.{(exists.Negated ? "none" : "any")}()",
+      BoundInQuery inQuery => $"{Operand(inQuery.Operand)} in {Chain(inQuery.Source)}",
       _ => expr.GetType().Name,
+   };
+
+   private static string Aggregate(AggregateKind kind) => kind switch
+   {
+      AggregateKind.CountDistinct => "countDistinct",
+      _ => kind.ToString().ToLowerInvariant(),
+   };
+
+   /// <summary>A query on one line, as a method chain: for the subqueries inside expressions.</summary>
+   public static string Chain(BoundQuery query) => query switch
+   {
+      BoundEntityScan scan => scan.Entity.DisplayName,
+      BoundLetQuery let => let.Let.Name,
+      BoundNavigationQuery navigation => $"{Expr(navigation.Owner)}.{navigation.Navigation.Name}",
+      BoundWhere where => $"{Chain(where.Input)}.where({where.Row.Name} => {Expr(where.Predicate)})",
+      BoundSelect select => $"{Chain(select.Input)}.select({string.Join(", ", select.Items.Select(i => $"{Name(i.Name)}: {Expr(i.Expr)}"))})",
+      BoundExtend extend => $"{Chain(extend.Input)}.extend({string.Join(", ", extend.Items.Select(i => $"{Name(i.Name)}: {Expr(i.Expr)}"))})",
+      BoundOrderBy order => $"{Chain(order.Input)}.orderBy({string.Join(", ", order.Keys.Select(k => k.Descending ? $"desc({Expr(k.Expr)})" : Expr(k.Expr)))})",
+      BoundTake take => $"{Chain(take.Input)}.take({Expr(take.Count)})",
+      BoundSkip skip => $"{Chain(skip.Input)}.skip({Expr(skip.Count)})",
+      BoundDistinct distinct => $"{Chain(distinct.Input)}.distinct()",
+      BoundGroupBy group => $"{Chain(group.Input)}.groupBy({string.Join(", ", group.Keys.Select(k => $"{Name(k.Name)}: {Expr(k.Expr)}"))})",
+      BoundSetOperation set => $"{Chain(set.Left)}.{set.Kind.ToString().ToLowerInvariant()}({Chain(set.Right)})",
+      BoundJoin join => $"{Chain(join.Left)}.{(join.Kind == BoundJoinKind.Left ? "leftJoin" : "join")}({Chain(join.Right)}, {Expr(join.Condition)})",
+      BoundSelectMany many => $"{Chain(many.Input)}.selectMany({Chain(many.Collection)})",
+      _ => query.GetType().Name,
    };
 
    private static string Member(BoundMemberAccess member)

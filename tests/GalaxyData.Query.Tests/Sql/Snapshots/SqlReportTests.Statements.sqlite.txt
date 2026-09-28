@@ -47,7 +47,7 @@ WHERE o.shipped_at IS NULL OR o.ship_customer_id IS NULL
 ### sales.orders.where(ship_customer.city == 'Durban').select(id, ship_customer.name)
 SELECT o.id, c.name
 FROM orders AS o
-LEFT JOIN customers AS c ON o.ship_customer_id = c.id
+INNER JOIN customers AS c ON o.ship_customer_id = c.id
 WHERE c.city = @p0
 -- p0 string = 'Durban'
 
@@ -76,13 +76,12 @@ INNER JOIN customers AS c ON o.customer_id = c.id
 -- p0 decimal(10,2) = 2
 
 ### sales.orders.extend(gross: total * (1 + $rate)).where(gross > 100).select(customer.name, gross)
-SELECT c.name, o.total * (@p0 + @p1) AS gross
+SELECT c.name, o.total * (1 + @p0) AS gross
 FROM orders AS o
 INNER JOIN customers AS c ON o.customer_id = c.id
-WHERE o.total * (@p0 + @p1) > @p2
--- p0 int64 = 1
--- p1 decimal = $rate
--- p2 decimal = 100
+WHERE o.total * (1 + @p0) > @p1
+-- p0 decimal = $rate
+-- p1 decimal = 100
 
 ### sales.orders.select(id, customer).where(customer.city != null).select(id, customer.name)
 SELECT o.id, c.name
@@ -108,17 +107,14 @@ FROM customers AS c
 -- p5 string = 'small'
 
 ### sales.customers.select(n: name.upper().trim(), y: year(created), d: addDays(created, 30), c: coalesce(city, name, 'x'))
-SELECT trim(upper(c.name)) AS n, CAST(strftime('%Y', c.created) AS INTEGER) AS y, date(c.created, @p0 || ' days') AS d, coalesce(c.city, c.name, @p1) AS c
+SELECT trim(upper(c.name)) AS n, CAST(strftime('%Y', c.created) AS INTEGER) AS y, date(c.created, 30 || ' days') AS d, coalesce(c.city, c.name, @p0) AS c
 FROM customers AS c
--- p0 int32 = 30
--- p1 string = 'x'
+-- p0 string = 'x'
 
 ### sales.order_lines.select(order_id, line_no, amount: qty * price, share: qty / 3, r: round(price, 1), p: product.name)
-SELECT o.order_id, o.line_no, o.qty * o.price AS amount, CAST(o.qty AS REAL) / @p0 AS share, round(o.price, @p1) AS r, p.name AS p
+SELECT o.order_id, o.line_no, o.qty * o.price AS amount, CAST(o.qty AS REAL) / 3 AS share, round(o.price, 1) AS r, p.name AS p
 FROM order_lines AS o
 INNER JOIN products AS p ON o.product_code = p.code
--- p0 int32 = 3
--- p1 int32 = 1
 
 ### sales.customers.where(between(credit_limit, 100, 5000.5) and like(name, 'A%'))
 SELECT c.id, c.name, c.city, c.credit_limit, c.created, c.region_code, c.uid, c.notes
@@ -148,18 +144,15 @@ WHERE (c.credit_limit > @p0) = (c.city IS NOT NULL)
 -- p0 decimal(10,2) = 100
 
 ### sales.orders.select(id, d: daysBetween(order_date, shipped_at), m: addMonths(order_date, 1), h: hour(shipped_at), at: now(), on: today())
-SELECT o.id, CAST(julianday(date(o.shipped_at)) - julianday(date(o.order_date)) AS INTEGER) AS d, date(o.order_date, @p0 || ' months') AS m, CAST(strftime('%H', o.shipped_at) AS INTEGER) AS h, @p1 AS "at", @p2 AS "on"
+SELECT o.id, CAST(julianday(date(o.shipped_at)) - julianday(date(o.order_date)) AS INTEGER) AS d, date(o.order_date, 1 || ' months') AS m, CAST(strftime('%H', o.shipped_at) AS INTEGER) AS h, @p0 AS "at", @p1 AS "on"
 FROM orders AS o
--- p0 int32 = 1
--- p1 datetime = now()
--- p2 date = today()
+-- p0 datetime = now()
+-- p1 date = today()
 
 ### sales.order_lines.select(a: toInt(price), b: toDecimal(qty, 10, 2), c: toString(price), d: toDouble(qty), e: substring(product_code, 2, 3), f: indexOf(product_code, '-'), g: left(product_code, 2), h: right(product_code, 3))
-SELECT CAST(o.price AS INTEGER) AS a, round(CAST(o.qty AS NUMERIC), 2) AS b, printf('%.2f', o.price) AS c, CAST(o.qty AS REAL) AS d, substr(o.product_code, @p0, @p1) AS e, instr(o.product_code, @p2) AS f, substr(o.product_code, 1, @p0) AS g, substr(o.product_code, max(length(o.product_code) - @p1 + 1, 1)) AS h
+SELECT CAST(o.price AS INTEGER) AS a, round(CAST(o.qty AS NUMERIC), 2) AS b, printf('%.2f', o.price) AS c, CAST(o.qty AS REAL) AS d, substr(o.product_code, 2, 3) AS e, instr(o.product_code, @p0) AS f, substr(o.product_code, 1, 2) AS g, substr(o.product_code, max(length(o.product_code) - 3 + 1, 1)) AS h
 FROM order_lines AS o
--- p0 int32 = 2
--- p1 int32 = 3
--- p2 string = '-'
+-- p0 string = '-'
 
 ### sales.customers.select(region.name).distinct()
 SELECT DISTINCT r.name
@@ -224,12 +217,10 @@ ORDER BY o.id DESC
 -- p0 string = 'k'
 
 ### sales.orders.select(q: total / customer.credit_limit, r: total % 7, s: id % 7, t: id / 2)
-SELECT CAST(o.total AS REAL) / c.credit_limit AS q, mod(o.total, @p0) AS r, o.id % @p1 AS s, CAST(o.id AS REAL) / @p2 AS t
+SELECT CAST(o.total AS REAL) / c.credit_limit AS q, mod(o.total, @p0) AS r, o.id % 7 AS s, CAST(o.id AS REAL) / 2 AS t
 FROM orders AS o
 INNER JOIN customers AS c ON o.customer_id = c.id
 -- p0 decimal(10,2) = 7
--- p1 int64 = 7
--- p2 int64 = 2
 
 ### sales.orders.where(order_date <= shipped_at).select(id)
 SELECT o.id
@@ -240,6 +231,250 @@ WHERE datetime(o.order_date) <= o.shipped_at
 SELECT date(c.created, @p0 || ' days') AS d, substr(c.name, 1, @p0) AS l, length(c.name) AS n
 FROM customers AS c
 -- p0 int32 = $n
+
+### sales.orders.groupBy(customer_id).select(customer_id: key, spend: sum(total), orders: count())
+SELECT o.customer_id, coalesce(sum(o.total), 0) AS spend, count(*) AS orders
+FROM orders AS o
+GROUP BY o.customer_id
+
+### sales.orders.join(sales.customers, outer.customer_id == inner.id, orders: outer, cust: inner).groupBy(cust.name).select(name: cust.name, count: orders.count(), total: orders.sum(total))
+SELECT c.name, count(*) AS count, coalesce(sum(o.total), 0) AS total
+FROM orders AS o
+INNER JOIN customers AS c ON o.customer_id = c.id
+GROUP BY c.name
+
+### x := sales.orders.where(total > 3); sales.customers.where(cust => x.any(order => cust.id == order.customer_id))
+SELECT c.id, c.name, c.city, c.credit_limit, c.created, c.region_code, c.uid, c.notes
+FROM customers AS c
+WHERE EXISTS (
+   SELECT 1
+   FROM orders AS o
+   WHERE o.total > @p0 AND c.id = o.customer_id
+)
+-- p0 decimal(10,2) = 3
+
+### sales.orders.groupBy(y: year(order_date), status).where(count() > 1).orderBy(desc(sum(total))).select(y, status, n: count(), big: any(total > 100), mean: avg(total))
+SELECT d.y, d.status, count(*) AS n, max(CASE WHEN d.total > @p0 THEN 1 ELSE 0 END) = 1 AS big, avg(d.total) AS mean
+FROM (
+   SELECT o.status, o.total, o.order_date, CAST(strftime('%Y', o.order_date) AS INTEGER) AS y
+   FROM orders AS o
+) AS d
+GROUP BY d.y, d.status
+HAVING count(*) > 1
+ORDER BY coalesce(sum(d.total), 0) DESC
+-- p0 decimal(10,2) = 100
+
+### sales.orders.groupBy(customer).select(customer.name, customer.city, n: count())
+SELECT c.name, c.city, count(*) AS n
+FROM orders AS o
+INNER JOIN customers AS c ON o.customer_id = c.id
+GROUP BY o.customer_id, c.name, c.city
+
+### sales.orders.groupBy(customer).select(customer.id, n: count())
+SELECT o.customer_id AS id, count(*) AS n
+FROM orders AS o
+GROUP BY o.customer_id
+
+### sales.orders.groupBy(customer_id).extend(n: count()).where(n > 1 and sum(total) > 10).select(customer_id, n)
+SELECT o.customer_id, count(*) AS n
+FROM orders AS o
+GROUP BY o.customer_id
+HAVING count(*) > 1 AND coalesce(sum(o.total), 0) > @p0
+-- p0 decimal(38,2) = 10
+
+### sales.order_lines.groupBy(order).select(order.status, n: count(), qty: qty.sum(), priced: price.countDistinct(), all: all(qty > 0))
+SELECT o2.status, count(*) AS n, coalesce(sum(o.qty), 0) AS qty, count(DISTINCT o.price) AS priced, min(CASE WHEN o.qty > 0 THEN 1 ELSE 0 END) = 1 AS "all"
+FROM order_lines AS o
+INNER JOIN orders AS o2 ON o.order_id = o2.id
+GROUP BY o.order_id, o2.status
+
+### sales.orders.groupBy().select(n: count(), total: sum(total))
+SELECT count(*) AS n, coalesce(sum(o.total), 0) AS total
+FROM orders AS o
+
+### sales.orders.groupBy(big: total > 100).select(big, n: count())
+SELECT d.big, count(*) AS n
+FROM (
+   SELECT o.total, o.total > @p0 AS big
+   FROM orders AS o
+) AS d
+GROUP BY d.big
+-- p0 decimal(10,2) = 100
+
+### sales.customers.select(name, n: orders_by_customer.count(), spend: orders_by_customer.sum(total), last: orders_by_customer.max(order_date))
+SELECT c.name, coalesce(d.count, 0) AS n, coalesce(d.sum, 0) AS spend, d.max AS "last"
+FROM customers AS c
+LEFT JOIN (
+   SELECT o.customer_id, count(*) AS count, coalesce(sum(o.total), 0) AS sum, max(o.order_date) AS max
+   FROM orders AS o
+   GROUP BY o.customer_id
+) AS d ON c.id = d.customer_id
+
+### sales.customers.where(orders_by_customer.any(status == 'open')).select(name)
+SELECT c.name
+FROM customers AS c
+WHERE EXISTS (
+   SELECT 1
+   FROM orders AS o
+   WHERE o.status = @p0 AND o.customer_id = c.id
+)
+-- p0 string(20,ansi) = 'open'
+
+### sales.customers.where(not orders_by_customer.any()).select(name)
+SELECT c.name
+FROM customers AS c
+WHERE NOT EXISTS (
+   SELECT 1
+   FROM orders AS o
+   WHERE o.customer_id = c.id
+)
+
+### sales.customers.where(c => sales.orders.all(o => o.customer_id != c.id or o.total > 0))
+SELECT c.id, c.name, c.city, c.credit_limit, c.created, c.region_code, c.uid, c.notes
+FROM customers AS c
+WHERE NOT EXISTS (
+   SELECT 1
+   FROM orders AS o
+   WHERE NOT (o.customer_id <> c.id OR o.total > @p0)
+)
+-- p0 decimal(10,2) = 0
+
+### sales.orders.where(customer_id in sales.customers.where(city == 'Cape Town').select(id))
+SELECT o.id, o.customer_id, o.status, o.total, o.order_date, o.shipped_at, o.ship_customer_id, o.attachment
+FROM orders AS o
+WHERE EXISTS (
+   SELECT 1
+   FROM customers AS c
+   WHERE c.city = @p0 AND o.customer_id = c.id
+)
+-- p0 string = 'Cape Town'
+
+### sales.orders.where(total > sales.orders.avg(total))
+SELECT o.id, o.customer_id, o.status, o.total, o.order_date, o.shipped_at, o.ship_customer_id, o.attachment
+FROM orders AS o
+WHERE o.total > (
+   SELECT avg(o2.total) AS avg
+   FROM orders AS o2
+)
+
+### sales.orders.count()
+SELECT (
+   SELECT count(*) AS count
+   FROM orders AS o
+) AS "value"
+
+### sales.customers.select(name, big: orders_by_customer.any(total > 100))
+SELECT c.name, EXISTS (
+   SELECT 1
+   FROM orders AS o
+   WHERE o.customer_id = c.id AND o.total > @p0
+) AS big
+FROM customers AS c
+-- p0 decimal(10,2) = 100
+
+### sales.orders.leftJoin(sales.regions, (o, r) => o.customer.region_code == r.code, id: outer.id, region: inner.name)
+SELECT o.id, r.name AS region
+FROM orders AS o
+INNER JOIN customers AS c ON o.customer_id = c.id
+LEFT JOIN regions AS r ON c.region_code = r.code
+
+### sales.orders.join(sales.order_lines, outer.id == inner.order_id and inner.qty > 1, id: outer.id, line: inner.line_no, product: inner.product.name)
+SELECT o.id, o2.line_no AS line, p.name AS product
+FROM orders AS o
+INNER JOIN order_lines AS o2 ON o.id = o2.order_id AND o2.qty > 1
+INNER JOIN products AS p ON o2.product_code = p.code
+
+### sales.customers.selectMany(orders_by_customer).select(id, total)
+SELECT o.id, o.total
+FROM customers AS c
+INNER JOIN orders AS o ON o.customer_id = c.id
+
+### sales.customers.selectMany(orders_by_customer, who: outer.name, total: inner.total)
+SELECT c.name AS who, o.total
+FROM customers AS c
+INNER JOIN orders AS o ON o.customer_id = c.id
+
+### sales.orders.select(id, status).union(sales.orders.where(total > 100).select(status, id))
+SELECT d.id, d.status
+FROM (
+   SELECT o.id, o.status
+   FROM orders AS o
+   UNION
+   SELECT o2.id, o2.status
+   FROM orders AS o2
+   WHERE o2.total > @p0
+) AS d
+-- p0 decimal(10,2) = 100
+
+### sales.orders.where(total > 100).concat(sales.orders.where(status == 'open')).select(id, customer.name)
+SELECT d.id, c.name
+FROM (
+   SELECT o.id, o.customer_id
+   FROM orders AS o
+   WHERE o.total > @p0
+   UNION ALL
+   SELECT o2.id, o2.customer_id
+   FROM orders AS o2
+   WHERE o2.status = @p1
+) AS d
+INNER JOIN customers AS c ON d.customer_id = c.id
+-- p0 decimal(10,2) = 100
+-- p1 string(20,ansi) = 'open'
+
+### sales.orders.select(customer_id).intersect(sales.customers.select(customer_id: id)).orderBy(customer_id).take(5)
+SELECT d.customer_id
+FROM (
+   SELECT o.customer_id
+   FROM orders AS o
+   INTERSECT
+   SELECT c.id AS customer_id
+   FROM customers AS c
+) AS d
+ORDER BY d.customer_id
+LIMIT 5
+
+### sales.orders.select(customer_id).except(sales.customers.where(city == null).select(customer_id: id))
+SELECT d.customer_id
+FROM (
+   SELECT o.customer_id
+   FROM orders AS o
+   EXCEPT
+   SELECT c.id AS customer_id
+   FROM customers AS c
+   WHERE c.city IS NULL
+) AS d
+
+### sales.customers.groupBy(city).select(city, s: sum(orders_by_customer.count()), big: any(orders_by_customer.any(total > 100)))
+SELECT d.city, coalesce(sum(d.sum_value), 0) AS s, max(d.any_value) = 1 AS big
+FROM (
+   SELECT c.id, c.city, (
+      SELECT count(*) AS count
+      FROM orders AS o
+      WHERE o.customer_id = c.id
+   ) AS sum_value, CASE WHEN EXISTS (
+      SELECT 1
+      FROM orders AS o2
+      WHERE o2.customer_id = c.id AND o2.total > @p0
+   ) THEN 1 ELSE 0 END AS any_value
+   FROM customers AS c
+) AS d
+GROUP BY d.city
+-- p0 decimal(10,2) = 100
+
+### sales.orders.take(2).count()
+SELECT (
+   SELECT count(*) AS count
+   FROM (
+      SELECT 1 AS one
+      FROM orders AS o
+      LIMIT 2
+   ) AS d
+) AS "value"
+
+### sales.customers.extend(k: $n).select(name, l: left(name, k), d: addDays(created, k))
+SELECT c.name, substr(c.name, 1, @p0) AS l, date(c.created, @p0 || ' days') AS d
+FROM customers AS c
+-- p0 int64 = $n
 
 ### xl['Budget 2024']['Sheet 1'].where(Amount > 0).select(it['Line Item'], Amount)
 SELECT s."Line Item", s.Amount
@@ -254,12 +489,11 @@ WHERE o.total > @p0
 -- p0 decimal(10,2) = 100
 
 ### limit := 1000; cutoff := $rate * 2; sales.customers.where(credit_limit > limit).select(name, cutoff)
-SELECT c.name, @p1 * @p2 AS cutoff
+SELECT c.name, @p0 * 2 AS cutoff
 FROM customers AS c
-WHERE c.credit_limit > @p0
--- p0 decimal(10,2) = 1000
--- p1 decimal = $rate
--- p2 int64 = 2
+WHERE c.credit_limit > @p1
+-- p0 decimal = $rate
+-- p1 decimal(10,2) = 1000
 
 ### reports.big_orders.where(status == 'open').select(id, who: customer.name)
 SELECT o.id, c.name AS who
@@ -276,15 +510,11 @@ WHERE c.city IS NOT NULL
 ORDER BY upper(c.city)
 
 ### 1 + 2 * 3
-SELECT @p0 + @p1 * @p2 AS "value"
--- p0 int64 = 1
--- p1 int64 = 2
--- p2 int64 = 3
+SELECT 1 + 2 * 3 AS "value"
 
 ### sales.orders.where(total > 3.5 and total < 1e3 and id > -1)
 SELECT o.id, o.customer_id, o.status, o.total, o.order_date, o.shipped_at, o.ship_customer_id, o.attachment
 FROM orders AS o
-WHERE o.total > @p0 AND o.total < @p1 AND o.id > @p2
+WHERE o.total > @p0 AND o.total < @p1 AND o.id > -1
 -- p0 decimal(10,2) = 3.5
 -- p1 decimal(10,2) = 1000
--- p2 int64 = -1

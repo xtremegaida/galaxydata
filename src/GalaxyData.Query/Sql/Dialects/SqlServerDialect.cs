@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using GalaxyData.Query.Functions;
+using GalaxyData.Query.Planning;
 using GalaxyData.Query.Types;
 
 namespace GalaxyData.Query.Sql;
@@ -72,6 +73,19 @@ internal sealed class SqlServerDialect : SqlDialect
 
    private protected override void WriteBinary(StringBuilder text, byte[] value) => text.Append("0x").Append(Convert.ToHexString(value));
 
+   internal override string AggregateName(string name) => name.ToUpperInvariant();
+
+   /// <summary>SUM and AVG keep the type of whole numbers, which overflows and truncates; they get bigint and float.</summary>
+   internal override SqlExpr Aggregate(AggregateFunction function, SqlExpr? argument, ScalarType? argumentType)
+   {
+      if (argumentType is { IsInteger: true } && argument != null)
+      {
+         if (function == AggregateFunction.Sum) { argument = Cast(argument, ScalarType.Int64); }
+         if (function == AggregateFunction.Avg) { argument = Cast(argument, ScalarType.Double); }
+      }
+      return base.Aggregate(function, argument, argumentType);
+   }
+
    /// <summary>There is no <c>%</c> for floats: x - y * (x / y truncated).</summary>
    internal override SqlExpr Modulo(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       leftType.Kind is ScalarKind.Double or ScalarKind.Single || rightType.Kind is ScalarKind.Double or ScalarKind.Single
@@ -87,11 +101,11 @@ internal sealed class SqlServerDialect : SqlDialect
       FunctionId.RTrim => Call("RTRIM", c.Arg(0)),
       // LEN ignores trailing spaces; one more character after them makes it count them.
       FunctionId.Length => Binary(SqlBinaryOp.Subtract, Call("LEN", Binary(SqlBinaryOp.Concat, c.Arg(0), Text("."))), Integer(1)),
-      FunctionId.Substring => Call("SUBSTRING", c.Arg(0), c.Arg(1), c.Count == 3 ? c.Arg(2) : Call("DATALENGTH", c.Arg(0))),
+      FunctionId.Substring => Call("SUBSTRING", c.Arg(0), Int(c, 1), c.Count == 3 ? Int(c, 2) : Call("DATALENGTH", c.Arg(0))),
       FunctionId.IndexOf => Call("CHARINDEX", c.Arg(1), c.Arg(0)),
       FunctionId.Replace => Call("REPLACE", c.Args()),
-      FunctionId.Left => Call("LEFT", c.Arg(0), c.Arg(1)),
-      FunctionId.Right => Call("RIGHT", c.Arg(0), c.Arg(1)),
+      FunctionId.Left => Call("LEFT", c.Arg(0), Int(c, 1)),
+      FunctionId.Right => Call("RIGHT", c.Arg(0), Int(c, 1)),
       FunctionId.StartsWith => c.IsFixedText(1)
          ? Like(c.Arg(0), c.Pattern(1, PatternStyle.LikeWithBrackets, PatternShape.Prefix))
          : Binary(SqlBinaryOp.Equal, Call("LEFT", c.Arg(0), Call("LEN", c.Arg(1))), c.Arg(1)),
@@ -108,7 +122,7 @@ internal sealed class SqlServerDialect : SqlDialect
       FunctionId.ILike => Like(Call("LOWER", c.Arg(0)), Call("LOWER", c.Arg(1))),
       FunctionId.Concat => Call("CONCAT", c.Args()),
       FunctionId.Abs => Call("ABS", c.Arg(0)),
-      FunctionId.Round => IsInteger(c.Type(0)) ? c.Arg(0) : Call("ROUND", c.Arg(0), c.Count == 2 ? c.Arg(1) : Integer(0)),
+      FunctionId.Round => IsInteger(c.Type(0)) ? c.Arg(0) : Call("ROUND", c.Arg(0), c.Count == 2 ? Int(c, 1) : Integer(0)),
       FunctionId.Floor => IsInteger(c.Type(0)) ? c.Arg(0) : Call("FLOOR", c.Arg(0)),
       FunctionId.Ceiling => IsInteger(c.Type(0)) ? c.Arg(0) : Call("CEILING", c.Arg(0)),
       FunctionId.Power => Call("POWER", Cast(c.Arg(0), ScalarType.Double), c.Arg(1)),
@@ -121,8 +135,8 @@ internal sealed class SqlServerDialect : SqlDialect
       FunctionId.Minute => DatePart("minute", c),
       FunctionId.Second => DatePart("second", c),
       FunctionId.Date => Cast(c.Arg(0), ScalarType.Date),
-      FunctionId.AddDays => Call("DATEADD", Raw("day"), c.Arg(1), c.Arg(0)),
-      FunctionId.AddMonths => Call("DATEADD", Raw("month"), c.Arg(1), c.Arg(0)),
+      FunctionId.AddDays => Call("DATEADD", Raw("day"), Int(c, 1), c.Arg(0)),
+      FunctionId.AddMonths => Call("DATEADD", Raw("month"), Int(c, 1), c.Arg(0)),
       FunctionId.DaysBetween => Call("DATEDIFF", Raw("day"), c.Arg(0), c.Arg(1)),
       FunctionId.Coalesce => Call("COALESCE", c.Args()),
       FunctionId.NullIf => Call("NULLIF", c.Arg(0), c.Arg(1)),

@@ -120,3 +120,119 @@ Where(it) (it.total > 0) and (it.status != '')
 ### sales.orders.where(total > 3.5 and total < 1e3 and id > -1)
 Where(it) ((it.total > 3.5) and (it.total < 1000)) and (it.id > -1)
   Scan sales.orders
+
+### sales.orders.groupBy(customer_id).select(customer_id: key, spend: sum(total), orders: count())
+Select customer_id: int32 = it.key, spend: decimal(38,2) = sum(it.total), orders: int64 = count()
+  GroupBy(it) customer_id: int32 = it.customer_id
+    Scan sales.orders
+
+### sales.orders.join(sales.customers, outer.customer_id == inner.id, orders: outer, cust: inner).groupBy(cust.name).select(name: cust.name, count: orders.count(), total: orders.sum(total))
+Select name: string(100) = it.name, count: int64 = count(), total: decimal(38,2) = sum(it.orders.total)
+  GroupBy(it) name: string(100) = it.cust.name
+    Join on outer.customer_id == inner.id => orders: record sales.orders = outer, cust: record sales.customers = inner
+      Scan sales.orders
+      Scan sales.customers
+
+### x := sales.orders.where(total > 3); sales.customers.where(cust => x.any(order => cust.id == order.customer_id))
+let x =
+  Where(it) it.total > 3
+    Scan sales.orders
+Where(cust) x.where(order => cust.id == order.customer_id).any()
+  Scan sales.customers
+
+### sales.orders.groupBy(y: year(order_date), status).where(count() > 1).orderBy(desc(sum(total))).select(y, status, n: count(), big: any(total > 100), mean: avg(total))
+Select y: int32 = it.y, status: string(20,ansi) = it.status, n: int64 = count(), big: boolean = any(it.total > 100), mean: decimal? = avg(it.total)
+  OrderBy(it) sum(it.total) desc
+    Where(it) count() > 1
+      GroupBy(it) y: int32 = year(it.order_date), status: string(20,ansi) = it.status
+        Scan sales.orders
+
+### sales.orders.groupBy(customer).select(customer.name, customer.city, n: count())
+Select name: string(100) = it.customer.name, city: string? = it.customer.city, n: int64 = count()
+  GroupBy(it) customer: record sales.customers = it.customer
+    Scan sales.orders
+
+### sales.orders.groupBy(year(order_date)).select(year(order_date), n: count(total > 10), total.max())
+Select 'year(order_date)': int32 = it['year(order_date)'], n: int64 = count((it.total > 10) ? 1 : null), 'total.max()': decimal(10,2)? = max(it.total)
+  GroupBy(it) 'year(order_date)': int32 = year(it.order_date)
+    Scan sales.orders
+
+### sales.orders.groupBy(customer_id).extend(n: count()).where(n > 1).select(customer_id, n)
+Select customer_id: int32 = it.customer_id, n: int64 = it.n
+  Where(it) it.n > 1
+    Extend n: int64 = count()
+      GroupBy(it) customer_id: int32 = it.customer_id
+        Scan sales.orders
+
+### sales.order_lines.groupBy(order).select(order.status, n: count(), qty: qty.sum(), priced: price.countDistinct())
+Select status: string(20,ansi) = it.order.status, n: int64 = count(), qty: int64 = sum(it.qty), priced: int64 = countDistinct(it.price)
+  GroupBy(it) order: record sales.orders = it.order
+    Scan sales.order_lines
+
+### sales.orders.groupBy(g => g.status).where(g => g.count() > 1).select(status)
+Select status: string(20,ansi) = it.status
+  Where(g) count() > 1
+    GroupBy(g) status: string(20,ansi) = g.status
+      Scan sales.orders
+
+### sales.customers.select(name, n: orders_by_customer.count(), spend: orders_by_customer.sum(total), last: orders_by_customer.max(order_date))
+Select name: string(100) = it.name, n: int64 = it.orders_by_customer.count(), spend: decimal(38,2) = it.orders_by_customer.sum(it.total), last: date? = it.orders_by_customer.max(it.order_date)
+  Scan sales.customers
+
+### sales.customers.where(orders_by_customer.any(status == 'open')).select(name)
+Select name: string(100) = it.name
+  Where(it) it.orders_by_customer.where(it => it.status == 'open').any()
+    Scan sales.customers
+
+### sales.customers.where(c => sales.orders.all(o => o.customer_id != c.id or o.total > 0))
+Where(c) sales.orders.where(o => not ((o.customer_id != c.id) or (o.total > 0))).none()
+  Scan sales.customers
+
+### sales.orders.where(customer_id in sales.customers.where(city == 'Cape Town').select(id))
+Where(it) it.customer_id in sales.customers.where(it => it.city == 'Cape Town').select(id: it.id)
+  Scan sales.orders
+
+### sales.orders.where(total > sales.orders.avg(total))
+Where(it) it.total > sales.orders.avg(it.total)
+  Scan sales.orders
+
+### sales.orders.count()
+Value sales.orders.count() :: int64
+
+### sales.orders.leftJoin(sales.regions, (o, r) => o.customer.region_code == r.code, id: outer.id, region: inner.name)
+LeftJoin on outer.customer.region_code == inner.code => id: int64 = outer.id, region: string? = inner.name
+  Scan sales.orders
+  Scan sales.regions
+
+### sales.customers.selectMany(orders_by_customer).select(id, total)
+Select id: int64 = it.id, total: decimal(10,2) = it.total
+  SelectMany(it)
+    Scan sales.customers
+    Navigate it.orders_by_customer
+
+### sales.customers.selectMany(orders_by_customer, who: outer.name, total: inner.total)
+SelectMany(it) => who: string(100) = it.name, total: decimal(10,2) = inner.total
+  Scan sales.customers
+  Navigate it.orders_by_customer
+
+### sales.orders.select(id, status).union(sales.orders.where(total > 100).select(status, id))
+Union
+  Select id: int64 = it.id, status: string(20,ansi) = it.status
+    Scan sales.orders
+  Select status: string(20,ansi) = it.status, id: int64 = it.id
+    Where(it) it.total > 100
+      Scan sales.orders
+
+### sales.orders.where(total > 100).concat(sales.orders.where(status == 'open'))
+UnionAll
+  Where(it) it.total > 100
+    Scan sales.orders
+  Where(it) it.status == 'open'
+    Scan sales.orders
+
+### sales.orders.select(customer_id).intersect(sales.customers.select(customer_id: id))
+Intersect
+  Select customer_id: int32 = it.customer_id
+    Scan sales.orders
+  Select customer_id: int32 = it.id
+    Scan sales.customers

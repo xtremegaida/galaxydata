@@ -31,6 +31,8 @@ public static class DiagnosticCodes
    public const string NotSortable = "GDQ2024";
    public const string BrokenVirtualEntity = "GDQ2025";
    public const string VirtualEntityCycle = "GDQ2026";
+   public const string NotGroupKey = "GDQ2027";
+   public const string SetOperationColumns = "GDQ2028";
    public const string NotSupportedYet = "GDQ2099";
    public const string ShadowedName = "GDQ2101";
 

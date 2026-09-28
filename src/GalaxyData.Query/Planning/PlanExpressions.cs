@@ -125,5 +125,32 @@ public sealed class PlanFunction(FunctionDef function, IReadOnlyList<PlanExpr> a
    public SourceSpan? Span { get; } = span;
 }
 
+public enum SubqueryKind : byte
+{
+   /// <summary>Whether the plan has rows (none, when negated).</summary>
+   Exists,
+
+   /// <summary>The single value of a plan with one row and one column (null for no rows).</summary>
+   Scalar,
+
+   /// <summary>Whether the operand is among the values of the plan's single column.</summary>
+   In,
+}
+
+/// <summary>
+/// A plan used as a value. It may refer to columns of the plan around it (a correlated subquery); the optimizer
+/// turns the common shapes into joins.
+/// </summary>
+public sealed class PlanSubquery(SubqueryKind kind, PlanNode plan, PlanExpr? operand, bool negated, ScalarType type) : PlanExpr(type)
+{
+   public SubqueryKind Kind { get; } = kind;
+
+   public PlanNode Plan { get; } = plan;
+
+   public PlanExpr? Operand { get; } = operand;
+
+   public bool Negated { get; } = negated;
+}
+
 /// <summary>A range of the query text: [Start, End).</summary>
 public readonly record struct SourceSpan(int Start, int End);

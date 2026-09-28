@@ -55,11 +55,11 @@ internal sealed class DuckDbDialect : SqlDialect
       FunctionId.LTrim => Call("ltrim", c.Arg(0)),
       FunctionId.RTrim => Call("rtrim", c.Arg(0)),
       FunctionId.Length => Call("length", c.Arg(0)),
-      FunctionId.Substring => Call("substring", c.Args()),
+      FunctionId.Substring => Call("substring", TextThenInts(c)),
       FunctionId.IndexOf => Call("strpos", c.Arg(0), c.Arg(1)),
       FunctionId.Replace => Call("replace", c.Args()),
-      FunctionId.Left => Call("left", c.Arg(0), c.Arg(1)),
-      FunctionId.Right => Call("right", c.Arg(0), c.Arg(1)),
+      FunctionId.Left => Call("left", c.Arg(0), Int(c, 1)),
+      FunctionId.Right => Call("right", c.Arg(0), Int(c, 1)),
       FunctionId.StartsWith => Call("starts_with", c.Arg(0), c.Arg(1)),
       FunctionId.EndsWith => Call("ends_with", c.Arg(0), c.Arg(1)),
       FunctionId.Contains => Call("contains", c.Arg(0), c.Arg(1)),
@@ -68,7 +68,7 @@ internal sealed class DuckDbDialect : SqlDialect
       FunctionId.ILike => Like(c.Arg(0), c.Arg(1), caseInsensitive: true),
       FunctionId.Concat => Call("concat", c.Args()),
       FunctionId.Abs => Call("abs", c.Arg(0)),
-      FunctionId.Round => IsInteger(c.Type(0)) ? c.Arg(0) : Call("round", c.Args()),
+      FunctionId.Round => IsInteger(c.Type(0)) ? c.Arg(0) : Call("round", TextThenInts(c)),
       FunctionId.Floor => IsInteger(c.Type(0)) ? c.Arg(0) : Call("floor", c.Arg(0)),
       FunctionId.Ceiling => IsInteger(c.Type(0)) ? c.Arg(0) : Call("ceiling", c.Arg(0)),
       FunctionId.Power => Call("power", c.Arg(0), c.Arg(1)),
@@ -82,11 +82,11 @@ internal sealed class DuckDbDialect : SqlDialect
       FunctionId.Second => Call("second", c.Arg(0)),
       FunctionId.Date => Cast(c.Arg(0), ScalarType.Date),
       FunctionId.AddDays => c.Type(0).Kind == ScalarKind.Date
-         ? Binary(SqlBinaryOp.Add, c.Arg(0), c.Arg(1))
-         : Binary(SqlBinaryOp.Add, c.Arg(0), Call("to_days", c.Arg(1))),
+         ? Binary(SqlBinaryOp.Add, c.Arg(0), Int(c, 1))
+         : Binary(SqlBinaryOp.Add, c.Arg(0), Call("to_days", Int(c, 1))),
       FunctionId.AddMonths => c.Type(0).Kind == ScalarKind.Date
-         ? Cast(Binary(SqlBinaryOp.Add, c.Arg(0), Call("to_months", c.Arg(1))), ScalarType.Date)
-         : Binary(SqlBinaryOp.Add, c.Arg(0), Call("to_months", c.Arg(1))),
+         ? Cast(Binary(SqlBinaryOp.Add, c.Arg(0), Call("to_months", Int(c, 1))), ScalarType.Date)
+         : Binary(SqlBinaryOp.Add, c.Arg(0), Call("to_months", Int(c, 1))),
       FunctionId.DaysBetween => Call("date_diff", Text("day"), Cast(c.Arg(0), ScalarType.Date), Cast(c.Arg(1), ScalarType.Date)),
       FunctionId.Coalesce => Call("coalesce", c.Args()),
       FunctionId.NullIf => Call("nullif", c.Arg(0), c.Arg(1)),

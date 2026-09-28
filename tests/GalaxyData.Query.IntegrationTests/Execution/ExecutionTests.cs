@@ -17,6 +17,10 @@ namespace GalaxyData.Query.IntegrationTests.Execution;
 public sealed class ExecutionTests
 {
    private const string ExampleOne = "shop.orders.where(status == 'open').select(id, total, who: customer.name, city: customer.city)";
+   private const string ExampleTwo = "shop.orders.groupBy(customer_id).select(customer_id: key, spend: sum(total), orders: count())";
+   private const string ExampleThree =
+      "shop.orders.join(shop.customers, outer.customer_id == inner.id, orders: outer, cust: inner).groupBy(cust.name).select(name: cust.name, count: orders.count(), total: orders.sum(total))";
+   private const string ExampleFour = "x := shop.orders.where(total > 3); shop.customers.where(cust => x.any(order => cust.id == order.customer_id))";
 
    /// <summary>Queries over the columns both shop fixtures share; SQLite and DuckDB must return the same rows.</summary>
    private static readonly string[] Conformance =
@@ -54,6 +58,42 @@ public sealed class ExecutionTests
       "shop.orders.select(id, x: 'k', f: false).orderBy(x, f, desc(id)).select(id)",
       "shop.orders.select(id, same: order_date == toDateTime('2026-01-05 00:00'), before: order_date < toDateTime('2026-01-09 12:00')).orderBy(id)",
       "shop.customers.select(name, l: left(name, $n), d: addDays(toDate('2026-01-01'), $n)).orderBy(name)",
+      ExampleTwo + ".orderBy(customer_id)",
+      ExampleThree + ".orderBy(name)",
+      ExampleFour + ".select(name).orderBy(name)",
+      "shop.customers.select(name, n: addresses.count(), orders: orders.count(), spend: orders.sum(total), last: orders.max(order_date)).orderBy(name)",
+      "shop.customers.where(not orders.any(status == 'open')).select(name)",
+      "shop.customers.where(c => shop.orders.all(o => o.customer_id != c.id or o.total > 50)).select(name).orderBy(name)",
+      "shop.customers.select(name, big: orders.any(total > 100)).orderBy(name)",
+      "shop.orders.where(customer_id in shop.customers.where(city == 'Cape Town').select(id)).select(id).orderBy(id)",
+      "shop.orders.where(total > shop.orders.avg(total)).select(id).orderBy(id)",
+      "shop.orders.count()",
+      "shop.orders.groupBy(status).where(count() > 1).select(status, n: count(), mean: avg(total), big: any(total > 100), all: all(total > 10)).orderBy(status)",
+      "shop.orders.groupBy(customer).select(customer.name, n: count(), total: sum(total)).orderBy(name)",
+      "shop.orders.groupBy(y: year(order_date), m: month(order_date)).select(y, m, n: count()).orderBy(y, m)",
+      "shop.order_lines.groupBy(order).select(id: order.id, order.status, lines: count(), qty: qty.sum()).orderBy(id)",
+      "shop.orders.groupBy().select(n: count(), total: sum(total), low: min(total), high: max(total))",
+      "shop.orders.leftJoin(shop.addresses, outer.bill_address_id == inner.id, o: outer, a: inner).select(o.id, line: a.line1).orderBy(id)",
+      "shop.customers.selectMany(orders, who: outer.name, total: inner.total).orderBy(who, total)",
+      "shop.orders.select(id, status).union(shop.orders.where(total > 50).select(status, id)).orderBy(id)",
+      "shop.orders.where(total > 50).concat(shop.orders.where(status == 'open')).select(id).orderBy(id)",
+      "shop.orders.select(customer_id).intersect(shop.addresses.select(customer_id)).orderBy(customer_id)",
+      "shop.orders.select(customer_id).except(shop.addresses.select(customer_id))",
+      "shop.customers.select(name, n: addresses.countDistinct(city)).orderBy(name)",
+      "shop.customers.where(addresses.countDistinct(city) == 0).select(name)",
+      "shop.orders.take(2).count()",
+      "shop.orders.skip(1).count()",
+      "shop.orders.select(id, total).concat(shop.orders.select(id, total)).count()",
+      "shop.customers.where(shop.orders.concat(shop.orders).any()).select(name).orderBy(name)",
+      "shop.orders.where(total > 100000).groupBy().select(n: count()).count()",
+      "shop.customers.where(shop.orders.where(total > 100000).groupBy().select(n: count()).any()).select(name).orderBy(name)",
+      "shop.orders.leftJoin(shop.customers, outer.customer_id == inner.id and inner.city == 'Cape Town', o: outer, c: inner).where(between(o.total, c.credit_limit, 10) == false).select(o.id).orderBy(id)",
+      "shop.customers.select(name, s: orders.sum(total * credit_limit)).orderBy(name)",
+      "shop.orders.groupBy(customer_id).extend(n: count()).select(customer_id, m: shop.customers.where(c => c.credit_limit > n).count()).orderBy(customer_id)",
+      "shop.orders.count(ship_address)",
+      "shop.customers.select(name, n: orders.count(ship_address)).orderBy(name)",
+      "shop.customers.groupBy(city).select(city, s: sum(orders.count())).orderBy(city)",
+      "shop.customers.extend(k: $n).select(name, l: left(name, k), d: addDays(toDate('2026-01-01'), k)).orderBy(name)",
       "1 + 2 * 3",
    ];
 
@@ -204,6 +244,28 @@ public sealed class ExecutionTests
       TestSources.Format(await result.ToListAsync(TestContext.Current.CancellationToken)).ShouldBe(
          "1 | true | 9 | 2026-03-01 09:30:00" + Environment.NewLine +
          "2 | false | 10 | 2026-03-01 09:30:00" + Environment.NewLine);
+   }
+
+   [Fact]
+   public async Task CollectionsThatCantBeJoinedAreReported()
+   {
+      await using TestSources sources = await TestSources.SqliteShopAsync();
+      PreparedQuery prepared = sources.Engine().Prepare("shop.customers.selectMany(c => shop.orders.where(o => o.customer_id == c.id).take(1)).select(id)");
+      prepared.Success.ShouldBeFalse();
+      prepared.Diagnostics.ShouldHaveSingleItem().Code.ShouldBe(DiagnosticCodes.NotTranslatable);
+   }
+
+   [Fact]
+   public async Task CorrelatedSubqueriesRunWithoutTheOptimizerToo()
+   {
+      await using TestSources sources = await TestSources.DuckDbShopAsync();
+      QueryEngine plain = sources.Engine(options: new QueryEngineOptions { Optimize = false });
+      const string query = "shop.customers.select(name, n: orders.count(), spend: orders.sum(total), big: orders.any(total > 100)).orderBy(name)";
+      await using QueryResult result = await plain.ExecuteAsync(new QueryRequest(query), TestContext.Current.CancellationToken);
+      TestSources.Format(await result.ToListAsync(TestContext.Current.CancellationToken)).ShouldBe(
+         "'Acme Ltd' | 2 | 349.50 | true" + Environment.NewLine +
+         "'Beta Corp' | 1 | 12.25 | false" + Environment.NewLine +
+         "'Gamma Inc' | 1 | 0.00 | false" + Environment.NewLine);
    }
 
    [Fact]

@@ -58,14 +58,18 @@ public sealed class RowShape
 {
    private readonly NameTable<ShapeMember> byName = new();
 
-   public RowShape(IEnumerable<ShapeMember> members, EntityDef? entity = null)
+   public RowShape(IEnumerable<ShapeMember> members, EntityDef? entity = null, GroupInfo? group = null)
    {
       Members = members.ToList();
       Entity = entity;
+      Group = group;
       foreach (ShapeMember member in Members) { byName.Add(member.Name, member); }
    }
 
    public EntityDef? Entity { get; }
+
+   /// <summary>Set for the rows of groupBy(...): each is a group, whose members are its key parts.</summary>
+   public GroupInfo? Group { get; }
 
    public IReadOnlyList<ShapeMember> Members { get; }
 
@@ -86,7 +90,7 @@ public sealed class RowShape
       return new RowShape(members, entity);
    }
 
-   public RowShape Extend(IEnumerable<ShapeMember> extra) => new([.. Members, .. extra], Entity);
+   public RowShape Extend(IEnumerable<ShapeMember> extra) => new([.. Members, .. extra], Entity, Group);
 
    public override string ToString() => "[" + string.Join(", ", Members.Select(Describe)) + "]";
 
@@ -107,10 +111,11 @@ public sealed class RowVariable
 {
    private static int next;
 
-   public RowVariable(string name, RowShape shape)
+   public RowVariable(string name, RowShape shape, bool nullable = false)
    {
       Name = name;
       Shape = shape;
+      Nullable = nullable;
       Id = Interlocked.Increment(ref next);
    }
 
@@ -120,5 +125,22 @@ public sealed class RowVariable
 
    public RowShape Shape { get; }
 
+   /// <summary>The row may be absent: the inner row of a left join.</summary>
+   public bool Nullable { get; }
+
    public override string ToString() => Name;
+}
+
+/// <summary>
+/// What a group row stands for: the rows grouped, reached through <see cref="ElementRow"/> (the row variable the
+/// keys were bound against), and the key parts, which are the group row's own members.
+/// </summary>
+public sealed class GroupInfo(RowVariable elementRow, IReadOnlyList<BoundProjection> keys)
+{
+   public RowVariable ElementRow { get; } = elementRow;
+
+   public IReadOnlyList<BoundProjection> Keys { get; } = keys;
+
+   /// <summary>The group rows have a <c>key</c> member the query didn't name: the key part, or a record of the parts.</summary>
+   public bool SyntheticKey { get; init; }
 }

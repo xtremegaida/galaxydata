@@ -12,6 +12,8 @@ namespace GalaxyData.Query.Binding;
 internal sealed partial class BinderRun
 {
    private const string ItKeyword = "it";
+   private const string OuterKeyword = "outer";
+   private const string InnerKeyword = "inner";
 
    /// <summary>Resolves a bare name: lambda parameters, then the implicit row, then outer rows, then subtrees and the catalog.</summary>
    private BoundNode ResolveName(IdentifierSyntax id, Scope scope)
@@ -26,21 +28,30 @@ internal sealed partial class BinderRun
          switch (current)
          {
             case LambdaScope lambda when string.Equals(lambda.Parameter, name, StringComparison.Ordinal):
-               return new BoundRowRef(lambda.Row, id);
+               return lambda.Value is BoundRowRef reference ? new BoundRowRef(reference.Row, id) : lambda.Value;
+            case JoinScope join when name is OuterKeyword or InnerKeyword:
+               return new BoundRowRef(name == OuterKeyword ? join.Outer : join.Inner, id);
+            case RecordScope record:
+            {
+               if (string.Equals(name, ItKeyword, StringComparison.Ordinal)) { return record.Record; }
+               NameMatch<ShapeMember> member = record.Shape.Find(name);
+               if (member.Status == MatchStatus.Ambiguous) { throw AmbiguousMember(id, name, member); }
+               if (member.IsFound) { return MemberNode(record.Record, member.Item!, id); }
+               break;
+            }
             case RowScope row:
+            {
                if (string.Equals(name, ItKeyword, StringComparison.Ordinal)) { return new BoundRowRef(row.Row, id); }
                NameMatch<ShapeMember> member = row.Row.Shape.Find(name);
-               if (member.Status == MatchStatus.Ambiguous)
-               {
-                  throw Error(id, DiagnosticCodes.AmbiguousName,
-                     $"'{name}' matches {string.Join(" and ", member.Candidates.Select(c => c.Name))}; write it with the exact case, or as it[\"{member.Candidates[0].Name}\"]");
-               }
+               if (member.Status == MatchStatus.Ambiguous) { throw AmbiguousMember(id, name, member); }
                if (member.IsFound)
                {
                   WarnIfShadowing(id, name);
-                  return Member(new BoundRowRef(row.Row, null), member.Item!, id);
+                  return MemberNode(new BoundRowRef(row.Row, null), member.Item!, id);
                }
+               if (row.Row.Shape.Group != null && GroupElementMember(new BoundRowRef(row.Row, null), name, id) is { } element) { return element; }
                break;
+            }
             case RootScope rootScope:
                NameMatch<BoundLet> let = rootScope.FindLet(name);
                if (let.IsFound) { return LetReference(let.Item!, id); }
@@ -136,19 +147,15 @@ internal sealed partial class BinderRun
                case RecordBoundType record:
                {
                   NameMatch<ShapeMember> member = record.Shape.Find(name);
-                  if (member.IsFound) { return Member(expr, member.Item!, node); }
-                  if (member.Status == MatchStatus.Ambiguous)
-                  {
-                     throw Error(node, DiagnosticCodes.AmbiguousName,
-                        $"'{name}' matches {string.Join(" and ", member.Candidates.Select(c => c.Name))}; write it with the exact case");
-                  }
+                  if (member.IsFound) { return MemberNode(expr, member.Item!, node); }
+                  if (member.Status == MatchStatus.Ambiguous) { throw AmbiguousMember(node, name, member); }
+                  if (record.Shape.Group != null && GroupElementMember(expr, name, node) is { } element) { return element; }
                   string owner = record.Shape.Entity?.DisplayName ?? "the row";
                   throw Error(node, DiagnosticCodes.UnknownName,
                      $"{owner} has no '{name}'{Suggestion(name, record.Shape.Members.Select(m => m.Name))}{MemberList(record.Shape)}");
                }
-               case CollectionBoundType collection:
-                  throw Error(node, DiagnosticCodes.NotSupportedYet,
-                     $"This is a collection of {collection.Element.Entity?.DisplayName ?? "rows"}; methods such as count(), sum(...) and any(...) over collections are not supported yet");
+               case GroupCollectionType:
+                  return GroupCollectionMember((BoundGroupCollection)expr, name, node);
                default:
                   throw Error(node, DiagnosticCodes.NotARecord, context.Functions.TryGet(name, out _)
                      ? $"'{name}' is a function; call it with parentheses: .{name}()"
@@ -158,6 +165,16 @@ internal sealed partial class BinderRun
             throw new InvalidOperationException($"Unexpected bound node {target}");
       }
    }
+
+   /// <summary>A member of a record: a value, or for a collection navigation the query of the rows it leads to.</summary>
+   private static BoundNode MemberNode(BoundExpr target, ShapeMember member, SyntaxNode? syntax) =>
+      member is NavigationMember { Navigation.IsCollection: true } navigation
+         ? new BoundNavigationQuery(target, navigation.Navigation, syntax)
+         : Member(target, member, syntax);
+
+   private BindException AmbiguousMember(SyntaxNode node, string name, NameMatch<ShapeMember> member) =>
+      Error(node, DiagnosticCodes.AmbiguousName,
+         $"'{name}' matches {string.Join(" and ", member.Candidates.Select(c => c.Name))}; write it with the exact case, or as it[\"{member.Candidates[0].Name}\"]");
 
    private static BoundExpr Member(BoundExpr target, ShapeMember member, SyntaxNode? syntax)
    {
@@ -191,7 +208,7 @@ internal sealed partial class BinderRun
          {
             case LambdaScope lambda:
                candidates.Add(lambda.Parameter);
-               if (lambda.Row.Shape.Find(name).IsFound && hint.Length == 0)
+               if (lambda.Shape.Find(name).IsFound && hint.Length == 0)
                {
                   hint = $". Inside '{lambda.Parameter} => ...' the row's members are reached through {lambda.Parameter}: {lambda.Parameter}{MemberText(name)}";
                }
@@ -199,6 +216,16 @@ internal sealed partial class BinderRun
             case RowScope row:
                candidates.Add(ItKeyword);
                candidates.AddRange(row.Row.Shape.Members.Select(m => m.Name));
+               if (row.Row.Shape.Group != null) { candidates.AddRange(row.Row.Shape.Group.ElementRow.Shape.Members.Select(m => m.Name)); }
+               break;
+            case RecordScope record:
+               candidates.Add(ItKeyword);
+               candidates.AddRange(record.Shape.Members.Select(m => m.Name));
+               break;
+            case JoinScope:
+               candidates.Add(OuterKeyword);
+               candidates.Add(InnerKeyword);
+               if (hint.Length == 0) { hint = ". In a join's condition and items, the rows are outer and inner: outer.customer_id == inner.id"; }
                break;
          }
       }

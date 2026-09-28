@@ -77,12 +77,40 @@ internal sealed class RowScope(Scope parent, RowVariable row) : Scope(parent)
    public RowVariable Row { get; } = row;
 }
 
-/// <summary>The parameters of a lambda argument; the row's members are reached through them.</summary>
-internal sealed class LambdaScope(Scope parent, string parameter, RowVariable row) : Scope(parent)
+/// <summary>The parameter of a lambda argument; the row's members are reached through it.</summary>
+internal sealed class LambdaScope : Scope
 {
-   public string Parameter { get; } = parameter;
+   public LambdaScope(Scope parent, string parameter, RowVariable row) : this(parent, parameter, new BoundRowRef(row, null)) { }
 
-   public RowVariable Row { get; } = row;
+   /// <summary>A parameter that stands for a record, such as the orders of each element in <c>orders.sum(o => o.total)</c>.</summary>
+   public LambdaScope(Scope parent, string parameter, BoundExpr value) : base(parent)
+   {
+      Parameter = parameter;
+      Value = value;
+   }
+
+   public string Parameter { get; }
+
+   /// <summary>What the parameter stands for: a row reference, or a record expression.</summary>
+   public BoundExpr Value { get; }
+
+   public RowShape Shape => ((RecordBoundType)Value.Type).Shape;
+}
+
+/// <summary>The rows of a join's condition and items: <c>outer</c> (the left side) and <c>inner</c> (the right side).</summary>
+internal sealed class JoinScope(Scope parent, RowVariable outer, RowVariable inner) : Scope(parent)
+{
+   public RowVariable Outer { get; } = outer;
+
+   public RowVariable Inner { get; } = inner;
+}
+
+/// <summary>An implicit record: its members are in scope by name and <c>it</c> is the record (<c>orders.sum(total)</c>).</summary>
+internal sealed class RecordScope(Scope parent, BoundExpr record) : Scope(parent)
+{
+   public BoundExpr Record { get; } = record;
+
+   public RowShape Shape => ((RecordBoundType)Record.Type).Shape;
 }
 
 #endregion

@@ -1,6 +1,7 @@
 using GalaxyData.Query.Binding;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Planning;
+using GalaxyData.Query.Planning.Optimizer;
 using GalaxyData.Query.Tests.Binding;
 using Shouldly;
 
@@ -60,6 +61,35 @@ internal static class PlanCases
       "sales.orders.select(q: total / customer.credit_limit, r: total % 7, s: id % 7, t: id / 2)",
       "sales.orders.where(order_date <= shipped_at).select(id)",
       "sales.customers.select(d: addDays(created, $n), l: left(name, $n), n: length(name))",
+      "sales.orders.groupBy(customer_id).select(customer_id: key, spend: sum(total), orders: count())",
+      "sales.orders.join(sales.customers, outer.customer_id == inner.id, orders: outer, cust: inner).groupBy(cust.name).select(name: cust.name, count: orders.count(), total: orders.sum(total))",
+      "x := sales.orders.where(total > 3); sales.customers.where(cust => x.any(order => cust.id == order.customer_id))",
+      "sales.orders.groupBy(y: year(order_date), status).where(count() > 1).orderBy(desc(sum(total))).select(y, status, n: count(), big: any(total > 100), mean: avg(total))",
+      "sales.orders.groupBy(customer).select(customer.name, customer.city, n: count())",
+      "sales.orders.groupBy(customer).select(customer.id, n: count())",
+      "sales.orders.groupBy(customer_id).extend(n: count()).where(n > 1 and sum(total) > 10).select(customer_id, n)",
+      "sales.order_lines.groupBy(order).select(order.status, n: count(), qty: qty.sum(), priced: price.countDistinct(), all: all(qty > 0))",
+      "sales.orders.groupBy().select(n: count(), total: sum(total))",
+      "sales.orders.groupBy(big: total > 100).select(big, n: count())",
+      "sales.customers.select(name, n: orders_by_customer.count(), spend: orders_by_customer.sum(total), last: orders_by_customer.max(order_date))",
+      "sales.customers.where(orders_by_customer.any(status == 'open')).select(name)",
+      "sales.customers.where(not orders_by_customer.any()).select(name)",
+      "sales.customers.where(c => sales.orders.all(o => o.customer_id != c.id or o.total > 0))",
+      "sales.orders.where(customer_id in sales.customers.where(city == 'Cape Town').select(id))",
+      "sales.orders.where(total > sales.orders.avg(total))",
+      "sales.orders.count()",
+      "sales.customers.select(name, big: orders_by_customer.any(total > 100))",
+      "sales.orders.leftJoin(sales.regions, (o, r) => o.customer.region_code == r.code, id: outer.id, region: inner.name)",
+      "sales.orders.join(sales.order_lines, outer.id == inner.order_id and inner.qty > 1, id: outer.id, line: inner.line_no, product: inner.product.name)",
+      "sales.customers.selectMany(orders_by_customer).select(id, total)",
+      "sales.customers.selectMany(orders_by_customer, who: outer.name, total: inner.total)",
+      "sales.orders.select(id, status).union(sales.orders.where(total > 100).select(status, id))",
+      "sales.orders.where(total > 100).concat(sales.orders.where(status == 'open')).select(id, customer.name)",
+      "sales.orders.select(customer_id).intersect(sales.customers.select(customer_id: id)).orderBy(customer_id).take(5)",
+      "sales.orders.select(customer_id).except(sales.customers.where(city == null).select(customer_id: id))",
+      "sales.customers.groupBy(city).select(city, s: sum(orders_by_customer.count()), big: any(orders_by_customer.any(total > 100)))",
+      "sales.orders.take(2).count()",
+      "sales.customers.extend(k: $n).select(name, l: left(name, k), d: addDays(created, k))",
       "xl['Budget 2024']['Sheet 1'].where(Amount > 0).select(it['Line Item'], Amount)",
       "big := sales.orders.where(total > 100); big.select(id, total)",
       "limit := 1000; cutoff := $rate * 2; sales.customers.where(credit_limit > limit).select(name, cutoff)",
@@ -69,10 +99,14 @@ internal static class PlanCases
       "sales.orders.where(total > 3.5 and total < 1e3 and id > -1)",
    ];
 
-   public static LogicalPlan Plan(string query)
+   /// <summary>The plan as lowered, before the optimizer.</summary>
+   public static LogicalPlan Lowered(string query)
    {
       BoundProgram program = Binder.Bind(query, Catalog, Parameters);
       program.Diagnostics.ShouldNotContain(d => d.IsError, query);
       return Lowerer.Lower(program);
    }
+
+   /// <summary>The plan the engine writes SQL for.</summary>
+   public static LogicalPlan Plan(string query) => PlanOptimizer.Optimize(Lowered(query));
 }

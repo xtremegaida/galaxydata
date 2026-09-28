@@ -60,20 +60,29 @@ public sealed record ProjectItem(PlanColumn Column, PlanExpr Expr)
 
 public sealed class ProjectNode : PlanNode
 {
-   public ProjectNode(PlanNode input, IReadOnlyList<ProjectItem> items)
+   private readonly List<ProjectItem> items;
+   private List<PlanColumn>? output;
+
+   public ProjectNode(PlanNode input, IEnumerable<ProjectItem> items)
    {
       Input = input;
-      Items = items;
-      Output = items.Select(i => i.Column).ToList();
+      this.items = items.ToList();
    }
 
    public PlanNode Input { get; }
 
-   public IReadOnlyList<ProjectItem> Items { get; }
+   public IReadOnlyList<ProjectItem> Items => items;
 
-   public override IReadOnlyList<PlanColumn> Output { get; }
+   public override IReadOnlyList<PlanColumn> Output => output ??= items.Select(i => i.Column).ToList();
 
    public override IReadOnlyList<PlanNode> Inputs => [Input];
+
+   /// <summary>While lowering: passes through a column added below after this projection was made.</summary>
+   internal void AddItem(ProjectItem item)
+   {
+      items.Add(item);
+      output = null;
+   }
 }
 
 public enum JoinKind : byte
@@ -147,4 +156,78 @@ public sealed class DistinctNode(PlanNode input) : PlanNode
    public override IReadOnlyList<PlanColumn> Output => Input.Output;
 
    public override IReadOnlyList<PlanNode> Inputs => [Input];
+}
+
+public enum AggregateFunction : byte
+{
+   /// <summary><c>count(*)</c>: the rows.</summary>
+   CountRows,
+
+   /// <summary>The rows where the argument isn't null.</summary>
+   Count,
+
+   CountDistinct,
+
+   /// <summary>The sum, which is 0 when there are no values.</summary>
+   Sum,
+
+   Avg,
+   Min,
+   Max,
+}
+
+public sealed record AggregateItem(PlanColumn Column, AggregateFunction Function, PlanExpr? Argument);
+
+/// <summary>
+/// Groups rows by the key items and computes aggregates per group; with no keys, one row for all the input. The
+/// output is the key columns, then the aggregate columns. While a query is lowered the lists grow as aggregates are
+/// used by the operators above.
+/// </summary>
+public sealed class AggregateNode : PlanNode
+{
+   private readonly List<ProjectItem> keys;
+   private readonly List<AggregateItem> aggregates;
+
+   public AggregateNode(PlanNode input, IEnumerable<ProjectItem> keys, IEnumerable<AggregateItem> aggregates)
+   {
+      Input = input;
+      this.keys = keys.ToList();
+      this.aggregates = aggregates.ToList();
+   }
+
+   public PlanNode Input { get; internal set; }
+
+   public IReadOnlyList<ProjectItem> Keys => keys;
+
+   public IReadOnlyList<AggregateItem> Aggregates => aggregates;
+
+   public override IReadOnlyList<PlanColumn> Output => [.. keys.Select(k => k.Column), .. aggregates.Select(a => a.Column)];
+
+   public override IReadOnlyList<PlanNode> Inputs => [Input];
+
+   internal void AddKey(ProjectItem key) => keys.Add(key);
+
+   internal void AddAggregate(AggregateItem aggregate) => aggregates.Add(aggregate);
+}
+
+public enum SetOperation : byte
+{
+   Union,
+   UnionAll,
+   Intersect,
+   Except,
+}
+
+/// <summary>A set operation; the inputs' outputs line up by position with <see cref="Output"/>.</summary>
+public sealed class SetOpNode(SetOperation operation, PlanNode left, PlanNode right, IReadOnlyList<PlanColumn> output) : PlanNode
+{
+   public SetOperation Operation { get; } = operation;
+
+   public PlanNode Left { get; } = left;
+
+   public PlanNode Right { get; } = right;
+
+   public override IReadOnlyList<PlanColumn> Output { get; } = output;
+
+   public override IReadOnlyList<PlanNode> Inputs => [Left, Right];
 }

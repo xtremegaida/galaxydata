@@ -163,6 +163,23 @@ public abstract class SqlDialect
    internal virtual SqlExpr Compare(SqlBinaryOp op, SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       new SqlBinary(op, left, right);
 
+   /// <summary>
+   /// An aggregate function. A sum is 0 when there are no values, as the language defines, where SQL gives null.
+   /// </summary>
+   internal virtual SqlExpr Aggregate(AggregateFunction function, SqlExpr? argument, ScalarType? argumentType) => function switch
+   {
+      AggregateFunction.CountRows => new SqlAggregate(AggregateName("count"), null),
+      AggregateFunction.Count => new SqlAggregate(AggregateName("count"), argument),
+      AggregateFunction.CountDistinct => new SqlAggregate(AggregateName("count"), argument, distinct: true),
+      AggregateFunction.Sum => new SqlFunctionCall(AggregateName("coalesce"), new SqlAggregate(AggregateName("sum"), argument), new SqlLiteral(0L, ScalarType.Int64)),
+      AggregateFunction.Avg => new SqlAggregate(AggregateName("avg"), argument),
+      AggregateFunction.Min => new SqlAggregate(AggregateName("min"), argument),
+      _ => new SqlAggregate(AggregateName("max"), argument),
+   };
+
+   /// <summary>The spelling of a function name in this dialect.</summary>
+   internal virtual string AggregateName(string name) => name;
+
    /// <summary>A call of a language function; null when this database can't run it.</summary>
    internal abstract SqlExpr? Function(SqlCall call);
 
@@ -196,6 +213,21 @@ public abstract class SqlDialect
       : new SqlCase([new SqlWhen(c.Condition(0), Text("true"))], Text("false"));
 
    private protected static bool IsInteger(ScalarType type) => type.IsInteger;
+
+   /// <summary>
+   /// Argument <paramref name="index"/> as an int for functions that take one (a count of characters, days or digits):
+   /// a 64-bit value, such as a computed column, is cast, since <c>date + bigint</c> and <c>left(text, bigint)</c> don't exist everywhere.
+   /// </summary>
+   private protected SqlExpr Int(SqlCall c, int index) => c.Type(index).Kind == ScalarKind.Int64 ? Cast(c.Arg(index), ScalarType.Int32) : c.Arg(index);
+
+   /// <summary>The text argument, then the rest as ints: substring(text, start[, length]).</summary>
+   private protected SqlExpr[] TextThenInts(SqlCall c)
+   {
+      SqlExpr[] arguments = new SqlExpr[c.Count];
+      arguments[0] = c.Arg(0);
+      for (int i = 1; i < arguments.Length; i++) { arguments[i] = Int(c, i); }
+      return arguments;
+   }
 
    private protected static bool IsFractional(ScalarType type) => type.Kind is ScalarKind.Decimal or ScalarKind.Single or ScalarKind.Double;
 

@@ -33,6 +33,9 @@ public sealed class QueryEngineOptions
 
    /// <summary>How long a database command may run; null leaves the provider's default.</summary>
    public TimeSpan? CommandTimeout { get; init; }
+
+   /// <summary>Rewrite plans before writing their SQL (decorrelation, pushdown, pruning); off only to compare.</summary>
+   public bool Optimize { get; init; } = true;
 }
 
 /// <summary>
@@ -71,6 +74,7 @@ public sealed class QueryEngine
       if (!program.Success) { return new PreparedQuery(this, request.Text, parameters, diagnostics, null, []); }
 
       LogicalPlan plan = Lowerer.Lower(program, request.Paging?.Offset, request.Paging?.Limit);
+      if (Options.Optimize) { plan = Planning.Optimizer.PlanOptimizer.Optimize(plan); }
       List<QueryFragment> fragments = [];
       QueryFragment? fragment = Fragment(request.Text, plan, diagnostics);
       if (fragment != null) { fragments.Add(fragment); }
@@ -115,6 +119,11 @@ public sealed class QueryEngine
          SourceSpan span = e.Function.Span ?? new SourceSpan(0, text.Length);
          diagnostics.Add(QueryDiagnostic.Error(DiagnosticCodes.NotTranslatable,
             $"{e.Function.Function.Name}(...) can't run in {source.Alias}, a {e.Dialect.Name} source", span.Start, span.End));
+         return null;
+      }
+      catch (NotSupportedException e)
+      {
+         diagnostics.Add(QueryDiagnostic.Error(DiagnosticCodes.NotTranslatable, $"This query can't be written as SQL for {source.Alias} yet: {e.Message}", 0, text.Length));
          return null;
       }
    }

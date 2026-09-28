@@ -51,9 +51,9 @@ exit 0
 --   Project line_no#2, city#17
 --     Join inner via customer: customer_id#7 == id#15
 --       Join inner via order: order_id#1 == id#6
---         Scan shop.order_lines (order_id#1, line_no#2, product_code#3, qty#4, price#5)
---         Scan shop.orders (id#6, customer_id#7, ship_address_id#8, bill_address_id#9, status#10, total#11, order_date#12, placed_at#13, tags#14)
---       Scan shop.customers (id#15, name#16, city#17, credit_limit#18, created_at#19)
+--         Scan shop.order_lines (order_id#1, line_no#2)
+--         Scan shop.orders (id#6, customer_id#7)
+--       Scan shop.customers (id#15, city#17)
 -- lineage
 -- line_no int32: direct shop.order_lines.line_no
 -- city string?: direct order.customer -> shop.customers.city

@@ -79,7 +79,7 @@ GDQ2001 Error: There is no 'orders' here. Did you mean 'orders_by_customer' or '
                          ^^^^^^
 
 ### sales.customers.select(orders_by_customer)
-GDQ2099 Error: 'orders_by_customer' is a collection of sales.orders; aggregating collections (count(), sum(...), any(...)) is not supported yet
+GDQ2015 Error: 'orders_by_customer' is a collection of sales.orders; turn it into a value with count(), sum(...), any(...) and the like, e.g. orders_by_customer.count()
   sales.customers.select(orders_by_customer)
                          ^^^^^^^^^^^^^^^^^^
 
@@ -92,11 +92,6 @@ GDQ2001 Error: There is no 'orders' here. Did you mean 'orders_by_customer' or '
 GDQ2003 Error: A query has no method 'wher'. Did you mean 'where'?
   sales.orders.wher(total > 1)
                ^^^^
-
-### sales.orders.groupBy(customer_id)
-GDQ2099 Error: groupBy(...) is not supported yet
-  sales.orders.groupBy(customer_id)
-               ^^^^^^^
 
 ### sales.orders.count
 GDQ2014 Error: 'count' is a method; call it with parentheses: .count(...)
@@ -217,3 +212,113 @@ GDQ2006 Error: null never matches in a list; test for it separately with '== nul
 GDQ2009 Error: 'x := ...' names a subtree and must be a statement of its own, ending with ';'
   sales.orders.where(x := 1)
                      ^^^^^^
+
+### sales.orders.groupBy(customer_id).select(total)
+GDQ2027 Error: 'total' has one value per grouped row, but it isn't part of the group key; aggregate it, e.g. sum(total) or max(total), or add it to groupBy(...)
+  sales.orders.groupBy(customer_id).select(total)
+                                           ^^^^^
+
+### sales.orders.groupBy(customer_id).select(customer.name)
+GDQ2027 Error: 'customer.name' has one value per grouped row, but it isn't part of the group key; aggregate it, e.g. max(customer.name) or count(), or add it to groupBy(...)
+  sales.orders.groupBy(customer_id).select(customer.name)
+                                           ^^^^^^^^^^^^^
+
+### sales.orders.select(n: count())
+GDQ2004 Error: count(...) aggregates the rows of a group, so it only works after groupBy(...); to aggregate a query's rows, call it as the query's method, as in orders.count(...)
+  sales.orders.select(n: count())
+                         ^^^^^
+
+### sales.customers.groupBy(notes)
+GDQ2006 Error: Rows can't be grouped by a JSON value; convert it first, e.g. toString(...)
+  sales.customers.groupBy(notes)
+                          ^^^^^
+
+### sales.orders.groupBy(customer_id).groupBy(key)
+GDQ2008 Error: The rows are groups already; select(...) what you need from them, then group that
+  sales.orders.groupBy(customer_id).groupBy(key)
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+### sales.orders.groupBy(customer_id).select(m: max(attachment))
+GDQ2024 Error: Binary values have no order, so they have no max
+  sales.orders.groupBy(customer_id).select(m: max(attachment))
+                                                  ^^^^^^^^^^
+
+### sales.orders.groupBy(customer_id).select(m: sum(status))
+GDQ2006 Error: sum(...) needs numbers, but 'status' is text
+  sales.orders.groupBy(customer_id).select(m: sum(status))
+                                                  ^^^^^^
+
+### sales.orders.join(sales.customers, customer_id == id)
+GDQ2001 Error: There is no 'customer_id' here. In a join's condition and items, the rows are outer and inner: outer.customer_id == inner.id
+  sales.orders.join(sales.customers, customer_id == id)
+                                     ^^^^^^^^^^^
+
+### sales.orders.join(sales.customers, (o) => o.customer_id == 1)
+GDQ2019 Error: A join condition gets both rows, so a lambda takes two parameters, as in (o, c) => o.customer_id == c.id
+  sales.orders.join(sales.customers, (o) => o.customer_id == 1)
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+### sales.orders.join(outer.customer_id == 1)
+GDQ2005 Error: join(...) takes the rows to join and a condition, as in join(shop.customers, outer.customer_id == inner.id)
+  sales.orders.join(outer.customer_id == 1)
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+### sales.orders.union(sales.customers)
+GDQ2028 Error: union(...) matches columns by name, and the other rows have no 'customer_id'; they have id, name, city, credit_limit, created, region_code, uid, notes
+  sales.orders.union(sales.customers)
+                     ^^^^^^^^^^^^^^^
+
+### sales.orders.select(id).union(sales.orders.select(id, status))
+GDQ2028 Error: union(...) needs the same columns on both sides; the other rows also have status
+  sales.orders.select(id).union(sales.orders.select(id, status))
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+### sales.orders.select(id, customer).union(sales.orders.select(id, customer))
+GDQ2028 Error: union(...) combines columns, but 'customer' is a row; select its columns instead, e.g. customer.*
+  sales.orders.select(id, customer).union(sales.orders.select(id, customer))
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+### sales.orders.where(total in sales.customers)
+GDQ2015 Error: Looking for a value in a query needs a query of one column; select it first, e.g. .select(id)
+  sales.orders.where(total in sales.customers)
+                              ^^^^^^^^^^^^^^^
+
+### sales.customers.select(n: orders_by_customer.sum())
+GDQ2005 Error: sum(...) needs the value to aggregate, as in sum(customer_id)
+  sales.customers.select(n: orders_by_customer.sum())
+                                               ^^^
+
+### sales.orders.first()
+GDQ2099 Error: first(...) is not supported yet
+  sales.orders.first()
+               ^^^^^
+
+### sales.customers.selectMany(name)
+GDQ2016 Error: selectMany(...) flattens a collection, such as a collection navigation; 'name' is not one
+  sales.customers.selectMany(name)
+                             ^^^^
+
+### sales.orders.groupBy(status).select(status, x: sales.customers.where(c => c.credit_limit > count()).count())
+GDQ2004 Error: count(...) here would aggregate the rows of the query it is in, which aren't groups; to use a value of the group, name it first, e.g. extend(n: count()), and use n
+  sales.orders.groupBy(status).select(status, x: sales.customers.where(c => c.credit_limit > count()).count())
+                                                                                             ^^^^^
+
+### sales.orders.groupBy(k: customer_id).select(k, s: sum(k))
+GDQ2008 Error: sum(...) aggregates a value of each grouped row; 'k' belongs to the group itself (a key part, or a value computed from the group)
+  sales.orders.groupBy(k: customer_id).select(k, s: sum(k))
+                                                        ^
+
+### sales.orders.groupBy(customer_id).extend(n: count()).select(m: max(n))
+GDQ2008 Error: max(...) aggregates a value of each grouped row; 'n' belongs to the group itself (a key part, or a value computed from the group)
+  sales.orders.groupBy(customer_id).extend(n: count()).select(m: max(n))
+                                                                     ^
+
+### sales.orders.groupBy(customer_id).select(m: max(count()))
+GDQ2004 Error: Aggregates can't be nested: the argument of an aggregate is a value of each grouped row
+  sales.orders.groupBy(customer_id).select(m: max(count()))
+                                                  ^^^^^
+
+### sales.orders.groupBy(status).select(status, x: total == null)
+GDQ2027 Error: 'total' has one value per grouped row, but it isn't part of the group key; aggregate it, e.g. sum(total) or max(total), or add it to groupBy(...)
+  sales.orders.groupBy(status).select(status, x: total == null)
+                                                 ^^^^^

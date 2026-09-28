@@ -15,7 +15,7 @@ public sealed class LoweringReportTests
       QueryReport report = new();
       foreach (string query in PlanCases.Queries)
       {
-         LogicalPlan plan = PlanCases.Plan(query);
+         LogicalPlan plan = PlanCases.Lowered(query);
          StringBuilder text = new(PlanPrinter.Print(plan.Root));
          foreach (ResultColumn column in plan.Schema.Columns)
          {

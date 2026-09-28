@@ -12,15 +12,68 @@ internal sealed class SqlWriter
 
    private readonly SqlDialect dialect;
    private readonly StringBuilder text = new();
+   private readonly List<SqlParameterSlot> written = [];
+   private readonly Dictionary<SqlParameterSlot, SqlParameterSlot> named = new(ReferenceEqualityComparer.Instance);
    private int indent;
 
    private SqlWriter(SqlDialect dialect) { this.dialect = dialect; }
 
-   public static string Write(SqlSelect select, SqlDialect dialect)
+   /// <summary>
+   /// Writes the query and names its parameters p0, p1, ... in the order they appear. A parameter written twice is one
+   /// parameter, except where the database types each from its first use (DuckDB): there every use is its own.
+   /// </summary>
+   public static string Write(SqlQuery query, SqlDialect dialect, out IReadOnlyList<SqlParameterSlot> parameters)
    {
       SqlWriter writer = new(dialect);
-      writer.Select(select);
+      writer.Query(query);
+      parameters = writer.written;
       return writer.text.ToString();
+   }
+
+   public static string Write(SqlQuery query, SqlDialect dialect) => Write(query, dialect, out _);
+
+   private SqlParameterSlot Named(SqlParameterSlot slot)
+   {
+      if (dialect.SharesParameters && named.TryGetValue(slot, out SqlParameterSlot? existing)) { return existing; }
+      SqlParameterSlot renamed = new("p" + written.Count, slot.Type, slot.Source, slot.Constant, slot.ParameterName, slot.Pattern);
+      written.Add(renamed);
+      named[slot] = renamed;
+      return renamed;
+   }
+
+   private void Query(SqlQuery query)
+   {
+      switch (query)
+      {
+         case SqlSelect select:
+            Select(select);
+            break;
+         case SqlCompound compound:
+            Select(compound.Left);
+            NewLine();
+            text.Append(compound.Operator switch
+            {
+               SqlSetOperator.Union => "UNION",
+               SqlSetOperator.UnionAll => "UNION ALL",
+               SqlSetOperator.Intersect => "INTERSECT",
+               _ => "EXCEPT",
+            });
+            NewLine();
+            Select(compound.Right);
+            break;
+      }
+   }
+
+   /// <summary>A query inside an expression or FROM: in parentheses, indented on the lines between.</summary>
+   private void Nested(SqlQuery query)
+   {
+      text.Append('(');
+      indent++;
+      NewLine();
+      Query(query);
+      indent--;
+      NewLine();
+      text.Append(')');
    }
 
    public static string Write(SqlExpr expr, SqlDialect dialect)
@@ -66,6 +119,18 @@ internal sealed class SqlWriter
          NewLine();
          text.Append("WHERE ");
          Expr(select.Where);
+      }
+      if (select.GroupBy.Count > 0)
+      {
+         NewLine();
+         text.Append("GROUP BY ");
+         List(select.GroupBy);
+      }
+      if (select.Having != null)
+      {
+         NewLine();
+         text.Append("HAVING ");
+         Expr(select.Having);
       }
       OrderBy(select, offset: !top && select.Offset != null);
       if (!top) { Paging(select); }
@@ -147,13 +212,8 @@ internal sealed class SqlWriter
             text.Append(dialect.Identifier(table.Name)).Append(" AS ").Append(dialect.Identifier(table.Alias));
             break;
          case SqlDerivedTable derived:
-            text.Append('(');
-            indent++;
-            NewLine();
-            Select(derived.Select);
-            indent--;
-            NewLine();
-            text.Append(") AS ").Append(dialect.Identifier(derived.Alias));
+            Nested(derived.Query);
+            text.Append(" AS ").Append(dialect.Identifier(derived.Alias));
             break;
          case SqlJoin join:
             From(join.Left);
@@ -192,7 +252,7 @@ internal sealed class SqlWriter
             text.Append(dialect.Identifier(column.Column));
             break;
          case SqlParameterRef parameter:
-            text.Append(dialect.Placeholder(parameter.Slot.Name));
+            text.Append(dialect.Placeholder(Named(parameter.Slot).Name));
             break;
          case SqlLiteral literal:
             dialect.WriteLiteral(text, literal.Value, literal.Type);
@@ -258,6 +318,28 @@ internal sealed class SqlWriter
             break;
          case SqlTemplate template:
             Template(template);
+            break;
+         case SqlAggregate aggregate:
+            text.Append(aggregate.Name).Append('(');
+            if (aggregate.Argument == null) { text.Append('*'); }
+            else
+            {
+               if (aggregate.Distinct) { text.Append("DISTINCT "); }
+               Expr(aggregate.Argument);
+            }
+            text.Append(')');
+            break;
+         case SqlExists exists:
+            text.Append(exists.Negated ? "NOT EXISTS " : "EXISTS ");
+            Nested(exists.Query);
+            break;
+         case SqlScalarSubquery scalar:
+            Nested(scalar.Query);
+            break;
+         case SqlInSubquery inQuery:
+            Operand(inQuery.Operand);
+            text.Append(" IN ");
+            Nested(inQuery.Query);
             break;
       }
    }

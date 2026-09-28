@@ -38,6 +38,7 @@ internal sealed class Lowerer
    private readonly bool spans;
    private readonly IReadOnlyList<NavigationDef> pathPrefix;
    private readonly Dictionary<RowVariable, RowValue> rows = [];
+   private readonly Dictionary<RowVariable, GroupValue> groups = [];
 
    private Lowerer(PlanIds ids, string text, bool spans, IReadOnlyList<NavigationDef> pathPrefix)
    {
@@ -74,6 +75,7 @@ internal sealed class Lowerer
       List<ResultColumn> columns = [];
       foreach (ShapeMember member in query.Shape.Members)
       {
+         if (query.Shape.Group is { SyntheticKey: true } && member.Name == KeyName) { continue; }
          PlanColumnRef? value = member switch
          {
             ColumnMember scalar => row.Column(scalar.Name),
@@ -150,6 +152,8 @@ internal sealed class Lowerer
          case BoundDistinct distinct:
          {
             (Cursor cursor, RowValue row) = Query(distinct.Input);
+            // Groups are distinct already, one per key.
+            if (row.Group != null) { return (cursor, row); }
             List<ProjectItem> items = row.Columns().Select(c => new ProjectItem(c, new PlanColumnRef(c))).ToList();
             cursor.Node = new DistinctNode(Project(cursor.Node, items));
             return (cursor, row.Detached(cursor));
@@ -158,6 +162,16 @@ internal sealed class Lowerer
             return Select(select);
          case BoundExtend extend:
             return Extend(extend);
+         case BoundGroupBy group:
+            return GroupBy(group);
+         case BoundNavigationQuery navigation:
+            return NavigationQuery(navigation);
+         case BoundJoin join:
+            return Join(join);
+         case BoundSelectMany many:
+            return SelectMany(many);
+         case BoundSetOperation set:
+            return SetOp(set);
          default:
             throw new NotSupportedException($"Lowering {query.GetType().Name} is not supported yet");
       }
@@ -166,27 +180,30 @@ internal sealed class Lowerer
    private (Cursor, RowValue) Select(BoundSelect select)
    {
       (Cursor cursor, RowValue input) = Query(select.Input);
-      RowValue output = new(cursor, select.Shape, [], nullable: false);
-      List<ProjectItem> items = [];
-      using (Bind(select.Row, input))
+      using (Bind(select.Row, input)) { return (cursor, ProjectInto(cursor, select.Shape, select.Items)); }
+   }
+
+   /// <summary>Projects the items (bound against rows in scope) as the new rows of the cursor's plan.</summary>
+   private RowValue ProjectInto(Cursor cursor, RowShape shape, IReadOnlyList<BoundProjection> items)
+   {
+      RowValue output = new(cursor, shape, [], nullable: false);
+      List<ProjectItem> projected = [];
+      foreach (BoundProjection item in items)
       {
-         foreach (BoundProjection item in select.Items)
+         switch (Value(item.Expr))
          {
-            switch (Value(item.Expr))
-            {
-               case PlanExpr expr:
-                  PlanColumn column = Output(item.Name, expr, item.Expr.Scalar, Lineage(expr, item.Expr.Syntax));
-                  items.Add(new ProjectItem(column, expr));
-                  output.Set(item.Name, new PlanColumnRef(column));
-                  break;
-               case RowValue record:
-                  output.Set(item.Name, Forward(record, items, cursor));
-                  break;
-            }
+            case PlanExpr expr:
+               PlanColumn column = Output(item.Name, expr, item.Expr.Scalar, Lineage(expr, item.Expr.Syntax));
+               projected.Add(new ProjectItem(column, expr));
+               output.Set(item.Name, new PlanColumnRef(column));
+               break;
+            case RowValue record:
+               output.Set(item.Name, Forward(record, projected, cursor));
+               break;
          }
       }
-      cursor.Node = new ProjectNode(cursor.Node, items);
-      return (cursor, output);
+      cursor.Node = new ProjectNode(cursor.Node, projected);
+      return output;
    }
 
    private (Cursor, RowValue) Extend(BoundExtend extend)
@@ -214,8 +231,260 @@ internal sealed class Lowerer
       // Everything below passes through, joined navigations included, so the rows keep them.
       List<ProjectItem> items = cursor.Node.Output.Select(c => new ProjectItem(c, new PlanColumnRef(c))).ToList();
       items.AddRange(added);
-      cursor.Node = new ProjectNode(cursor.Node, items);
+      ProjectNode project = new(cursor.Node, items);
+      // Over groups, aggregates used later are added below; they must pass through this projection too.
+      input.Group?.PassThrough(project);
+      cursor.Node = project;
       return (cursor, output);
+   }
+
+   #endregion
+
+   #region Grouping, joins and set operations
+
+   private const string KeyName = "key";
+
+   /// <summary>
+   /// An aggregate over the grouped rows. Key parts are its keys; a record key part groups by the record's key (an
+   /// outer navigation's foreign key, so no join is needed), and its other columns become keys when they are used.
+   /// </summary>
+   private (Cursor, RowValue) GroupBy(BoundGroupBy group)
+   {
+      (Cursor cursor, RowValue input) = Query(group.Input);
+      Cursor elements = new(cursor.Node);
+      input.Rehome(elements);
+      AggregateNode aggregate = new(elements.Node, [], []);
+      GroupValue value = new(aggregate, elements, input, ids);
+      cursor.Node = aggregate;
+      RowValue row = new(cursor, group.Shape, [], nullable: false) { Group = value };
+      List<object> parts = [];
+      using (Bind(group.Row, input))
+      {
+         foreach (BoundProjection key in group.Keys)
+         {
+            object part = key.Expr.IsScalar ? KeyColumn(value, key) : KeyRecord(value, key, cursor);
+            parts.Add(part);
+            Set(row, key.Name, part);
+         }
+      }
+      if (group.Shape.Group!.SyntheticKey)
+      {
+         if (parts.Count == 1) { Set(row, KeyName, parts[0]); }
+         else
+         {
+            RecordMember member = (RecordMember)group.Shape.Find(KeyName).Item!;
+            RowValue record = new(cursor, member.Shape, [], nullable: false);
+            for (int i = 0; i < parts.Count; i++) { Set(record, group.Keys[i].Name, parts[i]); }
+            row.Set(KeyName, record);
+         }
+      }
+      aggregate.Input = elements.Node;
+      groups[group.Row] = value;
+      return (cursor, row);
+   }
+
+   private static void Set(RowValue row, string name, object value)
+   {
+      if (value is RowValue record) { row.Set(name, record); }
+      else { row.Set(name, (PlanColumnRef)value); }
+   }
+
+   private PlanColumnRef KeyColumn(GroupValue group, BoundProjection key)
+   {
+      PlanExpr expr = Scalar(key.Expr);
+      return group.Key(expr, key.Name, key.Expr.Scalar, Lineage(expr, key.Expr.Syntax));
+   }
+
+   private RowValue KeyRecord(GroupValue group, BoundProjection key, Cursor cursor)
+   {
+      RecordBoundType type = (RecordBoundType)key.Expr.Type;
+      EntityDef entity = type.Shape.Entity!;
+      Func<string, PlanColumnRef> source;
+      IReadOnlyList<NavigationDef> path;
+      if (key.Expr is BoundMemberAccess { Member: NavigationMember { Navigation: { IsCollection: false } navigation } } access)
+      {
+         RowValue owner = (RowValue)Value(access.Target);
+         Dictionary<string, PlanColumnRef> foreignKey = new(StringComparer.Ordinal);
+         for (int i = 0; i < navigation.TargetColumns.Count; i++) { foreignKey[navigation.TargetColumns[i].Name] = owner.Column(navigation.OwnerColumns[i].Name); }
+         source = name => foreignKey.TryGetValue(name, out PlanColumnRef? column) ? column : Navigate(owner, navigation).Column(name);
+         path = [.. owner.Path, navigation];
+      }
+      else
+      {
+         RowValue record = (RowValue)Value(key.Expr);
+         source = record.Column;
+         path = record.Path;
+      }
+      PlanColumnRef KeyOf(string name)
+      {
+         PlanColumnRef column = source(name);
+         ScalarType columnType = column.Type.WithNullable(column.Type.Nullable || type.IsNullable);
+         return group.Key(column, name, columnType, column.Column.Lineage);
+      }
+      RowValue value = new(cursor, type.Shape, path, type.IsNullable) { Lazy = KeyOf };
+      foreach (ColumnDef column in entity.Key!.Columns) { value.Column(column.Name); }
+      value.Indicator = value.Column(entity.Key.Columns[0].Name);
+      return value;
+   }
+
+   private PlanExpr GroupAggregate(BoundGroupAggregate aggregate)
+   {
+      if (!groups.TryGetValue(aggregate.Element, out GroupValue? group))
+      {
+         throw new InvalidOperationException("An aggregate is used outside the group it belongs to");
+      }
+      PlanExpr? argument = null;
+      if (aggregate.Argument != null)
+      {
+         using (Bind(aggregate.Element, group.Element))
+         {
+            argument = Value(aggregate.Argument) switch
+            {
+               PlanExpr expr => expr,
+               RowValue record => record.Indicator ?? new PlanColumnRef(record.Columns()[0]),
+               _ => throw new InvalidOperationException("Unexpected aggregate argument"),
+            };
+         }
+      }
+      string name = AggregateName(aggregate.Kind);
+      ColumnLineage lineage = Lineage(argument, aggregate.Syntax, LineageKind.Aggregated);
+      switch (aggregate.Kind)
+      {
+         case AggregateKind.Any or AggregateKind.All:
+         {
+            // any(p) is max(p ? 1 : 0) = 1, all(p) is min(p ? 1 : 0) = 1; a null condition counts as not holding.
+            PlanExpr flag = new PlanConditional(argument!, Int64(1), Int64(0), ScalarType.Int64.AsNonNullable());
+            PlanColumnRef reduced = group.Aggregate(aggregate.Kind == AggregateKind.Any ? AggregateFunction.Max : AggregateFunction.Min,
+               flag, name, ScalarType.Int64.AsNonNullable(), lineage);
+            return new PlanBinary(BinaryOp.Equal, reduced, Int64(1), ScalarType.Boolean.AsNonNullable());
+         }
+         default:
+            return group.Aggregate(Function(aggregate.Kind, argument), argument, name, aggregate.Scalar, lineage);
+      }
+   }
+
+   private static AggregateFunction Function(AggregateKind kind, PlanExpr? argument) => kind switch
+   {
+      AggregateKind.Count => argument == null ? AggregateFunction.CountRows : AggregateFunction.Count,
+      AggregateKind.CountDistinct => AggregateFunction.CountDistinct,
+      AggregateKind.Sum => AggregateFunction.Sum,
+      AggregateKind.Avg => AggregateFunction.Avg,
+      AggregateKind.Min => AggregateFunction.Min,
+      AggregateKind.Max => AggregateFunction.Max,
+      _ => throw new InvalidOperationException($"{kind} is not an aggregate function"),
+   };
+
+   private static string AggregateName(AggregateKind kind) => kind == AggregateKind.CountDistinct ? "countDistinct" : kind.ToString().ToLowerInvariant();
+
+   /// <summary>An aggregate over a query's rows, as a single-row plan: a scalar subquery.</summary>
+   private PlanExpr QueryAggregate(BoundQueryAggregate aggregate)
+   {
+      (Cursor cursor, RowValue row) = Query(aggregate.Source);
+      PlanExpr? argument = null;
+      if (aggregate.Argument != null)
+      {
+         using (Bind(aggregate.Row, row))
+         {
+            argument = Value(aggregate.Argument) switch
+            {
+               PlanExpr expr => expr,
+               RowValue record => record.Indicator ?? new PlanColumnRef(record.Columns()[0]),
+               _ => throw new InvalidOperationException("Unexpected aggregate argument"),
+            };
+         }
+      }
+      PlanColumn column = new(ids.Next(), AggregateName(aggregate.Kind), aggregate.Scalar,
+         Lineage(argument, aggregate.Syntax, LineageKind.Aggregated));
+      AggregateNode node = new(cursor.Node, [], [new AggregateItem(column, Function(aggregate.Kind, argument), argument)]);
+      return new PlanSubquery(SubqueryKind.Scalar, node, null, negated: false, aggregate.Scalar);
+   }
+
+   private PlanExpr InQuery(BoundInQuery inQuery)
+   {
+      PlanExpr operand = Scalar(inQuery.Operand);
+      (Cursor cursor, RowValue row) = Query(inQuery.Source);
+      PlanColumnRef value = row.Column(inQuery.Source.Shape.Columns.First().Name);
+      PlanNode plan = Project(cursor.Node, [new ProjectItem(value.Column, value)]);
+      return new PlanSubquery(SubqueryKind.In, plan, operand, negated: false, inQuery.Scalar);
+   }
+
+   /// <summary>The rows a collection navigation leads to: the target, filtered on the owner's key (correlated).</summary>
+   private (Cursor, RowValue) NavigationQuery(BoundNavigationQuery query)
+   {
+      RowValue owner = (RowValue)Value(query.Owner);
+      NavigationDef navigation = query.Navigation;
+      (Cursor cursor, RowValue target) = Scan(navigation.Target, [.. owner.Path, navigation], nullable: false);
+      PlanExpr? condition = null;
+      for (int i = 0; i < navigation.OwnerColumns.Count; i++)
+      {
+         PlanColumnRef inner = target.Column(navigation.TargetColumns[i].Name);
+         PlanColumnRef outer = owner.Column(navigation.OwnerColumns[i].Name);
+         PlanExpr equal = new PlanBinary(BinaryOp.Equal, inner, outer, ScalarType.Boolean.WithNullable(inner.Type.Nullable || outer.Type.Nullable));
+         condition = condition == null ? equal : And(condition, equal);
+      }
+      cursor.Node = new FilterNode(cursor.Node, condition!);
+      return (cursor, target);
+   }
+
+   private (Cursor, RowValue) Join(BoundJoin join)
+   {
+      (Cursor cursor, RowValue left) = Query(join.Left);
+      (Cursor rightCursor, RowValue right) = Query(join.Right);
+      if (join.Kind == BoundJoinKind.Left) { right = right.AsNullable(rightCursor); }
+      using (Bind(join.LeftRow, left))
+      using (Bind(join.RightRow, right))
+      {
+         PlanExpr condition = Scalar(join.Condition);
+         cursor.Node = new JoinNode(join.Kind == BoundJoinKind.Left ? JoinKind.Left : JoinKind.Inner, cursor.Node, rightCursor.Node, condition, null);
+         right.Rehome(cursor);
+         return (cursor, ProjectInto(cursor, join.Shape, join.Items));
+      }
+   }
+
+   /// <summary>
+   /// Each row joined with its collection's elements. The collection is lowered with the row in scope, so its plan
+   /// refers to the row's columns; the optimizer turns those references into the join condition.
+   /// </summary>
+   private (Cursor, RowValue) SelectMany(BoundSelectMany many)
+   {
+      (Cursor cursor, RowValue row) = Query(many.Input);
+      using (Bind(many.Row, row))
+      {
+         (Cursor elementCursor, RowValue element) = Query(many.Collection);
+         cursor.Node = new JoinNode(JoinKind.Inner, cursor.Node, elementCursor.Node, null, null);
+         element.Rehome(cursor);
+         if (many.Items == null) { return (cursor, element); }
+         using (Bind(many.ElementRow, element)) { return (cursor, ProjectInto(cursor, many.Shape, many.Items)); }
+      }
+   }
+
+   /// <summary>A set operation over both sides' columns, the right side's put in the left side's order by name.</summary>
+   private (Cursor, RowValue) SetOp(BoundSetOperation set)
+   {
+      (Cursor leftCursor, RowValue left) = Query(set.Left);
+      (Cursor rightCursor, RowValue right) = Query(set.Right);
+      List<ColumnMember> members = set.Shape.Columns.ToList();
+      List<PlanColumnRef> leftColumns = members.Select(m => left.Column(m.Name)).ToList();
+      List<PlanColumnRef> rightColumns = members.Select(m => right.Column(set.Right.Shape.Find(m.Name).Item!.Name)).ToList();
+      PlanNode leftPlan = Project(leftCursor.Node, leftColumns.Select(c => new ProjectItem(c.Column, c)).ToList());
+      PlanNode rightPlan = Project(rightCursor.Node, rightColumns.Select(c => new ProjectItem(c.Column, c)).ToList());
+      List<PlanColumn> output = [];
+      for (int i = 0; i < members.Count; i++)
+      {
+         ColumnLineage lineage = ColumnLineage.Computed([.. leftColumns[i].Column.Lineage.Sources, .. rightColumns[i].Column.Lineage.Sources], null, LineageKind.Union);
+         output.Add(new PlanColumn(ids.Next(), members[i].Name, members[i].Type, lineage));
+      }
+      SetOperation operation = set.Kind switch
+      {
+         SetOperationKind.Union => SetOperation.Union,
+         SetOperationKind.UnionAll => SetOperation.UnionAll,
+         SetOperationKind.Intersect => SetOperation.Intersect,
+         _ => SetOperation.Except,
+      };
+      Cursor cursor = new(new SetOpNode(operation, leftPlan, rightPlan, output));
+      RowValue row = new(cursor, set.Shape, [], nullable: false);
+      for (int i = 0; i < members.Count; i++) { row.Set(members[i].Name, new PlanColumnRef(output[i])); }
+      return (cursor, row);
    }
 
    /// <summary>Carries a record's columns through a projection, as new items; the copy joins navigations afresh.</summary>
@@ -399,6 +668,14 @@ internal sealed class Lowerer
             return new PlanParameter(ParameterSource.Today, "today", today.Scalar);
          case BoundFunctionCall call:
             return new PlanFunction(call.Function, call.Arguments.Select(Scalar).ToList(), call.Scalar, Span(call.Syntax));
+         case BoundGroupAggregate aggregate:
+            return GroupAggregate(aggregate);
+         case BoundQueryAggregate aggregate:
+            return QueryAggregate(aggregate);
+         case BoundExists exists:
+            return new PlanSubquery(SubqueryKind.Exists, Query(exists.Source).Item1.Node, null, exists.Negated, exists.Scalar);
+         case BoundInQuery inQuery:
+            return InQuery(inQuery);
          default:
             throw new NotSupportedException($"Lowering {expr.GetType().Name} is not supported yet");
       }
@@ -440,11 +717,21 @@ internal sealed class Lowerer
    private ColumnLineage Lineage(PlanExpr expr, SyntaxNode? syntax)
    {
       if (expr is PlanColumnRef reference) { return reference.Column.Lineage; }
+      if (expr is PlanSubquery { Kind: SubqueryKind.Scalar } scalar) { return scalar.Plan.Output[0].Lineage; }
       List<ColumnSource> sources = [];
       bool readsColumns = false;
       Collect(expr, sources, ref readsColumns);
       string? expressionText = ExpressionText(syntax);
       return readsColumns ? ColumnLineage.Computed(sources, expressionText) : ColumnLineage.Constant(expressionText);
+   }
+
+   /// <summary>The lineage of an aggregate: the columns its argument reads (none for count()).</summary>
+   private ColumnLineage Lineage(PlanExpr? argument, SyntaxNode? syntax, LineageKind kind)
+   {
+      List<ColumnSource> sources = [];
+      bool readsColumns = false;
+      if (argument != null) { Collect(argument, sources, ref readsColumns); }
+      return ColumnLineage.Computed(sources, ExpressionText(syntax), kind);
    }
 
    private static void Collect(PlanExpr expr, List<ColumnSource> sources, ref bool readsColumns)
@@ -476,6 +763,11 @@ internal sealed class Lowerer
             break;
          case PlanFunction call:
             foreach (PlanExpr argument in call.Arguments) { Collect(argument, sources, ref readsColumns); }
+            break;
+         case PlanSubquery subquery:
+            readsColumns = true;
+            if (subquery.Operand != null) { Collect(subquery.Operand, sources, ref readsColumns); }
+            if (subquery.Kind != SubqueryKind.Exists) { sources.AddRange(subquery.Plan.Output[0].Lineage.Sources); }
             break;
       }
    }
