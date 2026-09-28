@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+TestResults/
+*.received.*
+node_modules/
+src/GalaxyData.Web/wwwroot/
+data/

@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GalaxyData.Common/GalaxyData.Common.csproj" />
+    <Project Path="src/GalaxyData.Query/GalaxyData.Query.csproj" />
+    <Project Path="src/GalaxyData.Query.DuckDb/GalaxyData.Query.DuckDb.csproj" />
+    <Project Path="src/GalaxyData.Query.Sqlite/GalaxyData.Query.Sqlite.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GalaxyData.Common.Tests/GalaxyData.Common.Tests.csproj" />
+    <Project Path="tests/GalaxyData.Query.IntegrationTests/GalaxyData.Query.IntegrationTests.csproj" />
+    <Project Path="tests/GalaxyData.Query.Tests/GalaxyData.Query.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,374 @@
+{
+  "providerKind": "sqlite",
+  "serverVersion": "(version)",
+  "defaultSchema": "main",
+  "tables": [
+    {
+      "schema": "main",
+      "name": "addresses",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "INTEGER",
+          "type": "int64",
+          "isIdentity": true
+        },
+        {
+          "name": "customer_id",
+          "ordinal": 1,
+          "nativeType": "INTEGER",
+          "type": "int64"
+        },
+        {
+          "name": "line1",
+          "ordinal": 2,
+          "nativeType": "TEXT",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "ordinal": 3,
+          "nativeType": "TEXT",
+          "type": "string?"
+        }
+      ],
+      "primaryKey": {
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "customer_id"
+          ],
+          "refSchema": "main",
+          "refTable": "customers",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": false
+        }
+      ]
+    },
+    {
+      "schema": "main",
+      "name": "audit_log",
+      "columns": [
+        {
+          "name": "at",
+          "nativeType": "DATETIME",
+          "type": "datetime?"
+        },
+        {
+          "name": "message",
+          "ordinal": 1,
+          "nativeType": "TEXT",
+          "type": "string?"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    {
+      "schema": "main",
+      "name": "customers",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "INTEGER",
+          "type": "int64",
+          "isIdentity": true
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "nativeType": "TEXT",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "ordinal": 2,
+          "nativeType": "TEXT",
+          "type": "string?"
+        },
+        {
+          "name": "credit_limit",
+          "ordinal": 3,
+          "nativeType": "DECIMAL(10,2)",
+          "type": "decimal(10,2)?"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 4,
+          "nativeType": "DATETIME",
+          "type": "datetime?",
+          "defaultSql": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "primaryKey": {
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "ux_customers_name",
+          "columns": [
+            "name"
+          ],
+          "isUnique": true
+        }
+      ],
+      "foreignKeys": []
+    },
+    {
+      "schema": "main",
+      "name": "employees",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "INTEGER",
+          "type": "int64",
+          "isIdentity": true
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "nativeType": "TEXT",
+          "type": "string"
+        },
+        {
+          "name": "manager_id",
+          "ordinal": 2,
+          "nativeType": "INTEGER",
+          "type": "int64?"
+        }
+      ],
+      "primaryKey": {
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "manager_id"
+          ],
+          "refSchema": "main",
+          "refTable": "employees",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": false
+        }
+      ]
+    },
+    {
+      "schema": "main",
+      "name": "open_orders",
+      "kind": "View",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "INTEGER",
+          "type": "int64?"
+        },
+        {
+          "name": "customer_id",
+          "ordinal": 1,
+          "nativeType": "INTEGER",
+          "type": "int64?"
+        },
+        {
+          "name": "total",
+          "ordinal": 2,
+          "nativeType": "DECIMAL(10,2)",
+          "type": "decimal(10,2)?"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    {
+      "schema": "main",
+      "name": "order_lines",
+      "columns": [
+        {
+          "name": "order_id",
+          "nativeType": "INTEGER",
+          "type": "int64"
+        },
+        {
+          "name": "line_no",
+          "ordinal": 1,
+          "nativeType": "INTEGER",
+          "type": "int64"
+        },
+        {
+          "name": "product_code",
+          "ordinal": 2,
+          "nativeType": "VARCHAR(20)",
+          "type": "string(20)"
+        },
+        {
+          "name": "qty",
+          "ordinal": 3,
+          "nativeType": "INTEGER",
+          "type": "int64"
+        },
+        {
+          "name": "price",
+          "ordinal": 4,
+          "nativeType": "DECIMAL(10,2)",
+          "type": "decimal(10,2)"
+        }
+      ],
+      "primaryKey": {
+        "columns": [
+          "order_id",
+          "line_no"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_order_lines_1",
+          "columns": [
+            "order_id",
+            "line_no"
+          ],
+          "isUnique": true,
+          "isPrimaryKey": true
+        }
+      ],
+      "foreignKeys": [
+        {
+          "columns": [
+            "order_id"
+          ],
+          "refSchema": "main",
+          "refTable": "orders",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": false,
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    {
+      "schema": "main",
+      "name": "orders",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "INTEGER",
+          "type": "int64",
+          "isIdentity": true
+        },
+        {
+          "name": "customer_id",
+          "ordinal": 1,
+          "nativeType": "INTEGER",
+          "type": "int64"
+        },
+        {
+          "name": "ship_address_id",
+          "ordinal": 2,
+          "nativeType": "INTEGER",
+          "type": "int64?"
+        },
+        {
+          "name": "bill_address_id",
+          "ordinal": 3,
+          "nativeType": "INTEGER",
+          "type": "int64?"
+        },
+        {
+          "name": "status",
+          "ordinal": 4,
+          "nativeType": "TEXT",
+          "type": "string",
+          "defaultSql": "'open'"
+        },
+        {
+          "name": "total",
+          "ordinal": 5,
+          "nativeType": "DECIMAL(10,2)",
+          "type": "decimal(10,2)"
+        },
+        {
+          "name": "order_date",
+          "ordinal": 6,
+          "nativeType": "DATE",
+          "type": "date"
+        }
+      ],
+      "primaryKey": {
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "ix_orders_open",
+          "columns": [
+            "order_date"
+          ],
+          "filter": "status = 'open'"
+        },
+        {
+          "name": "ix_orders_status",
+          "columns": [
+            "status"
+          ]
+        }
+      ],
+      "foreignKeys": [
+        {
+          "columns": [
+            "customer_id"
+          ],
+          "refSchema": "main",
+          "refTable": "customers",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": false
+        },
+        {
+          "columns": [
+            "ship_address_id"
+          ],
+          "refSchema": "main",
+          "refTable": "addresses",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": false
+        },
+        {
+          "columns": [
+            "bill_address_id"
+          ],
+          "refSchema": "main",
+          "refTable": "addresses",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": false
+        }
+      ],
+      "hasTriggers": true
+    }
+  ]
+}
