@@ -996,3 +996,27 @@ Project name#2, s#19 = sum#18
       Scan sales.customers (id#1, name#2, city#3, credit_limit#4, created#5, region_code#6, uid#7, notes#8)
 => name string(100): direct sales.customers.name
 => s decimal(38,2): aggregated (sum(t)) from orders_by_customer -> sales.orders.total
+
+### sales.orders.selectMany(o => sales.regions).count()
+Project value#12 = value[1]
+  [1] scalar
+    Aggregate: count#11 = count(*)
+      Join inner
+        Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+        Scan sales.regions (code#9, name#10)
+  OneRow
+=> value int64: aggregated (sales.orders.selectMany(o => sales.regions).count())
+
+### sales.orders.selectMany(o => sales.regions.select(name)).leftJoin(sales.regions, true, n: outer.name, m: inner.code).count()
+Project value#16 = value[1]
+  [1] scalar
+    Aggregate: count#15 = count(*)
+      Project n#13 = name#10, m#14 = code#11, code#9
+        Join left: true
+          Join inner
+            Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+            Project name#10, code#9
+              Scan sales.regions (code#9, name#10)
+          Scan sales.regions (code#11, name#12)
+  OneRow
+=> value int64: aggregated (sales.orders.selectMany(o => sales.regions.select(name)).leftJoin(sales.regions, true, n: outer.name, m: inner.code).count())

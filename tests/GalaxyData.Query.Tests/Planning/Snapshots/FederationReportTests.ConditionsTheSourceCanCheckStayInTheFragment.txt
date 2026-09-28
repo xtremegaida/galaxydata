@@ -1,0 +1,16 @@
+Project name#2, credit_limit#4, id#1  @merge
+  Filter ((city#3 == 'Durban') and (upper(name#2) == 'ACME')) and (credit_limit#4 > 10)  @merge
+    Scan sales.customers (id#1, name#2, city#3, credit_limit#4)  @sales
+
+-- f1: sales (PostgreSQL) id int32, name string(100), credit_limit decimal(10,2)?
+SELECT c.id, c.name, c.credit_limit
+FROM customers AS c
+WHERE c.city = @p0 AND c.credit_limit > @p1
+-- p0 string = 'Durban'
+-- p1 decimal(10,2) = 10
+
+-- merge (DuckDB)
+SELECT f1.name, f1.credit_limit, f1.id
+FROM f1
+WHERE upper(f1.name) = $p0
+-- p0 string = 'ACME'

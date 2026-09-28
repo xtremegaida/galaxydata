@@ -4,6 +4,7 @@ using System.Linq;
 using GalaxyData.Query.Binding;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Planning;
+using GalaxyData.Query.Planning.Federation;
 using GalaxyData.Query.Planning.Optimizer;
 using GalaxyData.Query.Types;
 
@@ -41,31 +42,69 @@ internal sealed class SqlBuilder
    private readonly List<SqlParameterSlot> parameters = [];
    private readonly Dictionary<(ParameterSource?, object?, string?, ScalarType, PatternTransform?), SqlParameterSlot> slots = [];
    private readonly Dictionary<string, int> aliases = new(StringComparer.OrdinalIgnoreCase);
+   private readonly HashSet<string> usedAliases = new(StringComparer.OrdinalIgnoreCase);
 
    /// <summary>The columns of the queries around the subquery being written, innermost last: what correlated references see.</summary>
    private readonly List<IReadOnlyDictionary<PlanColumn, SqlExpr>> outer = [];
 
-   private SqlBuilder(SqlDialect dialect, SqlBuildOptions options)
+   /// <summary>For the merge engine's SQL: the columns read from each fragment's table.</summary>
+   private readonly Dictionary<MergeTableNode, HashSet<PlanColumn>>? reads;
+
+   private SqlBuilder(SqlDialect dialect, SqlBuildOptions options, Dictionary<MergeTableNode, HashSet<PlanColumn>>? reads = null)
    {
       this.dialect = dialect;
       this.options = options;
+      this.reads = reads;
    }
 
    public static SqlStatement Build(LogicalPlan plan, SqlDialect dialect, SqlBuildOptions? options = null)
    {
       ArgumentNullException.ThrowIfNull(plan);
       ArgumentNullException.ThrowIfNull(dialect);
+      return new SqlBuilder(dialect, options ?? SqlBuildOptions.Default).Result(plan);
+   }
+
+   /// <summary>The merge engine's SQL for a plan over fragments' tables; <paramref name="reads"/> gets the columns it reads from each.</summary>
+   public static SqlStatement BuildMerge(LogicalPlan plan, SqlDialect dialect, Dictionary<MergeTableNode, HashSet<PlanColumn>> reads)
+   {
+      ArgumentNullException.ThrowIfNull(plan);
+      ArgumentNullException.ThrowIfNull(dialect);
+      return new SqlBuilder(dialect, SqlBuildOptions.Default, reads).Result(plan);
+   }
+
+   /// <summary>
+   /// A fragment's SQL: the plan's rows with the given columns under the given names. The rows go into a table, where
+   /// order means nothing, so there is an ORDER BY only when it decides which rows a limit keeps.
+   /// </summary>
+   public static SqlStatement BuildFragment(PlanNode root, IReadOnlyList<PlanColumn> columns, IReadOnlyList<string> names, SqlDialect dialect, SqlBuildOptions? options = null)
+   {
+      ArgumentNullException.ThrowIfNull(root);
+      ArgumentNullException.ThrowIfNull(dialect);
       SqlBuilder builder = new(dialect, options ?? SqlBuildOptions.Default);
+      Frame frame = builder.Build(root, [.. columns]);
+      // Selecting fewer columns than DISTINCT applies to would merge rows that differ in the others.
+      if (frame.DistinctColumns != null && !(frame.DistinctColumns.Count == columns.Count && frame.DistinctColumns.All(columns.Contains)))
+      {
+         frame = builder.Wrap(frame, root.Output, [.. root.Output]);
+      }
+      if (!frame.HasPaging) { frame.Select.OrderBy.Clear(); }
+      return builder.Write(frame, columns, names);
+   }
+
+   private SqlStatement Result(LogicalPlan plan)
+   {
       IReadOnlyList<PlanColumn> output = plan.Root.Output;
-      Frame frame = builder.Build(plan.Root, [.. output]);
+      Frame frame = Build(plan.Root, [.. output]);
+      return Write(frame, output, plan.Schema.Columns.Select(c => c.Name).ToList());
+   }
+
+   private SqlStatement Write(Frame frame, IReadOnlyList<PlanColumn> columns, IReadOnlyList<string> names)
+   {
       SqlSelect select = frame.Select;
       select.Items.Clear();
-      for (int i = 0; i < output.Count; i++)
-      {
-         select.Items.Add(new SqlSelectItem(frame.Columns[output[i]], plan.Schema.Columns[i].Name));
-      }
+      for (int i = 0; i < columns.Count; i++) { select.Items.Add(new SqlSelectItem(frame.Columns[columns[i]], names[i])); }
       // A SELECT needs at least one item even when the rows have no columns.
-      if (select.Items.Count == 0) { select.Items.Add(builder.Placeholder(frame, "one")); }
+      if (select.Items.Count == 0) { select.Items.Add(Placeholder(frame, "one")); }
       string text = SqlWriter.Write(select, dialect, out IReadOnlyList<SqlParameterSlot> written);
       return new SqlStatement(text, written);
    }
@@ -129,6 +168,8 @@ internal sealed class SqlBuilder
       {
          case ScanNode scan:
             return Scan(scan);
+         case MergeTableNode table:
+            return MergeTable(table, needed);
          case OneRowNode:
             return new Frame();
          case FilterNode filter:
@@ -206,6 +247,21 @@ internal sealed class SqlBuilder
          : table.Schema;
       frame.Select.From = new SqlTable(schema, table.Table, alias);
       foreach (ScanColumn column in scan.Columns) { frame.Columns[column.Output] = new SqlColumn(alias, column.Column.Name); }
+      return frame;
+   }
+
+   private Frame MergeTable(MergeTableNode table, HashSet<PlanColumn> needed)
+   {
+      if (reads != null)
+      {
+         if (!reads.TryGetValue(table, out HashSet<PlanColumn>? read)) { reads[table] = read = []; }
+         read.UnionWith(table.Output.Where(needed.Contains));
+      }
+      Frame frame = new();
+      // A merge table is used once, and its name (f1) reads best as its alias too.
+      string alias = usedAliases.Add(table.Table) ? table.Table : Alias(table.Table);
+      frame.Select.From = new SqlTable(null, table.Table, alias);
+      for (int i = 0; i < table.Output.Count; i++) { frame.Columns[table.Output[i]] = new SqlColumn(alias, table.Names[i]); }
       return frame;
    }
 
@@ -430,9 +486,15 @@ internal sealed class SqlBuilder
    {
       char first = table.FirstOrDefault(char.IsAsciiLetter);
       string stem = first == default ? "t" : char.ToLowerInvariant(first).ToString();
-      int count = aliases.TryGetValue(stem, out int seen) ? seen + 1 : 1;
-      aliases[stem] = count;
-      return count == 1 ? stem : stem + count;
+      for (int count = aliases.GetValueOrDefault(stem) + 1; ; count++)
+      {
+         string alias = count == 1 ? stem : stem + count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+         if (usedAliases.Add(alias))
+         {
+            aliases[stem] = count;
+            return alias;
+         }
+      }
    }
 
    private static HashSet<PlanColumn> With(HashSet<PlanColumn> needed, PlanExpr expr) => With(needed, [expr]);

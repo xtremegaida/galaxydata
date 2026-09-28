@@ -641,3 +641,18 @@ FROM (
    FROM customers AS c
 ) AS d
 GROUP BY d.name
+
+### sales.orders.selectMany(o => sales.regions).count()
+SELECT (
+   SELECT count(*) AS count
+   FROM orders AS o
+   CROSS JOIN regions AS r
+) AS "value"
+
+### sales.orders.selectMany(o => sales.regions.select(name)).leftJoin(sales.regions, true, n: outer.name, m: inner.code).count()
+SELECT (
+   SELECT count(*) AS count
+   FROM orders AS o
+   CROSS JOIN regions AS r
+   LEFT JOIN regions AS r2 ON 1
+) AS "value"

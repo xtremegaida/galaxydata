@@ -28,6 +28,9 @@ public abstract class SourceProvider
    /// </summary>
    public virtual ValueTask PrepareConnectionAsync(DbConnection connection, CancellationToken cancellationToken) => ValueTask.CompletedTask;
 
+   /// <summary>Readies a command for a query before it runs, such as streaming its rows instead of computing them all first.</summary>
+   public virtual void PrepareCommand(DbCommand command) { }
+
    /// <summary>Sets a parameter to a value of the logical type <paramref name="type"/> (null for SQL NULL).</summary>
    public virtual void BindParameter(DbParameter parameter, object? value, ScalarType type)
    {

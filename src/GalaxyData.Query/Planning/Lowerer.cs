@@ -103,7 +103,8 @@ internal sealed class Lowerer
       SortNode sort => Unsorted(sort.Input),
       FilterNode filter => new FilterNode(Unsorted(filter.Input), filter.Predicate),
       ProjectNode project => new ProjectNode(Unsorted(project.Input), project.Items),
-      JoinNode { Kind: JoinKind.Inner or JoinKind.Left } join => new JoinNode(join.Kind, Unsorted(join.Left), join.Right, join.Condition, join.Navigation),
+      JoinNode { Kind: JoinKind.Inner or JoinKind.Left or JoinKind.Semi or JoinKind.Anti } join =>
+         new JoinNode(join.Kind, Unsorted(join.Left), join.Right, join.Condition, join.Navigation),
       _ => node,
    };
 
@@ -279,51 +280,14 @@ internal sealed class Lowerer
             return Resort(filter.Input, keys) is { } filtered ? new FilterNode(filtered, filter.Predicate) : null;
          case LimitNode limit:
             return Resort(limit.Input, keys) is { } limited ? new LimitNode(limited, limit.Count, limit.Offset) : null;
-         case JoinNode { Kind: JoinKind.Inner or JoinKind.Left } join when keys.All(join.Left.Output.Contains):
+         case JoinNode { Kind: JoinKind.Inner or JoinKind.Left or JoinKind.Semi or JoinKind.Anti } join when keys.All(join.Left.Output.Contains):
             return Resort(join.Left, keys) is { } left ? new JoinNode(join.Kind, left, join.Right, join.Condition, join.Navigation) : null;
          default:
             return null;
       }
    }
 
-   /// <summary>
-   /// The sort that orders a plan's rows, restated over the plan's output (through renaming projections): not sorted
-   /// when nothing orders them, sorted with no keys when the order can't be restated.
-   /// </summary>
-   private static (bool Sorted, List<PlanSortKey>? Keys) OrderOf(PlanNode node)
-   {
-      switch (node)
-      {
-         case SortNode sort:
-            return (true, [.. sort.Keys]);
-         case FilterNode filter:
-            return OrderOf(filter.Input);
-         case LimitNode limit:
-            return OrderOf(limit.Input);
-         case JoinNode { Kind: JoinKind.Inner or JoinKind.Left } join:
-            // The left side's columns pass through the join.
-            return OrderOf(join.Left);
-         case ProjectNode project:
-         {
-            (bool sorted, List<PlanSortKey>? keys) = OrderOf(project.Input);
-            if (keys == null) { return (sorted, null); }
-            Dictionary<PlanColumn, PlanExpr> renamed = [];
-            foreach (ProjectItem item in project.Items)
-            {
-               if (item.Expr is PlanColumnRef reference) { renamed.TryAdd(reference.Column, new PlanColumnRef(item.Column)); }
-            }
-            List<PlanSortKey> restated = [];
-            foreach (PlanSortKey key in keys)
-            {
-               if (!PlanAnalysis.Columns(key.Expr).All(renamed.ContainsKey)) { return (true, null); }
-               restated.Add(key with { Expr = Optimizer.PlanRewriter.Substitute(key.Expr, renamed) });
-            }
-            return (true, restated);
-         }
-         default:
-            return (false, null);
-      }
-   }
+   private static (bool Sorted, List<PlanSortKey>? Keys) OrderOf(PlanNode node) => PlanAnalysis.OrderOf(node);
 
    /// <summary>Columns that tell a query's rows apart: an entity's key, a group's key parts, else every sortable column.</summary>
    private static List<PlanColumn> Distinguishing(RowValue row, RowShape shape, PlanNode plan)
@@ -354,7 +318,7 @@ internal sealed class Lowerer
             return Tiebreak(limit.Input, keys) is { } limited ? new LimitNode(limited, limit.Count, limit.Offset) : null;
          case ProjectNode project:
             return Tiebreak(project.Input, keys) is { } projected ? new ProjectNode(projected, project.Items) : null;
-         case JoinNode { Kind: JoinKind.Inner or JoinKind.Left } join when keys.All(join.Left.Output.Contains):
+         case JoinNode { Kind: JoinKind.Inner or JoinKind.Left or JoinKind.Semi or JoinKind.Anti } join when keys.All(join.Left.Output.Contains):
             return Tiebreak(join.Left, keys) is { } left ? new JoinNode(join.Kind, left, join.Right, join.Condition, join.Navigation) : null;
          default:
             return null;

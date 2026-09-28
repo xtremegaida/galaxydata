@@ -209,7 +209,8 @@ internal sealed class SqlWriter
       {
          case SqlTable table:
             if (table.Schema != null) { text.Append(dialect.Identifier(table.Schema)).Append('.'); }
-            text.Append(dialect.Identifier(table.Name)).Append(" AS ").Append(dialect.Identifier(table.Alias));
+            text.Append(dialect.Identifier(table.Name));
+            if (!string.Equals(table.Name, table.Alias, StringComparison.Ordinal)) { text.Append(" AS ").Append(dialect.Identifier(table.Alias)); }
             break;
          case SqlDerivedTable derived:
             Nested(derived.Query);
@@ -218,9 +219,10 @@ internal sealed class SqlWriter
          case SqlJoin join:
             From(join.Left);
             NewLine();
+            // Only SQLite takes an inner join without ON; with no condition it is a cross join everywhere.
             text.Append(join.Kind switch
             {
-               SqlJoinKind.Inner => "INNER JOIN ",
+               SqlJoinKind.Inner when join.Condition != null => "INNER JOIN ",
                SqlJoinKind.Left => "LEFT JOIN ",
                _ => "CROSS JOIN ",
             });
@@ -238,6 +240,10 @@ internal sealed class SqlWriter
             {
                text.Append(" ON ");
                Expr(join.Condition);
+            }
+            else if (join.Kind == SqlJoinKind.Left)
+            {
+               text.Append(" ON 1 = 1");
             }
             break;
       }

@@ -2,6 +2,7 @@ using System;
 using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
+using DuckDB.NET.Data;
 using GalaxyData.Query.Execution;
 using GalaxyData.Query.Introspection;
 using GalaxyData.Query.Providers;
@@ -34,6 +35,12 @@ public sealed class DuckDbSourceProvider : SourceProvider
       {
          // Without the ICU extension there is no TimeZone setting, and DuckDB works in UTC anyway.
       }
+   }
+
+   /// <summary>Rows are streamed as they are computed, rather than all computed before the first is read.</summary>
+   public override void PrepareCommand(DbCommand command)
+   {
+      if (command is DuckDBCommand duck) { duck.UseStreamingMode = true; }
    }
 
    public override object? ReadValue(DbDataReader reader, int ordinal)

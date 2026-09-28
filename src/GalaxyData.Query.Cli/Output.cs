@@ -134,18 +134,29 @@ internal static class Output
       _ => Convert.ToString(value, CultureInfo.InvariantCulture),
    };
 
+   /// <summary>The SQL each source runs, then the merge engine's SQL over their rows when the query combines sources.</summary>
    public static void Fragments(TextWriter writer, PreparedQuery prepared)
    {
       foreach (QueryFragment fragment in prepared.Fragments)
       {
-         writer.WriteLine($"-- {fragment.Source.Alias} ({fragment.Dialect.Name})");
-         writer.WriteLine(fragment.Sql);
-         foreach (SqlParameterSlot parameter in fragment.Statement.Parameters)
-         {
-            writer.WriteLine($"-- {fragment.Dialect.Placeholder(parameter.Name)} {parameter.Type} = {parameter.Description}");
-         }
-         writer.WriteLine();
+         writer.WriteLine($"-- {fragment.Source.Alias} ({fragment.Dialect.Name}){(fragment.Table != null ? ", fetched into " + fragment.Table : string.Empty)}");
+         Statement(writer, fragment.Statement, fragment.Dialect);
       }
+      if (prepared.Merge != null)
+      {
+         writer.WriteLine($"-- merge ({prepared.MergeDialect!.Name})");
+         Statement(writer, prepared.Merge, prepared.MergeDialect);
+      }
+   }
+
+   private static void Statement(TextWriter writer, SqlStatement statement, SqlDialect dialect)
+   {
+      writer.WriteLine(statement.Text);
+      foreach (SqlParameterSlot parameter in statement.Parameters)
+      {
+         writer.WriteLine($"-- {dialect.Placeholder(parameter.Name)} {parameter.Type} = {parameter.Description}");
+      }
+      writer.WriteLine();
    }
 
    /// <summary>Each diagnostic with the line of the query it is on, underlined.</summary>

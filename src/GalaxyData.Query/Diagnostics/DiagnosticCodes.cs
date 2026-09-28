@@ -1,6 +1,6 @@
 namespace GalaxyData.Query.Diagnostics;
 
-/// <summary>GDQ1xxx parse, GDQ2xxx bind (GDQ21xx warnings), GDQ3xxx plan, GDQ5xxx catalog.</summary>
+/// <summary>GDQ1xxx parse, GDQ2xxx bind (GDQ21xx warnings), GDQ3xxx plan (GDQ31xx warnings), GDQ5xxx catalog.</summary>
 public static class DiagnosticCodes
 {
    public const string SyntaxError = "GDQ1001";
@@ -40,6 +40,7 @@ public static class DiagnosticCodes
    public const string NoProvider = "GDQ3002";
    public const string NotTranslatable = "GDQ3003";
    public const string NoSource = "GDQ3004";
+   public const string LargeFetch = "GDQ3101";
 
    public const string InvalidSourceAlias = "GDQ5001";
    public const string DuplicateSource = "GDQ5002";

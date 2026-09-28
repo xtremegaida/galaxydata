@@ -13,18 +13,21 @@ namespace GalaxyData.Query.Planning;
 /// </summary>
 public static class PlanPrinter
 {
-   public static string Print(PlanNode node)
+   public static string Print(PlanNode node) => Print(node, null);
+
+   /// <summary>A plan with where each operator runs after it (<c>@shop</c>), as <paramref name="site"/> says.</summary>
+   internal static string Print(PlanNode node, Func<PlanNode, string?>? site)
    {
       ArgumentNullException.ThrowIfNull(node);
       StringBuilder text = new();
-      new Writer(text).Node(node, 0);
+      new Writer(text, site).Node(node, 0);
       return text.ToString();
    }
 
    /// <summary>An expression on one line; subqueries print as <c>exists[…]</c>.</summary>
-   public static string Expr(PlanExpr expr) => new Writer(null).Expr(expr);
+   public static string Expr(PlanExpr expr) => new Writer(null, null).Expr(expr);
 
-   private sealed class Writer(StringBuilder? text)
+   private sealed class Writer(StringBuilder? text, Func<PlanNode, string?>? site)
    {
       private readonly List<PlanSubquery> pending = [];
       private int numbered;
@@ -71,10 +74,14 @@ public static class PlanPrinter
             case SetOpNode set:
                line.Append(set.Operation.ToString()).Append(" (").AppendJoin(", ", set.Output).Append(')');
                break;
+            case Federation.MergeTableNode table:
+               line.Append("MergeTable ").Append(table.Table).Append(" (").AppendJoin(", ", table.Output).Append(')');
+               break;
             default:
                line.Append(node.GetType().Name);
                break;
          }
+         if (site?.Invoke(node) is { } where) { line.Append("  @").Append(where); }
          text!.Append(line).AppendLine();
          List<PlanSubquery> subqueries = [.. pending];
          pending.Clear();

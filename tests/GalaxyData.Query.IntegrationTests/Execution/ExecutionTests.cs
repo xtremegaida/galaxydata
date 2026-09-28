@@ -23,7 +23,7 @@ public sealed class ExecutionTests
    private const string ExampleFour = "x := shop.orders.where(total > 3); shop.customers.where(cust => x.any(order => cust.id == order.customer_id))";
 
    /// <summary>Queries over the columns both shop fixtures share; SQLite and DuckDB must return the same rows.</summary>
-   private static readonly string[] Conformance =
+   internal static readonly string[] Conformance =
    [
       ExampleOne + ".orderBy(id)",
       "shop.orders.orderBy(desc(total)).take(2).select(id, total)",
@@ -103,12 +103,13 @@ public sealed class ExecutionTests
       "shop.orders.select(id, c: customer, a: ship_address).orderBy(id)",
       "shop.order_lines.select(qty, price).orderBy(qty, price)",
       "shop.orders.groupBy(customer).select(customer, n: count()).orderBy(customer.name)",
+      "shop.orders.selectMany(o => shop.customers).count()",
    ];
 
-   private static readonly QueryParameters Parameters = new QueryParameters().Add("min", 50L).Add("since", "2026-01-06").Add("n", 3L);
+   internal static readonly QueryParameters Parameters = new QueryParameters().Add("min", 50L).Add("since", "2026-01-06").Add("n", 3L);
 
    /// <summary>A virtual entity with computed columns, reached through an outer join.</summary>
-   private static readonly CatalogOverlay Overlay = new()
+   internal static readonly CatalogOverlay Overlay = new()
    {
       VirtualEntities =
       [
@@ -117,13 +118,17 @@ public sealed class ExecutionTests
       Relations = [new OverlayRelation("shop.orders", ["ship_address_id"], "reports.addr_x", ["id"]) { Name = "shipx" }],
    };
 
-   private static async Task<string> RunAllAsync(TestSources sources)
+   /// <summary>
+   /// The conformance queries' rows as a report; <paramref name="rewrite"/> changes each query's text for the sources
+   /// (the report shows the query as written).
+   /// </summary>
+   internal static async Task<string> RunAllAsync(TestSources sources, CatalogOverlay? overlay = null, QueryEngineOptions? options = null, Func<string, string>? rewrite = null)
    {
-      QueryEngine engine = sources.Engine(Overlay);
+      QueryEngine engine = sources.Engine(overlay ?? Overlay, options);
       StringBuilder report = new();
       foreach (string query in Conformance)
       {
-         await using QueryResult result = await engine.ExecuteAsync(new QueryRequest(query) { Parameters = Parameters }, TestContext.Current.CancellationToken);
+         await using QueryResult result = await engine.ExecuteAsync(new QueryRequest(rewrite?.Invoke(query) ?? query) { Parameters = Parameters }, TestContext.Current.CancellationToken);
          IReadOnlyList<object?[]> rows = await result.ToListAsync(TestContext.Current.CancellationToken);
          report.Append("### ").AppendLine(query).AppendLine(TestSources.Header(result.Schema)).AppendLine(TestSources.Format(rows, result.Schema, hidden: true));
       }
@@ -213,17 +218,17 @@ public sealed class ExecutionTests
    }
 
    [Fact]
-   public async Task QueriesAcrossSourcesAreReportedNotRun()
+   public async Task QueriesAcrossSourcesNeedAMergeEngine()
    {
       await using TestSources sources = new();
       await sources.AddSqliteAsync("shop", Fixtures.Sql("shop.sqlite.sql"));
       await sources.AddDuckDbAsync("wh", Fixtures.Sql("shop.duckdb.sql"));
       CatalogOverlay overlay = new() { Relations = [new OverlayRelation("wh.orders", ["customer_id"], "shop.customers", ["id"]) { Name = "shop_customer" }] };
-      PreparedQuery prepared = sources.Engine(overlay).Prepare("wh.orders.select(id, who: shop_customer.name)");
+      PreparedQuery prepared = sources.Engine(overlay, noMerge: true).Prepare("wh.orders.select(id, who: shop_customer.name)");
       prepared.Success.ShouldBeFalse();
       QueryDiagnostic error = prepared.Diagnostics.ShouldHaveSingleItem();
       error.Code.ShouldBe(DiagnosticCodes.CrossSourceQuery);
-      error.Message.ShouldContain("wh and shop");
+      error.Message.ShouldContain("reads from wh and shop; queries that combine sources need a merge engine");
       await Should.ThrowAsync<QueryException>(() => prepared.ExecuteAsync(TestContext.Current.CancellationToken));
       sources.Opened.ShouldBe(0);
    }

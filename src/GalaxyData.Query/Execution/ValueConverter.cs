@@ -1,7 +1,9 @@
 using System;
+using System.Collections;
 using System.Globalization;
 using System.IO;
 using System.Numerics;
+using System.Text;
 using GalaxyData.Query.Types;
 
 namespace GalaxyData.Query.Execution;
@@ -51,6 +53,68 @@ public static class ValueConverter
          },
          _ => value,
       };
+   }
+
+   /// <summary>
+   /// A value of an unknown type as text: how the merge engine holds it, and so what <c>toString(...)</c> gives there.
+   /// Lists and structs are written as DuckDB writes them (<c>[a, b]</c>, <c>{k: v}</c>), binary values as <c>\x0A\xFF</c>.
+   /// </summary>
+   public static string UnknownText(object value)
+   {
+      ArgumentNullException.ThrowIfNull(value);
+      StringBuilder text = new();
+      WriteUnknown(text, value);
+      return text.ToString();
+   }
+
+   private static void WriteUnknown(StringBuilder text, object? value)
+   {
+      switch (value)
+      {
+         case null or DBNull:
+            text.Append("NULL");
+            break;
+         case string s:
+            text.Append(s);
+            break;
+         case byte[] bytes:
+            foreach (byte b in bytes) { text.Append("\\x").Append(b.ToString("X2", CultureInfo.InvariantCulture)); }
+            break;
+         case IDictionary dictionary:
+         {
+            text.Append('{');
+            bool first = true;
+            foreach (DictionaryEntry entry in dictionary)
+            {
+               if (!first) { text.Append(", "); }
+               first = false;
+               WriteUnknown(text, entry.Key);
+               text.Append(": ");
+               WriteUnknown(text, entry.Value);
+            }
+            text.Append('}');
+            break;
+         }
+         case IEnumerable sequence:
+         {
+            text.Append('[');
+            bool first = true;
+            foreach (object? item in sequence)
+            {
+               if (!first) { text.Append(", "); }
+               first = false;
+               WriteUnknown(text, item);
+            }
+            text.Append(']');
+            break;
+         }
+         case DateTimeOffset offset:
+            text.Append(offset.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFFzzz", CultureInfo.InvariantCulture));
+            break;
+         default:
+            text.Append(ToText(value));
+            break;
+      }
    }
 
    private static InvalidCastException Cannot(object value, ScalarType type) =>

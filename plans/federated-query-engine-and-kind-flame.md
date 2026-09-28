@@ -202,11 +202,14 @@ Rules implement `IRewriteRule` and run in phases to a fixpoint.
    - PullUpSort, which drops a sort without a limit under Aggregate, Distinct or SetOp;
    - Limit/TopN through many-to-one Left joins when the sort keys are on the left (the grid-paging win).
 3. **Prune.** Column pruning, protecting hidden root columns. Partial aggregate pushdown is a stretch goal.
-4. **`SiteAssigner`**, bottom-up:
-   - A Scan is assigned to its source. Excel scans are assigned to `merge`.
-   - An operator stays on its input's site if `DialectCapabilities.CanTranslate` accepts all its expressions; otherwise it goes to `merge`.
-   - At a boundary, translatable conjuncts of a filter stay in the fragment and the rest go to merge.
-   - If the whole plan is on one site, the fast path skips DuckDB entirely.
+4. **Site assignment and fragments** (`Planning/Federation/FederationPlanner`), top-down from the root:
+   - A subtree becomes a fragment when it reads exactly one source, reads no columns from outside it (no correlation), its order can be restated over its own columns, and `SqlBuilder` can write it in the source's dialect (the builder is the translatability oracle; an optional capability hook can keep parts from a source that lacks a function its dialect has). Excel scans (M8) will be assigned to `merge`.
+   - Otherwise the operator runs in `merge`, and its inputs and subquery plans are cut the same way; correlated subqueries run in the merge engine over their uncorrelated fragments.
+   - At a boundary, the conjuncts of a filter the source can check stay in the fragment and the rest go to merge.
+   - An ordered fragment (a sort, or a top-N) is sorted again in the merge engine, since loading rows into a table loses their order; its SQL keeps ORDER BY only under a limit.
+   - Each fragment selects only the columns the merge SQL reads (recorded while the merge SQL is written); a placeholder column when it reads none.
+   - If the whole plan is on one site, the fast path skips DuckDB entirely. A one-source query whose SQL can't be written for its source runs through the merge engine instead, when there is one.
+   - `QueryEngineOptions.PushDown = false` fetches bare scans and runs everything else in the merge engine, to compare.
 5. **Cross-source joins:** full fetch by default. An **adaptive bind-join** runs the driver side first and reads its distinct keys:
 
 | Key count k | Action |
@@ -240,13 +243,15 @@ Rules implement `IRewriteRule` and run in phases to a fixpoint.
   - `QuoteName` and `IsBareIdentifier`, following the engine's operator table.
   - `Compose(text, filters, sort, tiebreak)`, which wraps the last statement as `(<last>).where(..).orderBy(..)` using `SplitStatements`.
   - With paging, the sort is stabilized by appending the row-identity key (inside the query's own sort, under its filters and `take`).
-- **Merge engine:** one process-wide DuckDB in-memory instance.
-  - It is configured with `memory_limit`, `temp_directory` and `threads`.
-  - Each query gets its own schema `q_<n>`, dropped on dispose.
-  - Fragments load in parallel (4 by default) on `Duplicate()` connections, through a typed Appender loader.
-  - The final query runs in streaming mode.
-  - Cancellation uses a linked CTS plus DuckDB `Interrupt()`. There are per-fragment and overall timeouts, and an optional `MaxFetchedRows`.
-  - SQLite's dynamic typing is handled with parse converters: a failure is an error with row and column context, or null in lenient mode.
+- **Merge engine:** `IMergeEngine` (core) → `IMergeSession` → `IMergeTableWriter`; `DuckDbMergeEngine` is one process-wide DuckDB instance, in memory unless `DatabasePath` is set.
+  - It is configured with `memory_limit`, `temp_directory` (by default a directory of its own under the system temp directory, removed on dispose) and `threads`. In-memory tables spill there (confirmed in M6: over 64 MB of temp files with a 64 MB limit).
+  - Each query gets its own schema `q_<n>`, and the session connection's `search_path` finds the fragment tables (`f1`, `f2`, …) by name; dropped when the result is disposed.
+  - Fragments load in parallel (`MaxParallelFetches`, 4 by default) on `Duplicate()` connections, through typed appenders; values cross as their logical CLR types. The first failure stops the others and is the error reported.
+  - Fragment reads from DuckDB sources and the final query run in streaming mode.
+  - Cancellation: the token stops fetches between rows, and a registration calls `DbCommand.Cancel()` (DuckDB interrupt, `sqlite3_interrupt`) for statements that are busy, including while a result is read. `MaxFetchedRows` caps what one query fetches; timeouts are M11.
+  - SQLite's dynamic typing is handled by `ValueConverter`: a failure is an error with source, row and column context, or null in lenient mode.
+  - How values are held in the merge engine: every value is checked against its column before a row is appended (a partly appended row must be cleared, or DuckDB crashes). Decimals are `DECIMAL(38, scale)`, since SQLite doesn't hold values to their declared precision; decimals of no declared precision (SQLite reals, averages) are doubles (about 15 significant digits). Date-times are `TIMESTAMP_NS`, so they keep their ticks; date-times with offsets are UTC instants, as DuckDB sources give them. Values of unknown types are text to the merge SQL (so `toString(x)` works there), and result columns of unknown types give back the source's values.
+  - `ExecutionStats.Fragments` gives each fragment's rows and time; a warning (GDQ3101) marks fragments expected to fetch more than `LargeFetchRows` (1M).
 
 ### 4.7 Explain
 `QueryExplain` can be produced without executing anything. It contains:
@@ -478,7 +483,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | M3 | Lowering, SQL AST, `SqlBuilder`, 4 dialects, single-site execution, Direct lineage, `gdq` CLI (run, sql, schema, repl) | Golden plans and golden SQL per dialect; example 1 end-to-end on SQLite and DuckDB; SQLite and DuckDB return identical rows for a shared conformance set |
 | M4 | Group scope and HAVING, joins, selectMany, collection navs, any/all/in/subqueries, set ops, decorrelation (semi/anti joins, merged group joins, correlated joins), pushdown and prune rules; `first`/`firstOrDefault` moved to M5 | Examples 2–4 golden and end-to-end on SQLite and DuckDB; optimizer phase snapshots |
 | M5 | Links, hidden keys, EditTarget, RowIdentity, full lineage, `QueryText.Compose`, `ForCount`, explain model and renderer (`gdq explain`), stable paging, `first`/`firstOrDefault` (as the result: the first row, and `first()` of none fails; in expressions: scalar subqueries, null when there is no row) | Link and lineage snapshots; composed filter reaches the scan |
-| M6 | Federation: SiteAssigner, fragmenter, DuckDB merge engine, full fetch | Differential suite: same data all-DuckDB, all-SQLite and split, identical results; spill test at 64 MB; cancellation test |
+| M6 | Federation: site assignment and fragmenter, DuckDB merge engine, full fetch, explain with sites and merge SQL | Differential suite: the conformance set on one SQLite database, one DuckDB database, split across SQLite and DuckDB, and with every operator in the merge engine, identical results; spill test at 64 MB; cancellation tests (fetch, merge query, reading) |
 | M7 | Adaptive bind-join, runtime scalar params, TopN through navs, cardinality estimates | A 50-row page sends ≤ 50 keys (`ExecutionStats`); k = 0 early-out; fallback above the key limit |
 | M8 | Excel Folder provider | OpenXml-generated fixtures (multiple, hidden and spaced sheets); Excel ⋈ SQLite join |
 | M9 | PG and MSSQL providers | Container suite runs the same conformance and differential tests; MSSQL varchar parameter typing |

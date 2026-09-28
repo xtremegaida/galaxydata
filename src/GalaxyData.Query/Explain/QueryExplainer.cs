@@ -19,7 +19,9 @@ internal static class QueryExplainer
 {
    public static QueryExplain Explain(PreparedQuery query, BoundProgram? program, PageRequest? paging, bool count, bool optimize, bool verbose)
    {
-      string? site = query.Fragments.Count == 1 ? query.Fragments[0].Source.Alias : null;
+      Func<PlanNode, string?> site = query.Federation is { } federation
+         ? node => federation.Sites.GetValueOrDefault(node)
+         : query.Fragments.Count == 1 ? _ => query.Fragments[0].Source.Alias : _ => null;
       return new QueryExplain
       {
          Text = query.Text,
@@ -29,6 +31,8 @@ internal static class QueryExplainer
          Schema = query.Schema,
          Plan = query.Plan == null ? null : new NodeWriter(query.Plan.Root, site).Root(),
          Fragments = query.Fragments.Select(Fragment).ToList(),
+         MergeSql = query.Merge?.Text,
+         MergeParameters = query.Merge?.Parameters.Select(Parameter).ToList() ?? [],
          Phases = verbose && program is { Success: true } && query.Plan != null ? Phases(program, paging, count, optimize) : null,
       };
    }
@@ -41,9 +45,17 @@ internal static class QueryExplainer
       }
       List<string> entities = [];
       Collect(query.Plan!.Root, entities);
-      QueryFragment fragment = query.Fragments[0];
       string reading = entities.Count == 0 ? "reading no tables" : "reading " + List(entities);
-      return $"Runs as one {fragment.Dialect.Name} query in {fragment.Source.Alias}, {reading}.";
+      if (query.Merge == null)
+      {
+         QueryFragment fragment = query.Fragments[0];
+         return $"Runs as one {fragment.Dialect.Name} query in {fragment.Source.Alias}, {reading}.";
+      }
+      string engine = $"the merge engine ({query.MergeDialect!.Name})";
+      if (query.Fragments.Count == 0) { return $"Runs in {engine}, {reading}."; }
+      List<string> sources = query.Fragments.Select(f => $"{f.Source.Alias} ({f.Dialect.Name})").Distinct().ToList();
+      string parts = query.Fragments.Count == 1 ? "1 fragment" : $"{query.Fragments.Count.ToString(CultureInfo.InvariantCulture)} fragments";
+      return $"Combines {parts} from {List(sources)} in {engine}, {reading}; each fragment is fetched in full.";
    }
 
    private static void Collect(PlanNode node, List<string> entities)
@@ -72,9 +84,13 @@ internal static class QueryExplainer
       Source = fragment.Source.Alias,
       Dialect = fragment.Dialect.Name,
       Sql = fragment.Sql,
-      Parameters = fragment.Statement.Parameters.Select(p => new ExplainParameter(p.Name, p.Type.ToString(), p.Description)).ToList(),
-      Strategy = "whole result",
+      Parameters = fragment.Statement.Parameters.Select(Parameter).ToList(),
+      Strategy = fragment.Table == null ? "whole result" : "full fetch into " + fragment.Table,
+      Table = fragment.Table,
+      EstimatedRows = fragment.EstimatedRows,
    };
+
+   private static ExplainParameter Parameter(SqlParameterSlot slot) => new(slot.Name, slot.Type.ToString(), slot.Description);
 
    private static List<ExplainPhase> Phases(BoundProgram program, PageRequest? paging, bool count, bool optimize)
    {
@@ -91,12 +107,12 @@ internal static class QueryExplainer
    private sealed class NodeWriter
    {
       private readonly PlanNode root;
-      private readonly string? site;
+      private readonly Func<PlanNode, string?> site;
       private readonly Dictionary<PlanColumn, string> scanNames = [];
       private readonly Dictionary<PlanSubquery, int> numbers = [];
       private List<PlanSubquery> pending = [];
 
-      public NodeWriter(PlanNode root, string? site)
+      public NodeWriter(PlanNode root, Func<PlanNode, string?> site)
       {
          this.root = root;
          this.site = site;
@@ -153,24 +169,13 @@ internal static class QueryExplainer
          {
             Operator = op,
             Detail = detail,
-            Site = site,
+            Site = site(node),
             Columns = node.Output.Select(c => c.Name).ToList(),
-            EstimatedRows = Estimate(node, inputs),
+            EstimatedRows = PlanAnalysis.EstimateRows(node),
             Inputs = inputs,
             Subqueries = nested,
          };
       }
-
-      /// <summary>Scans know their tables' sizes; a sort or projection keeps its input's, a limit caps it.</summary>
-      private static long? Estimate(PlanNode node, List<ExplainNode> inputs) => node switch
-      {
-         ScanNode scan => scan.Entity.RowCountEstimate,
-         SortNode or ProjectNode => inputs[0].EstimatedRows,
-         LimitNode { Count: PlanLiteral { Value: long count } } => inputs[0].EstimatedRows is { } rows ? Math.Min(rows, count) : count,
-         OneRowNode => 1,
-         AggregateNode { Keys.Count: 0 } => 1,
-         _ => null,
-      };
 
       private (string, string?) Describe(PlanNode node)
       {

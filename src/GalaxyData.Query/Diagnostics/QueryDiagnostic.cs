@@ -20,4 +20,7 @@ public sealed record QueryDiagnostic(string Code, DiagnosticSeverity Severity, s
 
    public static QueryDiagnostic Error(string code, string message, int start, int end) =>
       new(code, DiagnosticSeverity.Error, message, start, Math.Max(start, end));
+
+   public static QueryDiagnostic Warning(string code, string message, int start, int end) =>
+      new(code, DiagnosticSeverity.Warning, message, start, Math.Max(start, end));
 }

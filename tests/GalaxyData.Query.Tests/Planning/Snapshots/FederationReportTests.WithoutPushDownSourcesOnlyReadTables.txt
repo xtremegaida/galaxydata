@@ -1,0 +1,15 @@
+Project customer_id#2, n#10 = count#9  @merge
+  Aggregate by customer_id#2: count#9 = count(*)  @merge
+    Filter status#3 == 'open'  @merge
+      Scan sales.orders (customer_id#2, status#3)  @sales
+
+-- f1: sales (PostgreSQL) customer_id int32, status string(20,ansi)
+SELECT o.customer_id, o.status
+FROM orders AS o
+
+-- merge (DuckDB)
+SELECT f1.customer_id, count(*) AS n
+FROM f1
+WHERE f1.status = $p0
+GROUP BY f1.customer_id
+-- p0 string(20,ansi) = 'open'

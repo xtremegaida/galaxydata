@@ -27,8 +27,10 @@ public sealed class QueryExplain
 
    public IReadOnlyList<ExplainFragment> Fragments { get; init; } = [];
 
-   /// <summary>The SQL that combines the fragments' rows, when the query reads more than one source; null otherwise.</summary>
+   /// <summary>The merge engine's SQL, which combines the fragments' rows, when the query reads more than one source; null otherwise.</summary>
    public string? MergeSql { get; init; }
+
+   public IReadOnlyList<ExplainParameter> MergeParameters { get; init; } = [];
 
    /// <summary>For a verbose explain: the plan as lowered and after each optimizer phase, with the rules that fired.</summary>
    public IReadOnlyList<ExplainPhase>? Phases { get; init; }
@@ -73,8 +75,14 @@ public sealed class ExplainFragment
 
    public required IReadOnlyList<ExplainParameter> Parameters { get; init; }
 
-   /// <summary>How the fragment's rows are used: the whole result when one source answers the query.</summary>
+   /// <summary>How the fragment's rows are used: the whole result when one source answers the query, else how they are fetched into the merge engine.</summary>
    public required string Strategy { get; init; }
+
+   /// <summary>The merge table the rows are loaded into (<c>f1</c>), as the merge SQL names it; null for the whole result.</summary>
+   public string? Table { get; init; }
+
+   /// <summary>A guess at how many rows the fragment returns, when there is one to make.</summary>
+   public long? EstimatedRows { get; init; }
 
    /// <summary>For a fragment fetched by the keys of another, the SQL it runs for each batch of keys; null otherwise.</summary>
    public string? BindJoinTemplate { get; init; }

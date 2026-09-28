@@ -48,4 +48,30 @@ public static class DuckDbTypeMapper
       };
       return type.WithNullable(nullable);
    }
+
+   /// <summary>
+   /// The DuckDB type that holds a logical type's values, as the merge engine's tables declare their columns. Decimals
+   /// get the widest precision with their scale, since not every source holds values to the declared precision
+   /// (SQLite doesn't); decimals of no declared precision or scale (SQLite reals, averages) are doubles, which keep
+   /// their magnitude where a fixed scale would round small values away. Date-times keep their ticks.
+   /// </summary>
+   public static string TypeName(ScalarType type) => type.Kind switch
+   {
+      ScalarKind.Boolean => "BOOLEAN",
+      ScalarKind.Int16 => "SMALLINT",
+      ScalarKind.Int32 => "INTEGER",
+      ScalarKind.Int64 => "BIGINT",
+      ScalarKind.Decimal => type.Precision > 0 ? $"DECIMAL(38,{Math.Min((int)type.Scale, 38)})" : "DOUBLE",
+      ScalarKind.Single => "REAL",
+      ScalarKind.Double => "DOUBLE",
+      ScalarKind.Binary => "BLOB",
+      ScalarKind.Guid => "UUID",
+      ScalarKind.Date => "DATE",
+      ScalarKind.Time => "TIME",
+      ScalarKind.DateTime => "TIMESTAMP_NS",
+      ScalarKind.DateTimeOffset => "TIMESTAMPTZ",
+      ScalarKind.Interval => "INTERVAL",
+      // Text, JSON (kept as text) and values of unknown types (as their text).
+      _ => "VARCHAR",
+   };
 }

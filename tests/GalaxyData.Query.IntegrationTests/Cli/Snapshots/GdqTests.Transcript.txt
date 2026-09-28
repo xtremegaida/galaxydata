@@ -134,6 +134,66 @@ error GDQ2001: There is no 'totl' here. Did you mean 'total'?
   shop.orders.where(totl > 5)
                     ^^^^
 
+### run across sources, with the SQL
+exit 0
+--- out
+-- wh (DuckDB), fetched into f1
+SELECT o.id, o.customer_id, o.total
+FROM orders AS o
+WHERE o.status = $p0
+-- $p0 string = 'open'
+
+-- shop (SQLite), fetched into f2
+SELECT c.id, c.name
+FROM customers AS c
+
+-- merge (DuckDB)
+SELECT f1.id, f1.total, f2.name AS who, f2.id
+FROM f1
+LEFT JOIN f2 ON f1.customer_id = f2.id
+ORDER BY f1.id
+
+id   | total  | who
+-----+--------+----------
+1001 | 250.00 | Acme Ltd
+1003 |  12.25 | Beta Corp
+(2 rows; (time))
+
+### explain across sources
+exit 0
+--- out
+Combines 2 fragments from wh (DuckDB) and shop (SQLite) in the merge engine (DuckDB), reading wh.orders and shop.customers; each fragment is fetched in full.
+
+Plan
+  Sort  id  @merge
+    Project  id, total, who: shop_customer.name, shop_customer.id  @merge
+      Left join  shop_customer: customer_id == shop_customer.id  @merge
+        Filter  status == 'open'  @wh
+          Scan  wh.orders  @wh  (~4 rows)
+        Scan  shop.customers as shop_customer  @shop
+
+Columns
+  0 id int64: direct wh.orders.id; edits wh.orders.id by id = [0]
+  1 total decimal(10,2): direct wh.orders.total; edits wh.orders.total by id = [0]
+  2 who string?: direct shop_customer -> shop.customers.name; edits shop.customers.name by id = [3]
+  3 id int64? (hidden): direct shop_customer -> shop.customers.id
+
+SQL for wh (DuckDB, full fetch into f1)
+  SELECT o.id, o.customer_id, o.total
+  FROM orders AS o
+  WHERE o.status = $p0
+  -- p0 string = 'open'
+
+SQL for shop (SQLite, full fetch into f2)
+  SELECT c.id, c.name
+  FROM customers AS c
+
+Merge SQL
+  SELECT f1.id, f1.total, f2.name AS who, f2.id
+  FROM f1
+  LEFT JOIN f2 ON f1.customer_id = f2.id
+  ORDER BY f1.id
+
 ### first() of no rows
 exit 2
 --- err

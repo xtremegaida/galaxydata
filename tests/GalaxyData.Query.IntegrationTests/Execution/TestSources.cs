@@ -27,8 +27,13 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
 {
    private readonly Dictionary<string, (DbConnection Keeper, Func<DbConnection> Open)> sources = new(StringComparer.Ordinal);
    private readonly CatalogBuilder builder = new();
+   private DuckDbMergeEngine? merge;
+   private int opened;
 
-   public int Opened { get; private set; }
+   public int Opened => Volatile.Read(ref opened);
+
+   /// <summary>The merge engine of the engines made here, unless one is given; made when first needed.</summary>
+   public DuckDbMergeEngine Merge => merge ??= new DuckDbMergeEngine();
 
    public async Task<TestSources> AddSqliteAsync(string alias, string script, bool trustForeignKeys = false)
    {
@@ -56,20 +61,27 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
       sources.Add(alias, (keeper, open));
    }
 
-   public QueryEngine Engine(CatalogOverlay? overlay = null, QueryEngineOptions? options = null) =>
-      new(builder.WithOverlay(overlay ?? CatalogOverlay.Empty).Build(), this, [SqliteSourceProvider.Instance, DuckDbSourceProvider.Instance], options);
+   /// <summary>An engine over the sources; queries that combine them run in <see cref="Merge"/>, or <paramref name="merge"/>, unless <paramref name="noMerge"/>.</summary>
+   public QueryEngine Engine(CatalogOverlay? overlay = null, QueryEngineOptions? options = null, IMergeEngine? merge = null, bool noMerge = false) =>
+      new(Catalog(overlay), this, [SqliteSourceProvider.Instance, DuckDbSourceProvider.Instance], noMerge ? null : merge ?? Merge, options);
+
+   public QueryCatalog Catalog(CatalogOverlay? overlay = null) => builder.WithOverlay(overlay ?? CatalogOverlay.Empty).Build();
+
+   /// <summary>Runs a script in a source's database, as it is now.</summary>
+   public async Task RunAsync(string alias, string script) => await sources[alias].Keeper.ExecuteAsync(script);
 
    public async ValueTask<DbConnection> OpenAsync(SourceInfo source, CancellationToken cancellationToken)
    {
       DbConnection connection = sources[source.Alias].Open();
       if (connection.State != System.Data.ConnectionState.Open) { await connection.OpenAsync(cancellationToken); }
-      Opened++;
+      Interlocked.Increment(ref opened);
       return connection;
    }
 
    public async ValueTask DisposeAsync()
    {
       foreach ((DbConnection keeper, _) in sources.Values) { await keeper.DisposeAsync(); }
+      merge?.Dispose();
    }
 
    public static Task<TestSources> SqliteShopAsync() => new TestSources().AddSqliteAsync("shop", Fixtures.Sql("shop.sqlite.sql"));

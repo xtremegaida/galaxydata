@@ -109,6 +109,8 @@ internal static class PlanCases
       "sales.order_lines.select(order_id, qty, product)",
       "sales.orders.select(id, status).distinct()",
       "sales.customers.select(name, t: orders_by_customer.orderBy(id).first().total).groupBy(name).select(name, s: sum(t))",
+      "sales.orders.selectMany(o => sales.regions).count()",
+      "sales.orders.selectMany(o => sales.regions.select(name)).leftJoin(sales.regions, true, n: outer.name, m: inner.code).count()",
    ];
 
    /// <summary>The plan as lowered, before the optimizer.</summary>

@@ -8,6 +8,7 @@ using GalaxyData.Query.Binding;
 using GalaxyData.Query.Diagnostics;
 using GalaxyData.Query.Explain;
 using GalaxyData.Query.Planning;
+using GalaxyData.Query.Planning.Federation;
 using GalaxyData.Query.Results;
 using GalaxyData.Query.Sql;
 using GalaxyData.Query.Types;
@@ -45,14 +46,23 @@ public sealed class PreparedQuery
 
    public IReadOnlyList<QueryDiagnostic> Diagnostics { get; }
 
-   public bool Success => Plan != null && Fragments.Count > 0 && !Diagnostics.Any(d => d.IsError);
+   public bool Success => Plan != null && (Fragments.Count > 0 || Merge != null) && !Diagnostics.Any(d => d.IsError);
 
    public LogicalPlan? Plan { get; }
 
    public ResultSchema? Schema => Plan?.Schema;
 
-   /// <summary>The SQL each source runs.</summary>
+   /// <summary>The SQL each source runs: the whole query, or each source's part when the query combines sources.</summary>
    public IReadOnlyList<QueryFragment> Fragments { get; }
+
+   /// <summary>The merge engine's SQL over the fragments' tables; null when one source runs the whole query.</summary>
+   public SqlStatement? Merge { get; internal init; }
+
+   /// <summary>The merge engine's dialect, which <see cref="Merge"/> is written in.</summary>
+   public SqlDialect? MergeDialect { get; internal init; }
+
+   /// <summary>How the plan is split between the sources and the merge engine; null when one source runs it.</summary>
+   internal FederatedPlan? Federation { get; init; }
 
    /// <summary>
    /// The same query counting its rows instead (one row, one column <c>count</c>): without its final sort and without
@@ -67,26 +77,21 @@ public sealed class PreparedQuery
    public async Task<QueryResult> ExecuteAsync(CancellationToken cancellationToken = default)
    {
       if (!Success) { throw new QueryException(Diagnostics); }
+      QueryEngineOptions options = engine.Options;
+      ExecutionStats stats = new(options.Clock.GetUtcNow(), options.Clock);
+      if (Merge != null) { return await new FederatedExecution(engine, this, stats).RunAsync(cancellationToken).ConfigureAwait(false); }
+
       QueryFragment fragment = Fragments[0];
       SourceProvider provider = engine.Provider(fragment.Source);
-      QueryEngineOptions options = engine.Options;
-      DateTimeOffset started = options.Clock.GetUtcNow();
-
       DbConnection connection = await engine.Connections.OpenAsync(fragment.Source, cancellationToken).ConfigureAwait(false);
       DbCommand? command = null;
       try
       {
          await provider.PrepareConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
          command = connection.CreateCommand();
-         command.CommandText = fragment.Sql;
+         provider.PrepareCommand(command);
+         Bind(command, fragment.Statement, fragment.Dialect, provider, stats.Started);
          if (options.CommandTimeout is { } timeout) { command.CommandTimeout = (int)Math.Ceiling(timeout.TotalSeconds); }
-         foreach (SqlParameterSlot slot in fragment.Statement.Parameters)
-         {
-            DbParameter parameter = command.CreateParameter();
-            parameter.ParameterName = fragment.Dialect.ParameterName(slot.Name);
-            provider.BindParameter(parameter, Resolve(slot, started), slot.Type);
-            command.Parameters.Add(parameter);
-         }
          DbDataReader reader;
          try
          {
@@ -94,9 +99,10 @@ public sealed class PreparedQuery
          }
          catch (DbException e)
          {
+            cancellationToken.ThrowIfCancellationRequested();
             throw new QueryExecutionException($"{fragment.Source.Alias} ({fragment.Dialect.Name}) failed to run the query: {e.Message}", e);
          }
-         return new QueryResult(Schema!, fragment, provider, connection, command, reader, options.LenientConversion, started, options.Clock)
+         return new QueryResult(Schema!, new RowSource(fragment.Source.Alias, fragment.Dialect.Name), provider, command, reader, connection, options.LenientConversion, stats)
          {
             RequiresRow = Plan!.RequiresRow,
          };
@@ -106,6 +112,19 @@ public sealed class PreparedQuery
          if (command != null) { await command.DisposeAsync().ConfigureAwait(false); }
          await connection.DisposeAsync().ConfigureAwait(false);
          throw;
+      }
+   }
+
+   /// <summary>Sets a command's text and parameters, with the values they have when the query runs.</summary>
+   internal void Bind(DbCommand command, SqlStatement statement, SqlDialect dialect, SourceProvider provider, DateTimeOffset started)
+   {
+      command.CommandText = statement.Text;
+      foreach (SqlParameterSlot slot in statement.Parameters)
+      {
+         DbParameter parameter = command.CreateParameter();
+         parameter.ParameterName = dialect.ParameterName(slot.Name);
+         provider.BindParameter(parameter, Resolve(slot, started), slot.Type);
+         command.Parameters.Add(parameter);
       }
    }
 

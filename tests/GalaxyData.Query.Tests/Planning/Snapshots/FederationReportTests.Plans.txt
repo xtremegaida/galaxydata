@@ -1,0 +1,467 @@
+### crm.contacts.select(email, who: customer.name, city: customer.city)
+Project email#3, who#13 = name#6, city#7, id#1, id#5  @merge
+  Join left via customer: customer_ref#2 == id#5  @merge
+    Scan crm.contacts (id#1, customer_ref#2, email#3)  @crm
+    Scan sales.customers (id#5, name#6, city#7)  @sales
+
+-- f1: crm (SQL Server) id guid, customer_ref int32?, email string
+SELECT c.id, c.customer_ref, c.email
+FROM contacts AS c
+
+-- f2: sales (PostgreSQL) id int32?, name string(100)?, city string?
+SELECT c.id, c.name, c.city
+FROM customers AS c
+
+-- merge (DuckDB)
+SELECT f1.email, f2.name AS who, f2.city, f1.id, f2.id
+FROM f1
+LEFT JOIN f2 ON f1.customer_ref = f2.id
+
+### crm.contacts.where(customer.city == 'Durban' and icontains(email, 'acme')).select(email, customer.region.name)
+Project email#3, name#14, id#1, code#13  @merge
+  Join left via region: region_code#10 == code#13  @merge
+    Join inner: customer_ref#2 == id#5  @merge
+      Filter icontains(email#3, 'acme')  @crm
+        Scan crm.contacts (id#1, customer_ref#2, email#3)  @crm
+      Filter city#7 == 'Durban'  @sales
+        Scan sales.customers (id#5, city#7, region_code#10)  @sales
+    Scan sales.regions (code#13, name#14)  @sales
+
+-- f1: crm (SQL Server) id guid, customer_ref int32?, email string
+SELECT c.id, c.customer_ref, c.email
+FROM contacts AS c
+WHERE LOWER(c.email) LIKE LOWER(@p0) ESCAPE '\'
+-- p0 string = contains like pattern of 'acme'
+
+-- f2: sales (PostgreSQL) id int32?, region_code string(3)?
+SELECT c.id, c.region_code
+FROM customers AS c
+WHERE c.city = @p0
+-- p0 string = 'Durban'
+
+-- f3: sales (PostgreSQL) code string(3)?, name string?
+SELECT r.code, r.name
+FROM regions AS r
+
+-- merge (DuckDB)
+SELECT f1.email, f3.name, f1.id, f3.code
+FROM f1
+INNER JOIN f2 ON f1.customer_ref = f2.id
+LEFT JOIN f3 ON f2.region_code = f3.code
+
+### sales.customers.select(name, n: contacts.count())
+Project name#2, n#14 = coalesce(count#13, 0), id#1  @merge
+  Join left: id#1 == customer_ref#10  @merge
+    Scan sales.customers (id#1, name#2)  @sales
+    Aggregate by customer_ref#10: count#13 = count(*)  @crm
+      Scan crm.contacts (customer_ref#10)  @crm
+
+-- f1: sales (PostgreSQL) id int32, name string(100)
+SELECT c.id, c.name
+FROM customers AS c
+
+-- f2: crm (SQL Server) customer_ref int32?, count int64
+SELECT c.customer_ref, COUNT(*) AS count
+FROM contacts AS c
+GROUP BY c.customer_ref
+
+-- merge (DuckDB)
+SELECT f1.name, coalesce(f2.count, 0) AS n, f1.id
+FROM f1
+LEFT JOIN f2 ON f1.id = f2.customer_ref
+
+### sales.customers.where(contacts.any(endsWith(email, '.za'))).select(name)
+Project name#2, id#1  @merge
+  Join semi: customer_ref#10 == id#1  @merge
+    Scan sales.customers (id#1, name#2)  @sales
+    Filter endsWith(email#11, '.za')  @crm
+      Scan crm.contacts (customer_ref#10, email#11)  @crm
+
+-- f1: sales (PostgreSQL) id int32, name string(100)
+SELECT c.id, c.name
+FROM customers AS c
+
+-- f2: crm (SQL Server) customer_ref int32?
+SELECT c.customer_ref
+FROM contacts AS c
+WHERE c.email LIKE @p0 ESCAPE '\'
+-- p0 string = suffix like pattern of '.za'
+
+-- merge (DuckDB)
+SELECT f1.name, f1.id
+FROM f1
+WHERE EXISTS (
+   SELECT 1
+   FROM f2
+   WHERE f2.customer_ref = f1.id
+)
+
+### sales.customers.where(not contacts.any()).select(name)
+Project name#2, id#1  @merge
+  Join anti: customer_ref#10 == id#1  @merge
+    Scan sales.customers (id#1, name#2)  @sales
+    Scan crm.contacts (customer_ref#10)  @crm
+
+-- f1: sales (PostgreSQL) id int32, name string(100)
+SELECT c.id, c.name
+FROM customers AS c
+
+-- f2: crm (SQL Server) customer_ref int32?
+SELECT c.customer_ref
+FROM contacts AS c
+
+-- merge (DuckDB)
+SELECT f1.name, f1.id
+FROM f1
+WHERE NOT EXISTS (
+   SELECT 1
+   FROM f2
+   WHERE f2.customer_ref = f1.id
+)
+
+### crm.contacts.orderBy(email).take(5).select(email, customer.name)
+Project email#3, name#6, id#1, id#5  @merge
+  Join left via customer: customer_ref#2 == id#5  @merge
+    Limit take 5  @crm
+      Sort email#3  @crm
+        Scan crm.contacts (id#1, customer_ref#2, email#3)  @crm
+    Scan sales.customers (id#5, name#6)  @sales
+
+-- f1: crm (SQL Server) id guid, customer_ref int32?, email string
+SELECT TOP (5) c.id, c.customer_ref, c.email
+FROM contacts AS c
+ORDER BY c.email
+
+-- f2: sales (PostgreSQL) id int32?, name string(100)?
+SELECT c.id, c.name
+FROM customers AS c
+
+-- merge (DuckDB)
+SELECT f1.email, f2.name, f1.id, f2.id
+FROM f1
+LEFT JOIN f2 ON f1.customer_ref = f2.id
+ORDER BY f1.email
+
+### crm.contacts.orderBy(desc(email)).select(email, who: customer.name)
+Project email#3, who#13 = name#6, id#1, id#5  @merge
+  Join left via customer: customer_ref#2 == id#5  @merge
+    Sort email#3 desc  @crm
+      Scan crm.contacts (id#1, customer_ref#2, email#3)  @crm
+    Scan sales.customers (id#5, name#6)  @sales
+
+-- f1: crm (SQL Server) id guid, customer_ref int32?, email string
+SELECT c.id, c.customer_ref, c.email
+FROM contacts AS c
+
+-- f2: sales (PostgreSQL) id int32?, name string(100)?
+SELECT c.id, c.name
+FROM customers AS c
+
+-- merge (DuckDB)
+SELECT f1.email, f2.name AS who, f1.id, f2.id
+FROM f1
+LEFT JOIN f2 ON f1.customer_ref = f2.id
+ORDER BY f1.email DESC
+
+### sales.customers.select(name).union(crm.contacts.select(name: email))
+Union (name#14)  @merge
+  Scan sales.customers (name#2)  @sales
+  Project name#13 = email#11  @crm
+    Scan crm.contacts (email#11)  @crm
+
+-- f1: sales (PostgreSQL) name string(100)
+SELECT c.name
+FROM customers AS c
+
+-- f2: crm (SQL Server) name string
+SELECT c.email AS name
+FROM contacts AS c
+
+-- merge (DuckDB)
+SELECT d.name
+FROM (
+   SELECT f1.name
+   FROM f1
+   UNION
+   SELECT f2.name
+   FROM f2
+) AS d
+
+### crm.contacts.groupBy(customer.city).select(city, n: count())
+Project city#7, n#14 = count#13  @merge
+  Aggregate by city#7: count#13 = count(*)  @merge
+    Join left via customer: customer_ref#2 == id#5  @merge
+      Scan crm.contacts (customer_ref#2)  @crm
+      Scan sales.customers (id#5, city#7)  @sales
+
+-- f1: crm (SQL Server) customer_ref int32?
+SELECT c.customer_ref
+FROM contacts AS c
+
+-- f2: sales (PostgreSQL) id int32?, city string?
+SELECT c.id, c.city
+FROM customers AS c
+
+-- merge (DuckDB)
+SELECT f2.city, count(*) AS n
+FROM f1
+LEFT JOIN f2 ON f1.customer_ref = f2.id
+GROUP BY f2.city
+
+### sales.orders.where(total > sales.orders.avg(total) and customer_id in crm.contacts.select(customer_ref)).select(id)
+Project id#1  @merge
+  Filter total#4 > value[1]  @merge
+    [1] scalar
+      Aggregate: avg#17 = avg(total#12)  @sales
+        Scan sales.orders (total#12)  @sales
+    Join semi: customer_id#2 == customer_ref#19  @merge
+      Scan sales.orders (id#1, customer_id#2, total#4)  @sales
+      Scan crm.contacts (customer_ref#19)  @crm
+
+-- f1: sales (PostgreSQL) id int64, customer_id int32, total decimal(10,2)
+SELECT o.id, o.customer_id, o.total
+FROM orders AS o
+
+-- f2: crm (SQL Server) customer_ref int32?
+SELECT c.customer_ref
+FROM contacts AS c
+
+-- f3: sales (PostgreSQL) avg decimal?
+SELECT avg(o.total) AS avg
+FROM orders AS o
+
+-- merge (DuckDB)
+SELECT f1.id
+FROM f1
+WHERE EXISTS (
+   SELECT 1
+   FROM f2
+   WHERE f1.customer_id = f2.customer_ref
+) AND f1.total > (
+   SELECT f3.avg
+   FROM f3
+)
+
+### sales.customers.select(name, first: crm.contacts.where(c => c.customer_ref == id).orderBy(email).firstOrDefault().email)
+Project name#2, first#13 = value[1], id#1  @merge
+  [1] scalar
+    Project email#11  @merge
+      Limit take 1  @merge
+        Sort email#11, id#9  @merge
+          Filter customer_ref#10 == id#1  @merge
+            Scan crm.contacts (id#9, customer_ref#10, email#11)  @crm
+  Scan sales.customers (id#1, name#2)  @sales
+
+-- f1: sales (PostgreSQL) id int32, name string(100)
+SELECT c.id, c.name
+FROM customers AS c
+
+-- f2: crm (SQL Server) id guid, customer_ref int32?, email string
+SELECT c.id, c.customer_ref, c.email
+FROM contacts AS c
+
+-- merge (DuckDB)
+SELECT f1.name, (
+   SELECT f2.email
+   FROM f2
+   WHERE f2.customer_ref = f1.id
+   ORDER BY f2.email, f2.id
+   LIMIT 1
+) AS "first", f1.id
+FROM f1
+
+### sales.customers.where(c => crm.contacts.count(k => k.customer_ref > c.id) > 1).select(name)
+Project name#2, id#1  @merge
+  Filter value[1] > 1  @merge
+    [1] scalar
+      Aggregate: count#13 = count(*)  @merge
+        Filter customer_ref#10 > id#1  @merge
+          Scan crm.contacts (customer_ref#10)  @crm
+    Scan sales.customers (id#1, name#2)  @sales
+
+-- f1: sales (PostgreSQL) id int32, name string(100)
+SELECT c.id, c.name
+FROM customers AS c
+
+-- f2: crm (SQL Server) customer_ref int32?
+SELECT c.customer_ref
+FROM contacts AS c
+
+-- merge (DuckDB)
+SELECT f1.name, f1.id
+FROM f1
+WHERE (
+   SELECT count(*) AS count
+   FROM f2
+   WHERE f2.customer_ref > f1.id
+) > 1
+
+### crm.contacts.where(customer.credit_limit > 100).count()
+Project value#14 = value[1]  @merge
+  [1] scalar
+    Aggregate: count#13 = count(*)  @merge
+      Join inner: customer_ref#2 == id#5  @merge
+        Scan crm.contacts (customer_ref#2)  @crm
+        Filter credit_limit#8 > 100  @sales
+          Scan sales.customers (id#5, credit_limit#8)  @sales
+  OneRow  @merge
+
+-- f1: crm (SQL Server) customer_ref int32?
+SELECT c.customer_ref
+FROM contacts AS c
+
+-- f2: sales (PostgreSQL) id int32?
+SELECT c.id
+FROM customers AS c
+WHERE c.credit_limit > @p0
+-- p0 decimal(10,2) = 100
+
+-- merge (DuckDB)
+SELECT (
+   SELECT count(*) AS count
+   FROM f1
+   INNER JOIN f2 ON f1.customer_ref = f2.id
+) AS "value"
+
+### x := crm.contacts.where(email != null); sales.customers.where(c => x.any(k => k.customer_ref == c.id)).count()
+Project value#14 = value[1]  @merge
+  [1] scalar
+    Aggregate: count#13 = count(*)  @merge
+      Join semi: customer_ref#10 == id#1  @merge
+        Scan sales.customers (id#1)  @sales
+        Filter email#11 is not null  @crm
+          Scan crm.contacts (customer_ref#10, email#11)  @crm
+  OneRow  @merge
+
+-- f1: sales (PostgreSQL) id int32
+SELECT c.id
+FROM customers AS c
+
+-- f2: crm (SQL Server) customer_ref int32?
+SELECT c.customer_ref
+FROM contacts AS c
+WHERE c.email IS NOT NULL
+
+-- merge (DuckDB)
+SELECT (
+   SELECT count(*) AS count
+   FROM f1
+   WHERE EXISTS (
+      SELECT 1
+      FROM f2
+      WHERE f2.customer_ref = f1.id
+   )
+) AS "value"
+
+### sales.orders.count() + crm.contacts.count()
+Project value#15 = value[1] + value[2]  @merge
+  [1] scalar
+    Aggregate: count#9 = count(*)  @sales
+      Scan sales.orders ()  @sales
+  [2] scalar
+    Aggregate: count#14 = count(*)  @crm
+      Scan crm.contacts ()  @crm
+  OneRow  @merge
+
+-- f1: sales (PostgreSQL) count int64
+SELECT count(*) AS count
+FROM orders AS o
+
+-- f2: crm (SQL Server) count int64
+SELECT COUNT(*) AS count
+FROM contacts AS c
+
+-- merge (DuckDB)
+SELECT (
+   SELECT f1.count
+   FROM f1
+) + (
+   SELECT f2.count
+   FROM f2
+) AS "value"
+
+### sales.orders.selectMany(o => crm.contacts).count()
+Project value#14 = value[1]  @merge
+  [1] scalar
+    Aggregate: count#13 = count(*)  @merge
+      Join inner  @merge
+        Scan sales.orders ()  @sales
+        Scan crm.contacts ()  @crm
+  OneRow  @merge
+
+-- f1: sales (PostgreSQL) one int64?
+SELECT 1 AS one
+FROM orders AS o
+
+-- f2: crm (SQL Server) one int64?
+SELECT 1 AS one
+FROM contacts AS c
+
+-- merge (DuckDB)
+SELECT (
+   SELECT count(*) AS count
+   FROM f1
+   CROSS JOIN f2
+) AS "value"
+
+### crm.contacts.orderBy(email).where(customer_ref in crm.contacts.select(customer_ref)).select(email, customer.name).take(1)
+Limit take 1  @merge
+  Project email#3, name#10, id#1, id#9  @merge
+    Join left via customer: customer_ref#2 == id#9  @merge
+      Join semi: customer_ref#2 == customer_ref#6  @crm
+        Sort email#3  @crm
+          Scan crm.contacts (id#1, customer_ref#2, email#3)  @crm
+        Scan crm.contacts (customer_ref#6)  @crm
+      Scan sales.customers (id#9, name#10)  @sales
+
+-- f1: crm (SQL Server) id guid, customer_ref int32?, email string
+SELECT c.id, c.customer_ref, c.email
+FROM contacts AS c
+WHERE EXISTS (
+   SELECT 1
+   FROM contacts AS c2
+   WHERE c.customer_ref = c2.customer_ref
+)
+
+-- f2: sales (PostgreSQL) id int32?, name string(100)?
+SELECT c.id, c.name
+FROM customers AS c
+
+-- merge (DuckDB)
+SELECT f1.email, f2.name, f1.id, f2.id
+FROM f1
+LEFT JOIN f2 ON f1.customer_ref = f2.id
+ORDER BY f1.email
+LIMIT 1
+
+### sales.orders.orderBy(desc(total)).where(not order_lines.any()).select(id, who: crm.contacts.where(c => c.customer_ref == customer_id).count()).take(1)
+Limit take 1  @merge
+  Project id#1, who#19 = coalesce(count#18, 0)  @merge
+    Join left: customer_id#2 == customer_ref#15  @merge
+      Join anti: order_id#9 == id#1  @sales
+        Sort total#4 desc  @sales
+          Scan sales.orders (id#1, customer_id#2, total#4)  @sales
+        Scan sales.order_lines (order_id#9)  @sales
+      Aggregate by customer_ref#15: count#18 = count(*)  @crm
+        Scan crm.contacts (customer_ref#15)  @crm
+
+-- f1: sales (PostgreSQL) id int64, customer_id int32, total decimal(10,2)
+SELECT o.id, o.customer_id, o.total
+FROM orders AS o
+WHERE NOT EXISTS (
+   SELECT 1
+   FROM order_lines AS o2
+   WHERE o2.order_id = o.id
+)
+
+-- f2: crm (SQL Server) customer_ref int32?, count int64
+SELECT c.customer_ref, COUNT(*) AS count
+FROM contacts AS c
+GROUP BY c.customer_ref
+
+-- merge (DuckDB)
+SELECT f1.id, coalesce(f2.count, 0) AS who
+FROM f1
+LEFT JOIN f2 ON f1.customer_id = f2.customer_ref
+ORDER BY f1.total DESC
+LIMIT 1

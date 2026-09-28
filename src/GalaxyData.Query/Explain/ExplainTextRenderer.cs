@@ -41,6 +41,10 @@ public static class ExplainTextRenderer
       {
          text.AppendLine().AppendLine("Merge SQL");
          foreach (string line in Lines(explain.MergeSql)) { text.Append("  ").AppendLine(line); }
+         foreach (ExplainParameter parameter in explain.MergeParameters)
+         {
+            text.Append("  -- ").Append(parameter.Name).Append(' ').Append(parameter.Type).Append(" = ").AppendLine(parameter.Value);
+         }
       }
       foreach (ExplainPhase phase in explain.Phases ?? [])
       {

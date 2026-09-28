@@ -1,0 +1,33 @@
+Combines 2 fragments from sales (SQLite) and crm (DuckDB) in the merge engine (DuckDB), reading sales.orders and crm.customers; each fragment is fetched in full.
+
+Plan
+  Sort  id  @merge
+    Project  id, total, who: customer.name, customer.city, customer.id  @merge
+      Left join  customer: customer_id == customer.id  @merge
+        Filter  (status == 'open') and (total > 10)  @sales
+          Scan  sales.orders  @sales
+        Scan  crm.customers as customer  @crm  (~3 rows)
+
+Columns
+  0 id int64: direct sales.orders.id; edits sales.orders.id by id = [0]
+  1 total decimal(10,2): direct sales.orders.total; edits sales.orders.total by id = [0]
+  2 who string?: direct customer -> crm.customers.name; edits crm.customers.name by id = [4]
+  3 city string?: direct customer -> crm.customers.city; edits crm.customers.city by id = [4]
+  4 id int32? (hidden): direct customer -> crm.customers.id
+
+SQL for sales (SQLite, full fetch into f1)
+  SELECT o.id, o.customer_id, o.total
+  FROM orders AS o
+  WHERE o.status = @p0 AND o.total > @p1
+  -- p0 string = 'open'
+  -- p1 decimal(10,2) = 10
+
+SQL for crm (DuckDB, full fetch into f2)
+  SELECT c.id, c.name, c.city
+  FROM customers AS c
+
+Merge SQL
+  SELECT f1.id, f1.total, f2.name AS who, f2.city, f2.id
+  FROM f1
+  LEFT JOIN f2 ON f1.customer_id = f2.id
+  ORDER BY f1.id

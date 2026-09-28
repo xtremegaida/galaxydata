@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Cli;
 using GalaxyData.Testing;
 using Xunit;
@@ -14,6 +15,7 @@ public sealed partial class GdqTests
 {
    private static readonly string Sqlite = "shop=sqlite:" + Path.Combine(AppContext.BaseDirectory, "fixtures", "shop.sqlite.sql");
    private static readonly string DuckDb = "shop=duckdb:" + Path.Combine(AppContext.BaseDirectory, "fixtures", "shop.duckdb.sql");
+   private static readonly string Warehouse = "wh=duckdb:" + Path.Combine(AppContext.BaseDirectory, "fixtures", "shop.duckdb.sql");
 
    [GeneratedRegex(@"; \d+ ms\)")]
    private static partial Regex Timing();
@@ -45,6 +47,21 @@ public sealed partial class GdqTests
          ["explain", "-s", Sqlite, "shop.orders.where(status == 'open').select(id, total, who: customer.name, n: order_lines.count())"]));
       transcript.Append(await RunAsync("explain, verbose", ["explain", "-s", DuckDb, "--verbose", "shop.orders.groupBy(customer_id).select(customer_id: key, spend: sum(total))"]));
       transcript.Append(await RunAsync("explain a query that doesn't bind", ["explain", "-s", Sqlite, "shop.orders.where(totl > 5)"]));
+      string overlay = Path.Combine(Path.GetTempPath(), $"gdq-overlay-{Guid.NewGuid():N}.json");
+      await File.WriteAllTextAsync(overlay, new CatalogOverlay
+      {
+         Relations = [new OverlayRelation("wh.orders", ["customer_id"], "shop.customers", ["id"]) { Name = "shop_customer" }],
+      }.ToJson(), TestContext.Current.CancellationToken);
+      try
+      {
+         const string across = "wh.orders.where(status == 'open').select(id, total, who: shop_customer.name).orderBy(id)";
+         transcript.Append(await RunAsync("run across sources, with the SQL", ["run", "-s", Sqlite, "-s", Warehouse, "--overlay", overlay, "--sql", across]));
+         transcript.Append(await RunAsync("explain across sources", ["explain", "-s", Sqlite, "-s", Warehouse, "--overlay", overlay, across]));
+      }
+      finally
+      {
+         File.Delete(overlay);
+      }
       transcript.Append(await RunAsync("first() of no rows", ["run", "-s", Sqlite, "shop.orders.where(total > 1000000).first()"]));
       transcript.Append(await RunAsync("schema, filtered", ["schema", "-s", Sqlite, "order"]));
       transcript.Append(await RunAsync("a query that doesn't bind", ["run", "-s", Sqlite, "shop.orders\n  .where(totl > 5)"]));
