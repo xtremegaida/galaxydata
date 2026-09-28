@@ -1,0 +1,122 @@
+### sales.orders.where(status == 'open').select(id, total, who: customer.name, city: customer.city)
+Select id: int64 = it.id, total: decimal(10,2) = it.total, who: string(100) = it.customer.name, city: string? = it.customer.city
+  Where(it) it.status == 'open'
+    Scan sales.orders
+
+### sales.main.orders.where(o => o.total > 100 and o.customer.city == 'Cape Town')
+Where(o) (o.total > 100) and (o.customer.city == 'Cape Town')
+  Scan sales.orders
+
+### sales::orders.orderBy(desc(total), order_date).thenByDescending(id).skip(10).take($pageSize)
+Take $pageSize
+  Skip 10
+    OrderBy(it) it.total desc, it.order_date, it.id desc
+      Scan sales.orders
+
+### sales.orders.orderByDescending(total, asc(id))
+OrderBy(it) it.total desc, it.id
+  Scan sales.orders
+
+### sales.orders.where(status == $status and order_date >= $since)
+Where(it) (it.status == $status) and (it.order_date >= $since)
+  Scan sales.orders
+
+### sales.orders.where(order_date >= '2026-01-01' and shipped_at < '2026-02-01 12:30')
+Where(it) (it.order_date >= '2026-01-01'::date) and (it.shipped_at < '2026-02-01 12:30:00'::datetime)
+  Scan sales.orders
+
+### sales.orders.where(shipped_at == null or ship_customer == null).select(id, ship_to: ship_customer)
+Select id: int64 = it.id, ship_to: record sales.customers? = it.ship_customer
+  Where(it) (it.shipped_at is null) or (it.ship_customer is null)
+    Scan sales.orders
+
+### sales.orders.where(status in ['open', 'shipped'] and not (total < 10))
+Where(it) (it.status in ['open', 'shipped']) and not (it.total < 10)
+  Scan sales.orders
+
+### sales.orders.where(id in [])
+Where(it) false
+  Scan sales.orders
+
+### sales.orders.select(order_id: id, customer.*)
+Select order_id: int64 = it.id, id: int32 = it.customer.id, name: string(100) = it.customer.name, city: string? = it.customer.city, credit_limit: decimal(10,2)? = it.customer.credit_limit, created: date? = it.customer.created, region_code: string(3)? = it.customer.region_code, uid: guid? = it.customer.uid, notes: json? = it.customer.notes
+  Scan sales.orders
+
+### sales.orders.select(id, customer.name, total * 2, lower(status), 'Total Spend': total)
+Select id: int64 = it.id, name: string(100) = it.customer.name, 'total * 2': decimal = it.total * 2, 'lower(status)': string = lower(it.status), 'Total Spend': decimal(10,2) = it.total
+  Scan sales.orders
+
+### sales.orders.extend(gross: total * (1 + $rate)).where(gross > 100).select(customer.name, gross)
+Select name: string(100) = it.customer.name, gross: decimal = it.gross
+  Where(it) it.gross > 100
+    Extend gross: decimal = it.total * (1 + $rate)
+      Scan sales.orders
+
+### sales.orders.select(id, customer).where(customer.city != null).select(id, customer.name)
+Select id: int64 = it.id, name: string(100) = it.customer.name
+  Where(it) it.customer.city is not null
+    Select id: int64 = it.id, customer: record sales.customers = it.customer
+      Scan sales.orders
+
+### sales.customers.select(name, label: name + ' (' + (city ?? 'unknown') + ')', size: credit_limit > 1000 ? 'big' : 'small')
+Select name: string(100) = it.name, label: string = ((it.name + ' (') + coalesce(it.city, 'unknown')) + ')', size: string = (it.credit_limit > 1000) ? 'big' : 'small'
+  Scan sales.customers
+
+### sales.customers.select(n: name.upper().trim(), y: year(created), d: addDays(created, 30), c: coalesce(city, name, 'x'))
+Select n: string = trim(upper(it.name)), y: int32? = year(it.created), d: date? = addDays(it.created, 30), c: string = coalesce(it.city, it.name, 'x')
+  Scan sales.customers
+
+### sales.order_lines.select(order_id, line_no, amount: qty * price, share: qty / 3, r: round(price, 1), p: product.name)
+Select order_id: int64 = it.order_id, line_no: int32 = it.line_no, amount: decimal = it.qty * it.price, share: double = it.qty / 3, r: decimal(10,2) = round(it.price, 1), p: string = it.product.name
+  Scan sales.order_lines
+
+### sales.customers.where(between(credit_limit, 100, 5000.5) and like(name, 'A%'))
+Where(it) between(it.credit_limit, 100, 5000.5) and like(it.name, 'A%')
+  Scan sales.customers
+
+### sales.customers.select(region.name).distinct()
+Distinct
+  Select name: string? = it.region.name
+    Scan sales.customers
+
+### crm.contacts.select(email, it['Display Name'], customer.name, region: customer.region.name)
+Select email: string = it.email, 'Display Name': string? = it['Display Name'], name: string(100)? = it.customer.name, region: string? = it.customer.region.name
+  Scan crm.contacts
+
+### xl['Budget 2024']['Sheet 1'].where(Amount > 0).select(it['Line Item'], Amount)
+Select 'Line Item': string? = it['Line Item'], Amount: double? = it.Amount
+  Where(it) it.Amount > 0
+    Scan xl['Budget 2024']['Sheet 1']
+
+### big := sales.orders.where(total > 100); big.select(id, total)
+let big =
+  Where(it) it.total > 100
+    Scan sales.orders
+Select id: int64 = it.id, total: decimal(10,2) = it.total
+  LetRef big
+
+### limit := 1000; cutoff := $rate * 2; sales.customers.where(credit_limit > limit).select(name, cutoff)
+let limit = 1000 :: int64
+let cutoff = $rate * 2 :: decimal
+Select name: string(100) = it.name, cutoff: decimal = cutoff
+  Where(it) it.credit_limit > 1000
+    Scan sales.customers
+
+### status := 5; sales.orders.where(status == 'open')
+let status = 5 :: int64
+Where(it) it.status == 'open'
+  Scan sales.orders
+GDQ2101 Warning: 'status' here is the row's member, which hides the subtree named 'status'
+  status := 5; sales.orders.where(status == 'open')
+                                  ^^^^^^
+
+### 1 + 2 * 3
+Value 1 + (2 * 3) :: int64
+
+### sales.orders.where(it.total > 0 and it['status'] != '')
+Where(it) (it.total > 0) and (it.status != '')
+  Scan sales.orders
+
+### sales.orders.where(total > 3.5 and total < 1e3 and id > -1)
+Where(it) ((it.total > 3.5) and (it.total < 1000)) and (it.id > -1)
+  Scan sales.orders

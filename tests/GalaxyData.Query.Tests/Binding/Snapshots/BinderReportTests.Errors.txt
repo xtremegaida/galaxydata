@@ -1,0 +1,219 @@
+### sales.ordrs
+GDQ2001 Error: sales has no 'ordrs'. Did you mean 'orders'?
+  sales.ordrs
+  ^^^^^^^^^^^
+
+### sales
+GDQ2016 Error: 'sales' is a namespace; name one of its entities, e.g. sales.regions
+  sales
+  ^^^^^
+
+### sales.orders.where(statuss == 'open')
+GDQ2001 Error: There is no 'statuss' here. Did you mean 'status'?
+  sales.orders.where(statuss == 'open')
+                     ^^^^^^^
+
+### sales.orders.where(o => total > 100)
+GDQ2001 Error: There is no 'total' here. Inside 'o => ...' the row's members are reached through o: o.total
+  sales.orders.where(o => total > 100)
+                          ^^^^^
+
+### sales.orders.where(total)
+GDQ2007 Error: where(...) needs a condition that is true or false, but 'total' is a number
+  sales.orders.where(total)
+                     ^^^^^
+
+### sales.orders.where(status = 'open')
+GDQ2009 Error: '=' is not a comparison; compare with '==', or name a subtree with 'x := ...;'
+  sales.orders.where(status = 'open')
+                     ^^^^^^^^^^^^^^^
+
+### sales.orders.where(status == 3)
+GDQ2006 Error: Text can't be compared with a whole number
+  sales.orders.where(status == 3)
+                     ^^^^^^^^^^^
+
+### sales.orders.where(order_date > '5 Jan 2026')
+GDQ2013 Error: '5 Jan 2026' is not a date; write dates as 'yyyy-MM-dd'
+  sales.orders.where(order_date > '5 Jan 2026')
+                                  ^^^^^^^^^^^^
+
+### sales.customers.where(uid < uid)
+GDQ2006 Error: Guid values have no order that every database agrees on
+  sales.customers.where(uid < uid)
+                        ^^^^^^^^^
+
+### sales.customers.where(notes == 'x')
+GDQ2006 Error: Values of an unknown or JSON type can only be tested for null; convert them first, e.g. toString(x)
+  sales.customers.where(notes == 'x')
+                        ^^^^^^^^^^^^
+
+### sales.customers.orderBy(uid)
+GDQ2024 Error: Guid values can't be sorted: there is no order every database agrees on
+  sales.customers.orderBy(uid)
+                          ^^^
+
+### sales.orders.select(id, id)
+GDQ2010 Error: There is already a column 'id' in this select; give this one another name, as in other_id: ...
+  sales.orders.select(id, id)
+                          ^^
+
+### sales.orders.select(id, customer.*)
+GDQ2010 Error: There is already a column 'id' in this select; give this one another name, as in other_id: ...
+  sales.orders.select(id, customer.*)
+                          ^^^^^^^^^^
+
+### sales.orders.extend(total: 1)
+GDQ2010 Error: The rows already have 'total'; extend(...) only adds new members, so pick another name or use select(...)
+  sales.orders.extend(total: 1)
+                      ^^^^^^^^
+
+### sales.orders.where(customer == 3)
+GDQ2015 Error: 'customer' is a row of sales.customers, not a single value; pick one of its columns, e.g. customer.name
+  sales.orders.where(customer == 3)
+                     ^^^^^^^^
+
+### sales.customers.select(orders)
+GDQ2001 Error: There is no 'orders' here. Did you mean 'orders_by_customer' or 'orders_by_ship_customer'?
+  sales.customers.select(orders)
+                         ^^^^^^
+
+### sales.customers.select(orders_by_customer)
+GDQ2099 Error: 'orders_by_customer' is a collection of sales.orders; aggregating collections (count(), sum(...), any(...)) is not supported yet
+  sales.customers.select(orders_by_customer)
+                         ^^^^^^^^^^^^^^^^^^
+
+### sales.customers.select(n: orders.count())
+GDQ2001 Error: There is no 'orders' here. Did you mean 'orders_by_customer' or 'orders_by_ship_customer'?
+  sales.customers.select(n: orders.count())
+                            ^^^^^^
+
+### sales.orders.wher(total > 1)
+GDQ2003 Error: A query has no method 'wher'. Did you mean 'where'?
+  sales.orders.wher(total > 1)
+               ^^^^
+
+### sales.orders.groupBy(customer_id)
+GDQ2099 Error: groupBy(...) is not supported yet
+  sales.orders.groupBy(customer_id)
+               ^^^^^^^
+
+### sales.orders.count
+GDQ2014 Error: 'count' is a method; call it with parentheses: .count(...)
+  sales.orders.count
+  ^^^^^^^^^^^^^^^^^^
+
+### sales.orders.total
+GDQ2014 Error: A query is a list of rows, so it has no member 'total'; to take it from each row, write .select(total)
+  sales.orders.total
+  ^^^^^^^^^^^^^^^^^^
+
+### sales.orders.take(-1)
+GDQ2011 Error: take(...) needs a count of zero or more
+  sales.orders.take(-1)
+                    ^^
+
+### sales.orders.take(total)
+GDQ2011 Error: take(...) takes a whole number written in the query or given as a parameter, such as take(10) or take($pageSize); it can't depend on the rows
+  sales.orders.take(total)
+                    ^^^^^
+
+### sales.orders.thenBy(id)
+GDQ2023 Error: thenBy(...) adds keys to the sort right before it, so it must follow orderBy(...) or another thenBy(...)
+  sales.orders.thenBy(id)
+  ^^^^^^^^^^^^^^^^^^^^^^^
+
+### sales.orders.orderBy(customer)
+GDQ2024 Error: 'customer' is a row; sort by one of its columns, e.g. customer.name
+  sales.orders.orderBy(customer)
+                       ^^^^^^^^
+
+### sales.customers.select(n: name + 1)
+GDQ2006 Error: '+' joins text only with text, but '1' is a whole number; convert it with toString(...)
+  sales.customers.select(n: name + 1)
+                            ^^^^^^^^
+
+### sales.orders.select(d: order_date + 1)
+GDQ2006 Error: '+' needs numbers on both sides, but this is a date + a whole number; for dates use addDays(...), addMonths(...) or daysBetween(...)
+  sales.orders.select(d: order_date + 1)
+                         ^^^^^^^^^^^^^^
+
+### sales.orders.select(x: lowr(status))
+GDQ2004 Error: There is no function 'lowr'. Did you mean 'lower'?
+  sales.orders.select(x: lowr(status))
+                         ^^^^^^^^^^^^
+
+### sales.orders.select(x: substring(status))
+GDQ2005 Error: substring takes 2 to 3 arguments: substring(text, start[, length]) — start counts from 1
+  sales.orders.select(x: substring(status))
+                         ^^^^^^^^^^^^^^^^^
+
+### sales.orders.select(x: year(status))
+GDQ2006 Error: expected a date or date-time here, but this is text
+  sales.orders.select(x: year(status))
+                              ^^^^^^
+
+### sales.orders.select(x: status.foo)
+GDQ2014 Error: A text has no members, so '.foo' means nothing here
+  sales.orders.select(x: status.foo)
+                         ^^^^^^^^^^
+
+### sales.orders.where(status == $missing)
+GDQ2012 Error: No value was given for the parameter $missing
+  sales.orders.where(status == $missing)
+                               ^^^^^^^^
+
+### x := sales.orders
+GDQ2021 Error: The last statement is the query to run, but this one only names 'x'; add the query after a ';'
+  x := sales.orders
+  ^^^^^^^^^^^^^^^^^
+
+### sales.orders; sales.customers
+GDQ2022 Error: Only the last statement is the query; the ones before it must name a subtree, as in 'x := ...;'
+  sales.orders; sales.customers
+  ^^^^^^^^^^^^
+
+### x := 1; x := 2; x
+GDQ2020 Error: 'x' is already defined above
+  x := 1; x := 2; x
+          ^
+
+### if (true) 1 else 2
+GDQ2008 Error: 'if' statements are not part of the query language; for a condition use iif(c, a, b) or c ? a : b
+  if (true) 1 else 2
+  ^^^^^^^^^^^^^^^^^^
+
+### sales.orders.select(x: {a: 1})
+GDQ2008 Error: Object literals {...} are not supported; name columns in select(name: value)
+  sales.orders.select(x: {a: 1})
+                         ^^^^^^
+
+### sales.orders.where(total & 1 == 1)
+GDQ2008 Error: The bitwise operator '&' is not supported; for conditions use 'and' and 'or'
+  sales.orders.where(total & 1 == 1)
+                     ^^^^^^^^^^^^^^
+
+### where(total > 3)
+GDQ2004 Error: There is no function 'where'. where(...) is a method of a query; write it after one, as in shop.orders.where(...)
+  where(total > 3)
+  ^^^^^^^^^^^^^^^^
+
+### sales.orders.select(o => o.id)
+GDQ2008 Error: select(...) takes columns rather than a function; write select(id, total) or select(name: expression)
+  sales.orders.select(o => o.id)
+                      ^^^^^^^^^
+
+### sales.orders.where(total > 1).distinct(id)
+GDQ2005 Error: distinct() takes no arguments; to keep distinct values of some columns, select them first: .select(a, b).distinct()
+  sales.orders.where(total > 1).distinct(id)
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+### sales.orders.where(status in ['a', null])
+GDQ2006 Error: null never matches in a list; test for it separately with '== null'
+  sales.orders.where(status in ['a', null])
+                                     ^^^^
+
+### sales.orders.where(x := 1)
+GDQ2009 Error: 'x := ...' names a subtree and must be a statement of its own, ending with ';'
+  sales.orders.where(x := 1)
+                     ^^^^^^

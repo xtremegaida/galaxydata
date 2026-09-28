@@ -474,7 +474,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 |---|---|---|
 | M0 | Solution skeleton, parser move and fixes, spans, options, `QueryOperatorTable` | Parser tests: spans, operators, depth, the 4 examples as snapshot trees |
 | M1 | Types, introspection DTOs, SQLite and DuckDB introspectors, `CatalogBuilder`, nav naming, overlay (no virtual entities) | Introspection JSON snapshots; nav-naming test table; ambiguity tests |
-| M2 | Binder core: where/select/extend/orderBy/take/skip/distinct, scopes, lambdas, `$params`, lets, coercion, functions, many-to-one navs | Bound-tree and diagnostic snapshots; example 1 binds |
+| M2 | Binder core: where/select/extend/orderBy/take/skip/distinct, scopes, lambdas, `$params`, lets, coercion, functions, many-to-one navs; virtual entities bound in the catalog (dependency order, inherited key/navs) | Bound-tree and diagnostic snapshots; example 1 binds |
 | M3 | Lowering, SQL AST, `SqlBuilder`, 4 dialects, single-site execution, Direct lineage, `gdq` CLI | Golden SQL per dialect (Verify); example 1 end-to-end on SQLite and DuckDB |
 | M4 | Group scope and HAVING, joins, collection navs, any/all/in/subqueries, set ops, decorrelation, pushdown and prune rules | Examples 2–4 golden and end-to-end; per-rule plan snapshots |
 | M5 | Links, hidden keys, EditTarget, RowIdentity, full lineage, `QueryText.Compose`, `ForCount`, explain model and renderer | Link and lineage snapshots; composed filter reaches the scan |
@@ -482,7 +482,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | M7 | Adaptive bind-join, runtime scalar params, TopN through navs, cardinality estimates | A 50-row page sends ≤ 50 keys (`ExecutionStats`); k = 0 early-out; fallback above the key limit |
 | M8 | Excel Folder provider | OpenXml-generated fixtures (multiple, hidden and spaced sheets); Excel ⋈ SQLite join |
 | M9 | PG and MSSQL providers | Container suite runs the same conformance and differential tests; MSSQL varchar parameter typing |
-| M10 | DML planner, script splitter, DML-only guard, coordinated executor | Per provider: insert with returned rows, concurrency conflict rolls back all, cross-connection success, simulated partial commit, guard rejects DDL |
+| M10 | DML planner, script splitter, DML-only guard, coordinated executor; optional FK enforcement per connection on commit (SQLite `PRAGMA foreign_keys = ON`) | Per provider: insert with returned rows, concurrency conflict rolls back all, cross-connection success, simulated partial commit, guard rejects DDL |
 | M11 | Hardening, timeouts, guardrails, language reference doc (`docs/language.md`) | |
 
 **App backend**

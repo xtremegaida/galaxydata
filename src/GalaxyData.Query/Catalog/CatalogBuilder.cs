@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using GalaxyData.Query.Binding;
 using GalaxyData.Query.Diagnostics;
 using GalaxyData.Query.Introspection;
 using GalaxyData.Query.Language;
@@ -45,29 +46,51 @@ public sealed class CatalogBuilder
       private readonly List<RelationDef> relations = [];
       private readonly Dictionary<TableEntity, TableSchema> physical = [];
       private readonly Dictionary<RelationDef, OverlayRelation> explicitNames = [];
+      private readonly Dictionary<VirtualEntity, OverlayVirtualEntity> virtuals = [];
+      private readonly QueryCatalog catalog;
 
       public Run(IReadOnlyList<(SourceInfo Source, SourceSchema Schema)> inputs, CatalogOverlay overlay)
       {
          this.inputs = inputs;
          this.overlay = overlay;
          naming = overlay.Naming ?? NavigationNamingOptions.Default;
+         catalog = new QueryCatalog(root, accepted, entities, relations, diagnostics);
       }
 
+      /// <summary>
+      /// Physical entities and virtual placeholders first; then relations between physical entities, so virtual
+      /// definitions can navigate them; then the virtual definitions, bound on demand in dependency order; then the
+      /// settings and relations that involve virtual entities.
+      /// </summary>
       public QueryCatalog Build()
       {
          foreach ((SourceInfo source, SourceSchema schema) in inputs) { AddSource(source, schema); }
-         ApplyEntitySettings();
+         DeclareVirtualEntities();
+
+         List<(OverlayEntitySettings Spec, EntityDef Entity)> settings = ResolveSettings();
+         ApplyEntitySettings(settings.Where(s => s.Entity is not VirtualEntity));
          AddForeignKeyRelations();
-         AddOverlayRelations();
-         foreach (OverlayVirtualEntity virtualEntity in overlay.VirtualEntities)
+         List<(OverlayRelation Spec, EntityDef From, EntityDef To)> overlayRelations = ResolveOverlayRelations();
+         List<RelationDef> physicalRelations = [.. relations];
+         foreach (var r in overlayRelations.Where(r => r.From is not VirtualEntity && r.To is not VirtualEntity))
          {
-            Report(DiagnosticCodes.VirtualEntityUnsupported, DiagnosticSeverity.Warning,
-               "Virtual entities are not supported yet, so this one was left out", virtualEntity.Name);
+            if (AddOverlayRelation(r.Spec, r.From, r.To) is { } relation) { physicalRelations.Add(relation); }
          }
-         NameNavigations();
-         ApplyNavigationOverrides();
+         NameNavigations(physicalRelations);
+         List<OverlayNavigation> deferred = ApplyNavigationOverrides(overlay.Navigations, lastPass: false);
+
+         foreach (VirtualEntity entity in virtuals.Keys) { EnsureBound(entity); }
+         ApplyEntitySettings(settings.Where(s => s.Entity is VirtualEntity));
+         List<RelationDef> virtualRelations = [];
+         foreach (var r in overlayRelations.Where(r => r.From is VirtualEntity || r.To is VirtualEntity))
+         {
+            if (AddOverlayRelation(r.Spec, r.From, r.To) is { } relation) { virtualRelations.Add(relation); }
+         }
+         NameNavigations(virtualRelations);
+         ApplyNavigationOverrides(deferred, lastPass: true);
+
          AssignDisplayColumns();
-         return new QueryCatalog(root, accepted, entities, relations, diagnostics);
+         return catalog;
       }
 
       private void Report(string code, DiagnosticSeverity severity, string message, string? subject) =>
@@ -171,12 +194,21 @@ public sealed class CatalogBuilder
          return null;
       }
 
-      private void ApplyEntitySettings()
+      private List<(OverlayEntitySettings Spec, EntityDef Entity)> ResolveSettings()
       {
+         List<(OverlayEntitySettings, EntityDef)> resolved = [];
          foreach (OverlayEntitySettings settings in overlay.Entities)
          {
-            EntityDef? entity = ResolveEntity(settings.Entity, "entity settings");
-            if (entity == null) { continue; }
+            if (ResolveEntity(settings.Entity, "entity settings") is { } entity) { resolved.Add((settings, entity)); }
+         }
+         return resolved;
+      }
+
+      private void ApplyEntitySettings(IEnumerable<(OverlayEntitySettings Spec, EntityDef Entity)> items)
+      {
+         foreach ((OverlayEntitySettings settings, EntityDef entity) in items)
+         {
+            if (entity is VirtualEntity { State: not VirtualState.Bound }) { continue; }
             entity.Hidden = settings.Hidden;
             foreach (OverlayColumn column in settings.Columns)
             {
@@ -193,7 +225,7 @@ public sealed class CatalogBuilder
             }
             if (settings.Key is { Count: > 0 } declared && ResolveColumns(entity, declared) is { } keyColumns)
             {
-               if (entity.Key != null)
+               if (entity.Key is { IsDeclared: false } && entity is not VirtualEntity)
                {
                   Report(DiagnosticCodes.DeclaredKeyIgnored, DiagnosticSeverity.Warning,
                      "The entity has a primary key already, so the declared key is ignored", entity.DisplayName);
@@ -266,45 +298,61 @@ public sealed class CatalogBuilder
                   Report(DiagnosticCodes.RelationShape, DiagnosticSeverity.Warning, "The foreign key has a different number of columns on each side", subject);
                   continue;
                }
-               relations.Add(new RelationDef(fk.Name, RelationOrigin.ForeignKey, dependent, fromColumns, principal, toColumns, fk.IsEnforced));
+               bool enforced = fk.IsEnforced || dependent.Source.TrustForeignKeys;
+               relations.Add(new RelationDef(fk.Name, RelationOrigin.ForeignKey, dependent, fromColumns, principal, toColumns, enforced));
             }
          }
       }
 
-      private void AddOverlayRelations()
+      private List<(OverlayRelation Spec, EntityDef From, EntityDef To)> ResolveOverlayRelations()
       {
+         List<(OverlayRelation, EntityDef, EntityDef)> resolved = [];
          foreach (OverlayRelation spec in overlay.Relations)
          {
-            string subject = $"{spec.From} -> {spec.To}";
             EntityDef? from = ResolveEntity(spec.From, "relation source");
             EntityDef? to = ResolveEntity(spec.To, "relation target");
-            if (from == null || to == null) { continue; }
-            if (spec.FromColumns.Count == 0 || spec.FromColumns.Count != spec.ToColumns.Count)
-            {
-               Report(DiagnosticCodes.RelationShape, DiagnosticSeverity.Error, "A relation needs the same number of columns, at least one, on each side", subject);
-               continue;
-            }
-            List<ColumnDef>? fromColumns = ResolveColumns(from, spec.FromColumns);
-            List<ColumnDef>? toColumns = ResolveColumns(to, spec.ToColumns);
-            if (fromColumns == null || toColumns == null) { continue; }
-            if (!to.IsUnique(toColumns))
-            {
-               Report(DiagnosticCodes.RelationNotUnique, DiagnosticSeverity.Error,
-                  $"The columns on the {to.DisplayName} side must be its key or a unique key, or each row would match several", subject);
-               continue;
-            }
-            for (int i = 0; i < fromColumns.Count; i++)
-            {
-               if (!Comparable(fromColumns[i].Type, toColumns[i].Type))
-               {
-                  Report(DiagnosticCodes.RelationTypeMismatch, DiagnosticSeverity.Warning,
-                     $"{fromColumns[i].Name} ({fromColumns[i].Type}) and {toColumns[i].Name} ({toColumns[i].Type}) may not compare equal", subject);
-               }
-            }
-            RelationDef relation = new(null, RelationOrigin.Overlay, from, fromColumns, to, toColumns, isEnforced: false);
-            relations.Add(relation);
-            explicitNames[relation] = spec;
+            if (from != null && to != null) { resolved.Add((spec, from, to)); }
          }
+         return resolved;
+      }
+
+      private RelationDef? AddOverlayRelation(OverlayRelation spec, EntityDef from, EntityDef to)
+      {
+         string subject = $"{spec.From} -> {spec.To}";
+         foreach (EntityDef end in (EntityDef[])[from, to])
+         {
+            if (end is VirtualEntity { State: not VirtualState.Bound })
+            {
+               Report(DiagnosticCodes.BrokenVirtualEntity, DiagnosticSeverity.Error, $"{end.DisplayName} can't be used, so neither can this relation", subject);
+               return null;
+            }
+         }
+         if (spec.FromColumns.Count == 0 || spec.FromColumns.Count != spec.ToColumns.Count)
+         {
+            Report(DiagnosticCodes.RelationShape, DiagnosticSeverity.Error, "A relation needs the same number of columns, at least one, on each side", subject);
+            return null;
+         }
+         List<ColumnDef>? fromColumns = ResolveColumns(from, spec.FromColumns);
+         List<ColumnDef>? toColumns = ResolveColumns(to, spec.ToColumns);
+         if (fromColumns == null || toColumns == null) { return null; }
+         if (!to.IsUnique(toColumns))
+         {
+            Report(DiagnosticCodes.RelationNotUnique, DiagnosticSeverity.Error,
+               $"The columns on the {to.DisplayName} side must be its key or a unique key, or each row would match several", subject);
+            return null;
+         }
+         for (int i = 0; i < fromColumns.Count; i++)
+         {
+            if (!Comparable(fromColumns[i].Type, toColumns[i].Type))
+            {
+               Report(DiagnosticCodes.RelationTypeMismatch, DiagnosticSeverity.Warning,
+                  $"{fromColumns[i].Name} ({fromColumns[i].Type}) and {toColumns[i].Name} ({toColumns[i].Type}) may not compare equal", subject);
+            }
+         }
+         RelationDef relation = new(null, RelationOrigin.Overlay, from, fromColumns, to, toColumns, isEnforced: false);
+         relations.Add(relation);
+         explicitNames[relation] = spec;
+         return relation;
       }
 
       private static bool Comparable(ScalarType a, ScalarType b)
@@ -315,17 +363,17 @@ public sealed class CatalogBuilder
                 b.Kind is ScalarKind.Date or ScalarKind.DateTime or ScalarKind.DateTimeOffset;
       }
 
-      private void NameNavigations()
+      private void NameNavigations(IReadOnlyList<RelationDef> batch)
       {
-         foreach (RelationDef relation in relations)
+         foreach (RelationDef relation in batch)
          {
             relation.Forward = new NavigationDef(relation, isInverse: false);
             relation.Inverse = new NavigationDef(relation, isInverse: true);
          }
          List<RelationDef> ordered =
          [
-            .. relations.Where(r => explicitNames.ContainsKey(r)),
-            .. relations.Where(r => !explicitNames.ContainsKey(r)),
+            .. batch.Where(r => explicitNames.ContainsKey(r)),
+            .. batch.Where(r => !explicitNames.ContainsKey(r)),
          ];
 
          foreach (RelationDef relation in ordered)
@@ -358,17 +406,28 @@ public sealed class CatalogBuilder
          owner.AddNavigation(navigation);
       }
 
-      private void ApplyNavigationOverrides()
+      /// <summary>Applies renames and hides; before the last pass, ones whose navigation doesn't exist yet come back to retry.</summary>
+      private List<OverlayNavigation> ApplyNavigationOverrides(IEnumerable<OverlayNavigation> specs, bool lastPass)
       {
-         foreach (OverlayNavigation spec in overlay.Navigations)
+         List<OverlayNavigation> retry = [];
+         foreach (OverlayNavigation spec in specs)
          {
-            EntityDef? entity = ResolveEntity(spec.Entity, "navigation override");
-            if (entity == null) { continue; }
+            EntityDef? entity = lastPass ? ResolveEntity(spec.Entity, "navigation override") : ResolveQuietly(spec.Entity);
+            if (entity == null)
+            {
+               if (!lastPass) { retry.Add(spec); }
+               continue;
+            }
             NavigationDef? navigation =
                entity.Navigations.FirstOrDefault(n => string.Equals(n.ConventionName, spec.Name, StringComparison.Ordinal)) ??
                entity.Navigations.FirstOrDefault(n => string.Equals(n.ConventionName, spec.Name, StringComparison.OrdinalIgnoreCase));
             if (navigation == null)
             {
+               if (!lastPass)
+               {
+                  retry.Add(spec);
+                  continue;
+               }
                Report(DiagnosticCodes.UnknownNavigation, DiagnosticSeverity.Error, $"There is no navigation '{spec.Name}'", entity.DisplayName);
                continue;
             }
@@ -383,6 +442,114 @@ public sealed class CatalogBuilder
             navigation.Name = spec.RenameTo;
             entity.ReindexNavigations();
          }
+         return retry;
+      }
+
+      private EntityDef? ResolveQuietly(string path)
+      {
+         if (!EntityName.TryParse(path, out EntityName? name)) { return null; }
+         NameMatch<CatalogItem> match = QueryCatalog.Walk(root, name.Parts);
+         return match.IsFound ? match.Item as EntityDef : null;
+      }
+
+      private void DeclareVirtualEntities()
+      {
+         foreach (OverlayVirtualEntity spec in overlay.VirtualEntities)
+         {
+            if (!EntityName.TryParse(spec.Name, out EntityName? name) || name.Count < 2)
+            {
+               Report(DiagnosticCodes.InvalidEntityPath, DiagnosticSeverity.Error,
+                  "A virtual entity needs a namespace and a name, as in reports.big_orders", spec.Name);
+               continue;
+            }
+            CatalogNamespace ns = root;
+            bool placed = true;
+            foreach (string part in name.Parts.Take(name.Count - 1))
+            {
+               NameMatch<CatalogItem> match = ns.Lookup(part);
+               if (match.IsFound && match.Item is CatalogNamespace child)
+               {
+                  ns = child;
+                  continue;
+               }
+               if (match.Status == MatchStatus.NotFound)
+               {
+                  ns = ns.GetOrAddNamespace(part, NamespaceKind.Virtual, null);
+                  continue;
+               }
+               Report(DiagnosticCodes.InvalidEntityPath, DiagnosticSeverity.Error, $"'{part}' in the path is not a namespace", spec.Name);
+               placed = false;
+               break;
+            }
+            if (!placed) { continue; }
+            if (ns.Contains(name.Last))
+            {
+               Report(DiagnosticCodes.InvalidEntityPath, DiagnosticSeverity.Error, $"{PathOf(ns, name.Last)} already exists", spec.Name);
+               continue;
+            }
+            VirtualEntity entity = new(new EntityName([.. ns.Path, name.Last]), ns, spec.Query);
+            ns.AddEntity(entity);
+            entities.Add(entity);
+            virtuals.Add(entity, spec);
+         }
+      }
+
+      private static string PathOf(CatalogNamespace ns, string name) => new EntityName([.. ns.Path, name]).ToString();
+
+      /// <summary>Binds a virtual entity's definition, binding the ones it uses first; a cycle fails every entity in it.</summary>
+      private void EnsureBound(VirtualEntity entity)
+      {
+         if (entity.State != VirtualState.Pending) { return; }
+         entity.State = VirtualState.Binding;
+         BindContext context = new(catalog, QueryParameters.Empty) { EnsureVirtual = EnsureBound };
+         BoundProgram program = Binder.Bind(QueryParser.Default.Parse(entity.QueryText), context);
+         string? problem = program.Success ? Adopt(entity, program) : program.Diagnostics.First(d => d.IsError).Message;
+         if (problem != null)
+         {
+            entity.State = VirtualState.Failed;
+            entity.Problem = problem;
+            Report(DiagnosticCodes.BrokenVirtualEntity, DiagnosticSeverity.Error, $"The definition doesn't work: {problem}", entity.DisplayName);
+            return;
+         }
+         entity.Definition = program;
+         entity.State = VirtualState.Bound;
+      }
+
+      /// <summary>Takes the columns, and when the rows are an entity's the key and navigations, from the definition.</summary>
+      private string? Adopt(VirtualEntity entity, BoundProgram program)
+      {
+         if (program.Result is not BoundQuery query)
+         {
+            return "a virtual entity must be a query, not a single value";
+         }
+         RowShape shape = query.Shape;
+         if (shape.Members.OfType<RecordMember>().FirstOrDefault() is { } record)
+         {
+            return $"'{record.Name}' is a whole row; select its key columns instead, and add a relation in the overlay to navigate";
+         }
+         int ordinal = 0;
+         foreach (ColumnMember column in shape.Columns)
+         {
+            entity.AddColumn(new ColumnDef(entity, column.Name, ordinal++, column.Type));
+         }
+         if (shape.Entity is { } baseEntity)
+         {
+            entity.BaseEntity = baseEntity;
+            foreach (NavigationMember navigation in shape.Members.OfType<NavigationMember>())
+            {
+               entity.AddInheritedNavigation(navigation.Navigation);
+            }
+            if (baseEntity.Key != null && ResolveColumns(entity, baseEntity.Key.Columns.Select(c => c.Name).ToList(), report: false) is { } key)
+            {
+               entity.Key = new KeyDef(null, key);
+            }
+         }
+         if (virtuals[entity].Key is { Count: > 0 } declared)
+         {
+            if (ResolveColumns(entity, declared) is not { } key) { return "its declared key names a column it doesn't have"; }
+            entity.Key = new KeyDef(null, key, isDeclared: true);
+         }
+         return null;
       }
 
       private void AssignDisplayColumns()

@@ -165,6 +165,24 @@ public sealed class CatalogBuilderTests
    }
 
    [Fact]
+   public void TrustedSourcesTreatUnenforcedForeignKeysAsEnforced()
+   {
+      SourceSchema schema = Source(
+         Table("customers", Col("id")) with { PrimaryKey = Pk("id") },
+         Table("orders", Col("id"), Col("customer_id")) with
+         {
+            PrimaryKey = Pk("id"),
+            ForeignKeys = [Fk("customer_id", "customers") with { IsEnforced = false }],
+         });
+      QueryCatalog catalog = new CatalogBuilder()
+         .AddSource(Info("plain"), schema)
+         .AddSource(Info("trusted") with { TrustForeignKeys = true }, schema)
+         .Build();
+      catalog.Entity("plain.orders").Nav("customer").Multiplicity.ShouldBe(Multiplicity.ZeroOrOne);
+      catalog.Entity("trusted.orders").Nav("customer").Multiplicity.ShouldBe(Multiplicity.One);
+   }
+
+   [Fact]
    public void ForeignKeysWithoutReferencedColumnsUseThePrimaryKey()
    {
       QueryCatalog catalog = Build(("shop", Source(
@@ -341,13 +359,6 @@ public sealed class CatalogBuilderTests
       catalog.Sources.Select(s => s.Alias).ShouldBe(["shop"]);
       catalog.Diagnostics.Select(d => d.Code).ShouldBe(
          [DiagnosticCodes.DuplicateSource, DiagnosticCodes.InvalidSourceAlias, DiagnosticCodes.InvalidSourceAlias]);
-   }
-
-   [Fact]
-   public void VirtualEntitiesAreReportedAsNotYetSupported()
-   {
-      CatalogOverlay overlay = new() { VirtualEntities = [new OverlayVirtualEntity("reports.big", "shop.orders.where(total > 100)")] };
-      Build(overlay, ("shop", Shop())).Diagnostics.ShouldHaveSingleItem().Code.ShouldBe(DiagnosticCodes.VirtualEntityUnsupported);
    }
 
    [Fact]

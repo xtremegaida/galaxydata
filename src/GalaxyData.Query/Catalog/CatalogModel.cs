@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using GalaxyData.Query.Binding;
 using GalaxyData.Query.Introspection;
 using GalaxyData.Query.Types;
 
@@ -12,6 +13,12 @@ public sealed record SourceInfo(string Alias, string ProviderKind, string Defaul
    public bool IsReadOnly { get; init; }
 
    public bool SupportsDml { get; init; } = true;
+
+   /// <summary>
+   /// Treat the source's foreign keys as enforced even when the database doesn't guarantee them (SQLite without
+   /// <c>PRAGMA foreign_keys</c>, untrusted constraints), so a non-null key links to exactly one row.
+   /// </summary>
+   public bool TrustForeignKeys { get; init; }
 }
 
 /// <summary>Anything a name can resolve to in the catalog tree: a namespace or an entity.</summary>
@@ -36,6 +43,9 @@ public abstract class EntityDef : CatalogItem
    private readonly List<ColumnDef> columns = [];
    private readonly List<NavigationDef> navigations = [];
    private readonly List<KeyDef> uniqueKeys = [];
+   private readonly List<NavigationDef> inheritedNavigations = [];
+   private readonly NameTable<NavigationDef> inheritedByName = new();
+   private RowShape? rowShape;
 
    private protected EntityDef(EntityName name, CatalogNamespace ns) : base(name.Last)
    {
@@ -63,6 +73,9 @@ public abstract class EntityDef : CatalogItem
 
    public IReadOnlyList<NavigationDef> Navigations => navigations;
 
+   /// <summary>Navigations of another entity that this one's rows also have (a virtual entity over a filtered table).</summary>
+   public IReadOnlyList<NavigationDef> InheritedNavigations => inheritedNavigations;
+
    public ColumnDef? DisplayColumn { get; internal set; }
 
    public bool Hidden { get; internal set; }
@@ -72,6 +85,9 @@ public abstract class EntityDef : CatalogItem
    public NameMatch<ColumnDef> FindColumn(string name) => columnsByName.Find(name);
 
    public NameMatch<NavigationDef> FindNavigation(string name) => navigationsByName.Find(name);
+
+   /// <summary>The shape of this entity's rows; rebuilt when members change while the catalog is built.</summary>
+   internal RowShape RowShape => rowShape ??= RowShape.Build(this);
 
    /// <summary>True when the columns, in any order, are the key or one of the unique keys.</summary>
    public bool IsUnique(IReadOnlyCollection<ColumnDef> keyColumns)
@@ -84,12 +100,21 @@ public abstract class EntityDef : CatalogItem
       return false;
    }
 
-   internal bool HasMemberNamed(string name) => columnsByName.Contains(name) || navigationsByName.Contains(name);
+   internal bool HasMemberNamed(string name) =>
+      columnsByName.Contains(name) || navigationsByName.Contains(name) || inheritedByName.Contains(name);
 
    internal void AddColumn(ColumnDef column)
    {
       columns.Add(column);
       columnsByName.Add(column.Name, column);
+      rowShape = null;
+   }
+
+   internal void AddInheritedNavigation(NavigationDef navigation)
+   {
+      inheritedNavigations.Add(navigation);
+      inheritedByName.Add(navigation.Name, navigation);
+      rowShape = null;
    }
 
    internal void AddUniqueKey(KeyDef key)
@@ -106,6 +131,7 @@ public abstract class EntityDef : CatalogItem
    {
       navigations.Add(navigation);
       navigationsByName.Add(navigation.Name, navigation);
+      rowShape = null;
    }
 
    internal void ReindexNavigations()
@@ -113,6 +139,7 @@ public abstract class EntityDef : CatalogItem
       NameTable<NavigationDef> fresh = new();
       foreach (NavigationDef navigation in navigations) { fresh.Add(navigation.Name, navigation); }
       navigationsByName = fresh;
+      rowShape = null;
    }
 
    private static bool SameSet(IReadOnlyCollection<ColumnDef> a, IReadOnlyCollection<ColumnDef> b) =>
@@ -153,6 +180,41 @@ public sealed class TableEntity : EntityDef
 
    /// <summary>A table with a key, in a source that is writable and supports DML.</summary>
    public bool IsWritable => Kind == EntityKind.Table && Key != null && Source.SupportsDml && !Source.IsReadOnly;
+}
+
+/// <summary>
+/// An entity defined by a query in the overlay. Its columns are the query's output; when the query keeps the rows
+/// of one entity (only filters, sorts or pages them) it also keeps that entity's key and navigations.
+/// </summary>
+public sealed class VirtualEntity : EntityDef
+{
+   internal VirtualEntity(EntityName name, CatalogNamespace ns, string queryText) : base(name, ns)
+   {
+      QueryText = queryText;
+   }
+
+   public string QueryText { get; }
+
+   public override EntityKind Kind => EntityKind.Virtual;
+
+   /// <summary>The bound definition; null until bound, or when binding failed.</summary>
+   public BoundProgram? Definition { get; internal set; }
+
+   /// <summary>Why the entity can't be used, when its definition doesn't bind.</summary>
+   public string? Problem { get; internal set; }
+
+   /// <summary>The entity whose rows the definition keeps, if any.</summary>
+   public EntityDef? BaseEntity { get; internal set; }
+
+   internal VirtualState State { get; set; }
+}
+
+internal enum VirtualState : byte
+{
+   Pending,
+   Binding,
+   Bound,
+   Failed,
 }
 
 public sealed class ColumnDef
