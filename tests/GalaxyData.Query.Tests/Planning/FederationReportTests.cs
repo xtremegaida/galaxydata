@@ -93,9 +93,10 @@ public sealed class FederationReportTests
       text.Append(PlanPrinter.Print(plan.Root, n => federated.Sites.GetValueOrDefault(n)));
       foreach (PlannedFragment fragment in federated.Fragments)
       {
-         text.AppendLine().Append("-- ").Append(fragment.Table.Table).Append(": ").Append(fragment.Source.Alias).Append(" (").Append(fragment.Dialect.Name).Append(") ")
-            .AppendJoin(", ", fragment.Columns.Select(c => $"{c.Name} {c.Type}")).AppendLine();
-         text.AppendLine(fragment.Statement.ToString());
+         text.AppendLine().Append("-- ").Append(fragment.Name).Append(": ").Append(fragment.Source.Alias).Append(" (").Append(fragment.Dialect.Name).Append(") ")
+            .AppendJoin(", ", fragment.Columns.Select(c => $"{c.Name} {c.Type}"));
+         if (fragment.BindJoin is { } bind) { text.Append("; by the keys of ").Append(bind.Driver.Name).Append('.').Append(bind.DriverColumn); }
+         text.AppendLine().AppendLine(fragment.Statement.ToString());
       }
       text.AppendLine().AppendLine("-- merge (DuckDB)").AppendLine(federated.Merge.ToString());
       return text.ToString();

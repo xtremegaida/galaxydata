@@ -54,6 +54,31 @@ public sealed class QueryEngineOptions
 
    /// <summary>A fragment expected to fetch more rows than this gets a warning.</summary>
    public long LargeFetchRows { get; init; } = 1_000_000;
+
+   /// <summary>Whether a fragment joined on a key is fetched by the keys of the fragment it's joined to: see <see cref="BindJoinMode"/>.</summary>
+   public BindJoinMode BindJoins { get; init; } = BindJoinMode.Adaptive;
+
+   /// <summary>The most keys a fragment is fetched by; with more, it is fetched in full.</summary>
+   public int MaxBindKeys { get; init; } = 10_000;
+
+   /// <summary>The most keys in one statement (fewer when the source takes fewer parameters).</summary>
+   public int MaxBindBatch { get; init; } = 2_000;
+}
+
+/// <summary>
+/// How a fragment joined on a key to another is fetched. Its partner is fetched first; with no keys, the fragment
+/// isn't fetched at all.
+/// </summary>
+public enum BindJoinMode : byte
+{
+   /// <summary>By the keys, in batches, when there are at most <see cref="QueryEngineOptions.MaxBindKeys"/> and fewer than the rows it's expected to have.</summary>
+   Adaptive,
+
+   /// <summary>By the keys whenever there are at most <see cref="QueryEngineOptions.MaxBindKeys"/>: to compare.</summary>
+   Always,
+
+   /// <summary>Always in full, alongside the others.</summary>
+   Never,
 }
 
 /// <summary>
@@ -213,7 +238,8 @@ public sealed class QueryEngine
       FederatedPlan federated;
       try
       {
-         federated = FederationPlanner.Plan(plan, s => providers[s.ProviderKind].Dialect, mergeDialect, Options.PushDown);
+         federated = FederationPlanner.Plan(plan, s => providers[s.ProviderKind].Dialect, mergeDialect, Options.PushDown,
+                                            bindJoins: Options.BindJoins != BindJoinMode.Never);
       }
       catch (Exception e) when (e is SqlTranslationException or NotSupportedException)
       {
@@ -224,17 +250,57 @@ public sealed class QueryEngine
       }
 
       List<QueryFragment> fragments = [];
+      Dictionary<PlannedFragment, QueryFragment> made = [];
       foreach (PlannedFragment planned in federated.Fragments)
       {
          long? estimate = PlanAnalysis.EstimateRows(planned.Root);
-         fragments.Add(new QueryFragment(planned.Source, planned.Dialect, planned.Statement) { Table = planned.Table.Table, Columns = planned.Columns, EstimatedRows = estimate });
-         if (estimate > Options.LargeFetchRows)
+         QueryFragment fragment = new(planned.Source, planned.Dialect, planned.Statement)
+         {
+            Table = planned.Table?.Table,
+            Value = planned.Value,
+            Columns = planned.Columns,
+            EstimatedRows = estimate,
+            Planned = planned,
+            BindTemplate = planned.BindJoin == null ? null : BindTemplate(planned),
+         };
+         fragments.Add(fragment);
+         made[planned] = fragment;
+      }
+      foreach (QueryFragment fragment in fragments)
+      {
+         if (fragment.Planned!.BindJoin is { } bind)
+         {
+            fragment.BindJoin = new BindJoinInfo(made[bind.Driver], bind.DriverColumn, bind.Key.Name);
+         }
+      }
+      foreach (QueryFragment fragment in fragments)
+      {
+         PlannedFragment planned = fragment.Planned!;
+         long? estimate = fragment.EstimatedRows;
+         if (planned.Table != null && planned.BindJoin == null && estimate > Options.LargeFetchRows)
          {
             diagnostics.Add(QueryDiagnostic.Warning(DiagnosticCodes.LargeFetch,
                $"This query fetches about {estimate.Value.ToString("N0", CultureInfo.InvariantCulture)} rows from {planned.Source.Alias} into the merge engine", 0, text.Length));
          }
       }
       return new PreparedQuery(this, request, parameters, program, diagnostics, plan, fragments) { Merge = federated.Merge, MergeDialect = mergeDialect, Federation = federated };
+   }
+
+   /// <summary>A bound fragment's SQL for one batch of keys, with a parameter standing for the batch.</summary>
+   private static SqlStatement BindTemplate(PlannedFragment fragment)
+   {
+      PlanColumn key = fragment.BindJoin!.Key;
+      PlanParameter keys = new(ParameterSource.Runtime, $"keys of {fragment.BindJoin.Driver.Name}.{fragment.BindJoin.DriverColumn}", key.Type);
+      return BindBatch(fragment, [keys]);
+   }
+
+   /// <summary>A bound fragment's SQL, keeping the rows whose key is one of <paramref name="keys"/>.</summary>
+   internal static SqlStatement BindBatch(PlannedFragment fragment, IReadOnlyList<PlanExpr> keys)
+   {
+      PlanColumn key = fragment.BindJoin!.Key;
+      PlanInList among = new(new PlanColumnRef(key), keys, negated: false, ScalarType.Boolean.WithNullable(key.Type.Nullable));
+      return SqlBuilder.BuildFragment(new FilterNode(fragment.Root, among), fragment.Selected, fragment.Columns.Select(c => c.Name).ToList(),
+                                      fragment.Dialect, FederationPlanner.BuildOptions(fragment.Source));
    }
 
    public async Task<QueryResult> ExecuteAsync(QueryRequest request, CancellationToken cancellationToken = default) =>
@@ -270,8 +336,22 @@ public sealed class QueryFragment
 
    public string Sql => Statement.Text;
 
-   /// <summary>The merge table the rows are loaded into (<c>f1</c>); null when the fragment is the whole query.</summary>
+   /// <summary>The merge table the rows are loaded into (<c>f1</c>); null when the fragment is the whole query or a value.</summary>
    public string? Table { get; internal init; }
+
+   /// <summary>
+   /// For a scalar subquery that runs before the fragments that use it: the name of the runtime value it gives
+   /// (<c>s1</c>), which their SQL takes as a parameter.
+   /// </summary>
+   public string? Value { get; internal init; }
+
+   /// <summary>Set when the fragment may be fetched by the keys of another: which, and on what.</summary>
+   public BindJoinInfo? BindJoin { get; internal set; }
+
+   /// <summary>For a fragment fetched by keys: its SQL for one batch of them, the batch as one parameter.</summary>
+   public SqlStatement? BindTemplate { get; internal init; }
+
+   internal PlannedFragment? Planned { get; init; }
 
    /// <summary>The merge table's columns, as the fragment's SQL selects them; empty when the fragment is the whole query.</summary>
    public IReadOnlyList<MergeColumn> Columns { get; internal init; } = [];
@@ -279,7 +359,17 @@ public sealed class QueryFragment
    /// <summary>A guess at how many rows the fragment fetches, when there is one to make.</summary>
    public long? EstimatedRows { get; internal init; }
 
-   public override string ToString() => $"-- {Source.Alias} ({Dialect.Name}){(Table != null ? " into " + Table : string.Empty)}{Environment.NewLine}{Statement}";
+   public override string ToString() =>
+      $"-- {Source.Alias} ({Dialect.Name}){(Table != null ? " into " + Table : Value != null ? " for " + Value : string.Empty)}{Environment.NewLine}{Statement}";
+}
+
+/// <summary>
+/// A fragment's rows only matter where its <see cref="Column"/> equals a value of <see cref="DriverColumn"/> in the
+/// table of <see cref="Driver"/>, which is fetched first.
+/// </summary>
+public sealed record BindJoinInfo(QueryFragment Driver, string DriverColumn, string Column)
+{
+   public override string ToString() => $"{Column} by the keys of {Driver.Table}.{DriverColumn}";
 }
 
 /// <summary>A query's failures, as diagnostics.</summary>

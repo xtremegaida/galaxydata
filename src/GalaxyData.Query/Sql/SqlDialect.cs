@@ -60,6 +60,14 @@ public abstract class SqlDialect
    /// </summary>
    internal virtual bool SharesParameters => true;
 
+   /// <summary>
+   /// Whether <c>column = value</c> in this database finds the rows whose value, read as <paramref name="type"/>,
+   /// equals the value, and no others that differ once read; text may still match more (collations that ignore case
+   /// or trailing spaces). Fragments are only fetched by keys that compare exactly.
+   /// </summary>
+   internal virtual bool ComparesExactly(ScalarType type) =>
+      type.Kind is not (ScalarKind.Unknown or ScalarKind.Json or ScalarKind.Binary or ScalarKind.Single or ScalarKind.Double);
+
    /// <summary>The name as written in SQL: bare when that is safe, quoted otherwise.</summary>
    public string Identifier(string name) => IsBare(name) ? name : QuoteIdentifier(name);
 

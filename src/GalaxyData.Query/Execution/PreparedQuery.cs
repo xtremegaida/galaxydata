@@ -90,7 +90,7 @@ public sealed class PreparedQuery
          await provider.PrepareConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
          command = connection.CreateCommand();
          provider.PrepareCommand(command);
-         Bind(command, fragment.Statement, fragment.Dialect, provider, stats.Started);
+         Bind(command, fragment.Statement, fragment.Dialect, provider, stats.Started, null);
          if (options.CommandTimeout is { } timeout) { command.CommandTimeout = (int)Math.Ceiling(timeout.TotalSeconds); }
          DbDataReader reader;
          try
@@ -115,21 +115,25 @@ public sealed class PreparedQuery
       }
    }
 
-   /// <summary>Sets a command's text and parameters, with the values they have when the query runs.</summary>
-   internal void Bind(DbCommand command, SqlStatement statement, SqlDialect dialect, SourceProvider provider, DateTimeOffset started)
+   /// <summary>
+   /// Sets a command's text and parameters, with the values they have when the query runs; <paramref name="values"/>
+   /// has the runtime values worked out so far.
+   /// </summary>
+   internal void Bind(DbCommand command, SqlStatement statement, SqlDialect dialect, SourceProvider provider, DateTimeOffset started,
+                      IReadOnlyDictionary<string, object?>? values)
    {
       command.CommandText = statement.Text;
       foreach (SqlParameterSlot slot in statement.Parameters)
       {
          DbParameter parameter = command.CreateParameter();
          parameter.ParameterName = dialect.ParameterName(slot.Name);
-         provider.BindParameter(parameter, Resolve(slot, started), slot.Type);
+         provider.BindParameter(parameter, Resolve(slot, started, values), slot.Type);
          command.Parameters.Add(parameter);
       }
    }
 
    /// <summary>The value of a parameter when the query runs, converted to the type the SQL expects.</summary>
-   private object? Resolve(SqlParameterSlot slot, DateTimeOffset started)
+   private object? Resolve(SqlParameterSlot slot, DateTimeOffset started, IReadOnlyDictionary<string, object?>? values)
    {
       object? value = slot.Source switch
       {
@@ -137,6 +141,9 @@ public sealed class PreparedQuery
          ParameterSource.User => User(slot),
          ParameterSource.Now => started.UtcDateTime,
          ParameterSource.Today => DateOnly.FromDateTime(started.UtcDateTime),
+         ParameterSource.Runtime => values != null && values.TryGetValue(slot.ParameterName!, out object? runtime)
+            ? runtime
+            : throw new InvalidOperationException($"The value {slot.ParameterName} isn't known yet"),
          _ => throw new InvalidOperationException($"Unexpected parameter source {slot.Source}"),
       };
       return slot.Pattern != null && value is string text ? slot.Pattern.Apply(text) : value;

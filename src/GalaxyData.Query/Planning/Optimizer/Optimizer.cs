@@ -42,6 +42,7 @@ public static class PlanOptimizer
       [
          new SimplifyPredicates(), new MergeFilters(), new OuterToInnerJoin(), new PushFilterIntoJoin(), new PushFilterThroughProject(),
          new PushFilterThroughAggregate(), new PushFilterThroughSetOp(), new PushFilterThroughSort(),
+         new PushLimitThroughProject(), new PushLimitThroughJoin(),
       ]),
    ];
 

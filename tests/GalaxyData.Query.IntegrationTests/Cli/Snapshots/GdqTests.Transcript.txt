@@ -47,9 +47,13 @@ Beta Corp,Johannesburg
 exit 0
 --- out
 -- shop (DuckDB)
-SELECT o.line_no, c.city, o.order_id, c.id
-FROM order_lines AS o
-INNER JOIN orders AS o2 ON o.order_id = o2.id
+SELECT d.line_no, c.city, d.order_id, c.id
+FROM (
+   SELECT o.order_id, o.line_no
+   FROM order_lines AS o
+   LIMIT 3
+) AS d
+INNER JOIN orders AS o2 ON d.order_id = o2.id
 INNER JOIN customers AS c ON o2.customer_id = c.id
 LIMIT 3
 
@@ -93,8 +97,8 @@ exit 0
 Runs as one DuckDB query in shop, reading shop.orders.
 
 Plan
-  Project  customer_id, spend: sum
-    Aggregate  by customer_id; sum: sum(total)
+  Project  customer_id, spend: sum  (~1 row)
+    Aggregate  by customer_id; sum: sum(total)  (~1 row)
       Scan  shop.orders  (~4 rows)
 
 Columns
@@ -143,7 +147,7 @@ FROM orders AS o
 WHERE o.status = $p0
 -- $p0 string = 'open'
 
--- shop (SQLite), fetched into f2
+-- shop (SQLite), fetched into f2 by the keys of f1.customer_id when they are few enough
 SELECT c.id, c.name
 FROM customers AS c
 
@@ -162,13 +166,13 @@ id   | total  | who
 ### explain across sources
 exit 0
 --- out
-Combines 2 fragments from wh (DuckDB) and shop (SQLite) in the merge engine (DuckDB), reading wh.orders and shop.customers; each fragment is fetched in full.
+Combines 2 fragments from wh (DuckDB) and shop (SQLite) in the merge engine (DuckDB), reading wh.orders and shop.customers: 1 fragment fetched in full and 1 fragment fetched by the keys of another.
 
 Plan
-  Sort  id  @merge
-    Project  id, total, who: shop_customer.name, shop_customer.id  @merge
-      Left join  shop_customer: customer_id == shop_customer.id  @merge
-        Filter  status == 'open'  @wh
+  Sort  id  @merge  (~1 row)
+    Project  id, total, who: shop_customer.name, shop_customer.id  @merge  (~1 row)
+      Left join  shop_customer: customer_id == shop_customer.id  @merge  (~1 row)
+        Filter  status == 'open'  @wh  (~1 row)
           Scan  wh.orders  @wh  (~4 rows)
         Scan  shop.customers as shop_customer  @shop
 
@@ -184,9 +188,14 @@ SQL for wh (DuckDB, full fetch into f1)
   WHERE o.status = $p0
   -- p0 string = 'open'
 
-SQL for shop (SQLite, full fetch into f2)
+SQL for shop (SQLite, into f2, by the keys of f1.customer_id when they are few enough, else in full)
   SELECT c.id, c.name
   FROM customers AS c
+  -- for each batch of keys:
+  SELECT c.id, c.name
+  FROM customers AS c
+  WHERE c.id IN (@p0)
+  -- p0 int64? = keys of f1.customer_id
 
 Merge SQL
   SELECT f1.id, f1.total, f2.name AS who, f2.id

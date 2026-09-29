@@ -65,6 +65,20 @@ public sealed partial class FederationTests
    }
 
    [Theory]
+   [InlineData(BindJoinMode.Always)]
+   [InlineData(BindJoinMode.Never)]
+   public async Task SplitSourcesReturnTheSameRowsHoweverFragmentsAreFetched(BindJoinMode mode)
+   {
+      await using TestSources whole = await TestSources.SqliteShopAsync();
+      await using TestSources split = await SplitShopAsync();
+      string expected = await ExecutionTests.RunAllAsync(whole);
+      // Batches of two keys, so fragments fetched by keys take several statements.
+      string actual = await ExecutionTests.RunAllAsync(split, SplitOverlay, new QueryEngineOptions { BindJoins = mode, MaxBindBatch = 2 }, Split);
+      actual.ShouldBe(expected);
+      split.Merge.ActiveSessions.ShouldBe(0);
+   }
+
+   [Theory]
    [InlineData("sqlite")]
    [InlineData("duckdb")]
    public async Task EverythingInTheMergeEngineReturnsTheSameRows(string provider)
@@ -91,8 +105,10 @@ public sealed partial class FederationTests
       (await TestSources.RowsAsync(result)).ShouldBe(
          "1001 | 250.00 | 'Acme Ltd' | 'Cape Town'" + Environment.NewLine +
          "1003 | 12.25 | 'Beta Corp' | 'Johannesburg'" + Environment.NewLine);
-      result.Stats.Fragments.OrderBy(f => f.Table).Select(f => $"{f.Source} {f.Table} {f.Rows}").ShouldBe(["sales f1 2", "crm f2 3"]);
-      result.Stats.FetchedRows.ShouldBe(5);
+      // The customers are fetched by the keys of the two open orders.
+      result.Stats.Fragments.OrderBy(f => f.Table).Select(f => $"{f.Source} {f.Table} {f.Strategy} {f.Rows}").ShouldBe(["sales f1 Full 2", "crm f2 Keys 2"]);
+      result.Stats.FetchedRows.ShouldBe(4);
+      result.Stats.KeysSent.ShouldBe(2);
    }
 
    /// <summary>Sorted rows filtered by any() or not any() (semi and anti joins) keep their order when they are a fragment.</summary>
@@ -204,7 +220,7 @@ public sealed partial class FederationTests
    public async Task LargeFetchesAreWarnedAbout()
    {
       await using TestSources sources = await SplitShopAsync();
-      QueryEngine engine = sources.Engine(SplitOverlay, new QueryEngineOptions { LargeFetchRows = 2 });
+      QueryEngine engine = sources.Engine(SplitOverlay, new QueryEngineOptions { LargeFetchRows = 2, BindJoins = BindJoinMode.Never });
       PreparedQuery prepared = engine.Prepare("sales.orders.select(id, who: customer.name)");
       prepared.Success.ShouldBeTrue();
       QueryDiagnostic warning = prepared.Diagnostics.ShouldHaveSingleItem();

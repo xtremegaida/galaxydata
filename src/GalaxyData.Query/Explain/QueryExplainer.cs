@@ -54,8 +54,15 @@ internal static class QueryExplainer
       string engine = $"the merge engine ({query.MergeDialect!.Name})";
       if (query.Fragments.Count == 0) { return $"Runs in {engine}, {reading}."; }
       List<string> sources = query.Fragments.Select(f => $"{f.Source.Alias} ({f.Dialect.Name})").Distinct().ToList();
-      string parts = query.Fragments.Count == 1 ? "1 fragment" : $"{query.Fragments.Count.ToString(CultureInfo.InvariantCulture)} fragments";
-      return $"Combines {parts} from {List(sources)} in {engine}, {reading}; each fragment is fetched in full.";
+      string parts = Count(query.Fragments.Count, "fragment");
+      int full = query.Fragments.Count(f => f.Table != null && f.BindJoin == null);
+      int bound = query.Fragments.Count(f => f.BindJoin != null);
+      int first = query.Fragments.Count(f => f.Value != null);
+      List<string> how = [];
+      if (first > 0) { how.Add($"{Count(first, "value")} worked out first"); }
+      if (full > 0) { how.Add($"{Count(full, "fragment")} fetched in full"); }
+      if (bound > 0) { how.Add($"{Count(bound, "fragment")} fetched by the keys of another"); }
+      return $"Combines {parts} from {List(sources)} in {engine}, {reading}: {List(how)}.";
    }
 
    private static void Collect(PlanNode node, List<string> entities)
@@ -72,6 +79,8 @@ internal static class QueryExplainer
       foreach (PlanNode input in node.Inputs) { Collect(input, entities); }
    }
 
+   private static string Count(int count, string noun) => count == 1 ? "1 " + noun : $"{count.ToString(CultureInfo.InvariantCulture)} {noun}s";
+
    private static string List(List<string> items) => items.Count switch
    {
       1 => items[0],
@@ -85,9 +94,19 @@ internal static class QueryExplainer
       Dialect = fragment.Dialect.Name,
       Sql = fragment.Sql,
       Parameters = fragment.Statement.Parameters.Select(Parameter).ToList(),
-      Strategy = fragment.Table == null ? "whole result" : "full fetch into " + fragment.Table,
+      Strategy = Strategy(fragment),
       Table = fragment.Table,
       EstimatedRows = fragment.EstimatedRows,
+      BindJoinTemplate = fragment.BindTemplate?.Text,
+      BindJoinParameters = fragment.BindTemplate?.Parameters.Select(Parameter).ToList() ?? [],
+   };
+
+   private static string Strategy(QueryFragment fragment) => fragment switch
+   {
+      { Value: { } value } => $"worked out first, as {value}",
+      { Table: null } => "whole result",
+      { BindJoin: { } bind } => $"into {fragment.Table}, by the keys of {bind.Driver.Table}.{bind.DriverColumn} when they are few enough, else in full",
+      _ => "full fetch into " + fragment.Table,
    };
 
    private static ExplainParameter Parameter(SqlParameterSlot slot) => new(slot.Name, slot.Type.ToString(), slot.Description);

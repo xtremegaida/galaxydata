@@ -397,11 +397,13 @@ internal sealed class PushFilterIntoJoin : IRewriteRule
       List<PlanExpr> toLeft = [], toRight = [], toCondition = [], kept = [];
       foreach (PlanExpr conjunct in PlanAnalysis.Conjuncts(filter.Predicate))
       {
+         // A subquery's columns from outside it count as the conjunct's: one that reads only a side's goes to that side.
          HashSet<PlanColumn> columns = PlanAnalysis.Columns(conjunct);
-         if (columns.Count == 0 || PlanRewriter.ContainsSubquery(conjunct)) { kept.Add(conjunct); }
+         bool subquery = PlanRewriter.ContainsSubquery(conjunct);
+         if (columns.Count == 0) { kept.Add(conjunct); }
          else if (columns.IsSubsetOf(left)) { toLeft.Add(conjunct); }
          else if (join.Kind == JoinKind.Inner && columns.IsSubsetOf(right)) { toRight.Add(conjunct); }
-         else if (join.Kind == JoinKind.Inner && columns.IsSubsetOf(left.Union(right))) { toCondition.Add(conjunct); }
+         else if (join.Kind == JoinKind.Inner && !subquery && columns.IsSubsetOf(left.Union(right))) { toCondition.Add(conjunct); }
          else { kept.Add(conjunct); }
       }
       if (toLeft.Count + toRight.Count + toCondition.Count == 0) { return null; }
@@ -502,6 +504,88 @@ internal sealed class PushFilterThroughSetOp : IRewriteRule
          return PlanRewriter.Substitute(filter.Predicate, map);
       }
       return new SetOpNode(set.Operation, new FilterNode(set.Left, Side(set.Left)), new FilterNode(set.Right, Side(set.Right)), set.Output);
+   }
+}
+
+/// <summary>
+/// A limit goes below a projection, with the sort that picks its rows (its keys become the projection's expressions
+/// for them): the projection computes only the rows kept, and the limit meets the joins below.
+/// </summary>
+internal sealed class PushLimitThroughProject : IRewriteRule
+{
+   public string Name => "push limit through project";
+
+   public PlanNode? Apply(PlanNode node)
+   {
+      switch (node)
+      {
+         case LimitNode { Input: ProjectNode project } limit:
+            return new ProjectNode(new LimitNode(project.Input, limit.Count, limit.Offset), project.Items);
+         case LimitNode { Input: SortNode { Input: ProjectNode project } sort } limit:
+         {
+            Dictionary<PlanColumn, PlanExpr> values = project.Items.ToDictionary(i => i.Column, i => i.Expr);
+            List<PlanSortKey> keys = [];
+            foreach (PlanSortKey key in sort.Keys)
+            {
+               PlanExpr below = PlanRewriter.Substitute(key.Expr, values);
+               // A key that is a subquery's value would compute it twice.
+               if (PlanRewriter.ContainsSubquery(below)) { return null; }
+               keys.Add(key with { Expr = below });
+            }
+            return new ProjectNode(new LimitNode(new SortNode(project.Input, keys), limit.Count, limit.Offset), project.Items);
+         }
+         default:
+            return null;
+      }
+   }
+}
+
+/// <summary>
+/// A limit goes below the joins that give each left row once (a navigation, or a grouped right side joined on its
+/// keys), with the sort that picks its rows when the keys are the left side's: only the rows kept are joined, and
+/// across sources only their keys are looked up. The left side's order is the joins'. The row count stays capped
+/// above the joins too, in case a right side has a key twice after all (a virtual entity's declared key, or group
+/// keys a source tells apart that the merge engine doesn't).
+/// </summary>
+internal sealed class PushLimitThroughJoin : IRewriteRule
+{
+   public string Name => "push limit through join";
+
+   public PlanNode? Apply(PlanNode node) => node switch
+   {
+      LimitNode { Input: JoinNode join } limit => Push(limit, null, join),
+      LimitNode { Input: SortNode { Input: JoinNode join } sort } limit => Push(limit, sort, join),
+      _ => null,
+   };
+
+   /// <summary>
+   /// The limit (and sort) below the chain of such joins on the left, as far down as the sort's keys go, with one
+   /// cap above the chain; null when there's nothing to do or it was done (the bottom is a limit already).
+   /// </summary>
+   private static PlanNode? Push(LimitNode limit, SortNode? sort, JoinNode top)
+   {
+      List<JoinNode> chain = [];
+      PlanNode bottom = top;
+      while (bottom is JoinNode join && PlanAnalysis.KeepsLeftRows(join) && (sort == null || OnLeft(sort, join)))
+      {
+         chain.Add(join);
+         bottom = join.Left;
+      }
+      if (chain.Count == 0 || bottom is LimitNode or SortNode { Input: LimitNode }) { return null; }
+      PlanNode rebuilt = new LimitNode(sort == null ? bottom : new SortNode(bottom, sort.Keys), limit.Count, limit.Offset);
+      for (int i = chain.Count - 1; i >= 0; i--)
+      {
+         JoinNode join = chain[i];
+         rebuilt = new JoinNode(join.Kind, rebuilt, join.Right, join.Condition, join.Navigation);
+      }
+      // The row count stays capped above the joins, in case a right side has a key twice after all.
+      return limit.Count == null ? rebuilt : new LimitNode(rebuilt, limit.Count, null);
+   }
+
+   private static bool OnLeft(SortNode sort, JoinNode join)
+   {
+      HashSet<PlanColumn> left = [.. join.Left.Output];
+      return sort.Keys.All(k => !PlanRewriter.ContainsSubquery(k.Expr) && PlanAnalysis.Columns(k.Expr).All(left.Contains));
    }
 }
 

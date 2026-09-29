@@ -551,7 +551,7 @@ internal sealed class SqlBuilder
          case PlanLiteral literal:
             return Constant(literal.Value, literal.Type);
          case PlanParameter parameter:
-            return new SqlParameterRef(Slot(parameter.Source, null, parameter.Source == ParameterSource.User ? parameter.Name : null, parameter.Type, null));
+            return new SqlParameterRef(Slot(parameter.Source, null, parameter.Source is ParameterSource.User or ParameterSource.Runtime ? parameter.Name : null, parameter.Type, null));
          case PlanUnary unary:
             return unary.Op switch
             {

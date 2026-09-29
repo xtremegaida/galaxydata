@@ -39,6 +39,13 @@ internal sealed class SqliteDialect : SqlDialect
 
    private protected override void WriteBinary(StringBuilder text, byte[] value) => text.Append("X'").Append(Convert.ToHexString(value)).Append('\'');
 
+   /// <summary>
+   /// Only integers and text: SQLite keeps what was stored, so a date may be held with a time or a 'T', a guid in
+   /// either case, a decimal with more digits than its scale, and each reads the same as the canonical value it
+   /// doesn't equal.
+   /// </summary>
+   internal override bool ComparesExactly(ScalarType type) => type.IsInteger || type.Kind == ScalarKind.String;
+
    /// <summary>Whole-valued decimals are stored as integers, and integer division truncates, so division is done in reals.</summary>
    internal override SqlExpr Divide(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       leftType.Kind is ScalarKind.Double or ScalarKind.Single

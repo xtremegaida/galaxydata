@@ -28,6 +28,12 @@ public interface IMergeSession : IAsyncDisposable
 
    /// <summary>A command for the merge SQL, on a connection where the session's tables are found by their names.</summary>
    DbCommand CreateCommand();
+
+   /// <summary>
+   /// Another connection where the session's tables are found by their names, for queries while tables load (the
+   /// keys of one to fetch another by); the caller disposes it.
+   /// </summary>
+   ValueTask<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>A column of a merge table: its name and logical type.</summary>

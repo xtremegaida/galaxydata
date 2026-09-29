@@ -1,4 +1,4 @@
-Combines 2 fragments from sales (SQLite) and crm (DuckDB) in the merge engine (DuckDB), reading sales.orders and crm.customers; each fragment is fetched in full.
+Combines 2 fragments from sales (SQLite) and crm (DuckDB) in the merge engine (DuckDB), reading sales.orders and crm.customers: 1 fragment fetched in full and 1 fragment fetched by the keys of another.
 
 Plan
   Sort  id  @merge
@@ -22,9 +22,14 @@ SQL for sales (SQLite, full fetch into f1)
   -- p0 string = 'open'
   -- p1 decimal(10,2) = 10
 
-SQL for crm (DuckDB, full fetch into f2)
+SQL for crm (DuckDB, into f2, by the keys of f1.customer_id when they are few enough, else in full)
   SELECT c.id, c.name, c.city
   FROM customers AS c
+  -- for each batch of keys:
+  SELECT c.id, c.name, c.city
+  FROM customers AS c
+  WHERE c.id IN ($p0)
+  -- p0 int32? = keys of f1.customer_id
 
 Merge SQL
   SELECT f1.id, f1.total, f2.name AS who, f2.city, f2.id

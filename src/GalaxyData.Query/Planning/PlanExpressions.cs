@@ -76,6 +76,12 @@ public enum ParameterSource : byte
 
    /// <summary><c>today()</c>: the UTC date the query started.</summary>
    Today,
+
+   /// <summary>
+   /// A value worked out while the query runs, before the SQL that uses it: a scalar subquery of one source, in a
+   /// query that combines sources. Named <c>s1</c>, <c>s2</c>, ...
+   /// </summary>
+   Runtime,
 }
 
 public abstract class PlanExpr
@@ -103,7 +109,7 @@ public sealed class PlanParameter(ParameterSource source, string name, ScalarTyp
 {
    public ParameterSource Source { get; } = source;
 
-   /// <summary>The parameter name without <c>$</c>, or <c>now</c>/<c>today</c>.</summary>
+   /// <summary>The parameter name without <c>$</c>, <c>now</c>/<c>today</c>, or a runtime value's name.</summary>
    public string Name { get; } = name;
 }
 

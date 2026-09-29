@@ -36,6 +36,15 @@ public static class ExplainTextRenderer
          {
             text.Append("  -- ").Append(parameter.Name).Append(' ').Append(parameter.Type).Append(" = ").AppendLine(parameter.Value);
          }
+         if (fragment.BindJoinTemplate != null)
+         {
+            text.AppendLine("  -- for each batch of keys:");
+            foreach (string line in Lines(fragment.BindJoinTemplate)) { text.Append("  ").AppendLine(line); }
+            foreach (ExplainParameter parameter in fragment.BindJoinParameters)
+            {
+               text.Append("  -- ").Append(parameter.Name).Append(' ').Append(parameter.Type).Append(" = ").AppendLine(parameter.Value);
+            }
+         }
       }
       if (explain.MergeSql != null)
       {

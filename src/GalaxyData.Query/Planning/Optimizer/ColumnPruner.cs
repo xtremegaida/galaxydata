@@ -84,7 +84,7 @@ internal static class ColumnPruner
       {
          return Prune(join.Left, required);
       }
-      if (join.Kind == JoinKind.Left && !required.Overlaps(rightOutput) && MatchesAtMostOnce(join))
+      if (join.Kind == JoinKind.Left && join.Navigation == null && !required.Overlaps(rightOutput) && PlanAnalysis.MatchesAtMostOnce(join))
       {
          return Prune(join.Left, required);
       }
@@ -95,24 +95,6 @@ internal static class ColumnPruner
       PlanNode left = Prune(join.Left, [.. all.Where(leftOutput.Contains)]);
       PlanNode right = Prune(join.Right, [.. all.Where(rightOutput.Contains)]);
       return Subqueries(new JoinNode(join.Kind, left, right, join.Condition, join.Navigation));
-   }
-
-   /// <summary>
-   /// Whether each left row finds at most one right row: the right side is grouped, and the condition equates each
-   /// of its keys with a value of the left row.
-   /// </summary>
-   private static bool MatchesAtMostOnce(JoinNode join)
-   {
-      if (join.Right is not AggregateNode { Keys.Count: > 0 } group || join.Condition == null) { return false; }
-      HashSet<PlanColumn> left = [.. join.Left.Output];
-      HashSet<PlanColumn> matched = [];
-      foreach (PlanExpr part in PlanAnalysis.Conjuncts(join.Condition))
-      {
-         if (part is not PlanBinary { Op: Binding.BinaryOp.Equal, Left: PlanColumnRef a, Right: PlanColumnRef b }) { continue; }
-         if (left.Contains(a.Column)) { matched.Add(b.Column); }
-         else if (left.Contains(b.Column)) { matched.Add(a.Column); }
-      }
-      return group.Keys.All(k => matched.Contains(k.Column));
    }
 
    /// <summary>The node with the plans of its subqueries pruned to what they give.</summary>

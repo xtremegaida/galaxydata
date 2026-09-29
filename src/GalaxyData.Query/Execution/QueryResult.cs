@@ -43,6 +43,9 @@ public sealed class ExecutionStats
    /// <summary>The rows fetched from the sources into the merge engine.</summary>
    public long FetchedRows => Fragments.Sum(f => f.Rows);
 
+   /// <summary>The keys sent to sources to fetch fragments by.</summary>
+   public long KeysSent => Fragments.Sum(f => (long)f.Keys);
+
    internal TimeSpan SinceStart => clock.GetElapsedTime(startTimestamp);
 
    internal void Add(FragmentStats fragment)
@@ -51,8 +54,32 @@ public sealed class ExecutionStats
    }
 }
 
-/// <summary>One fragment fetched from a source into a merge table: how many rows, and how long it took.</summary>
-public sealed record FragmentStats(string Source, string Table, long Rows, TimeSpan Elapsed);
+/// <summary>One fragment fetched from a source into a merge table (or a value): how, how many rows, and how long it took.</summary>
+public sealed record FragmentStats(string Source, string Table, long Rows, TimeSpan Elapsed)
+{
+   public FetchStrategy Strategy { get; init; }
+
+   /// <summary>For a fragment fetched by keys: how many keys, in how many statements.</summary>
+   public int Keys { get; init; }
+
+   public int Batches { get; init; }
+}
+
+/// <summary>How a fragment was fetched.</summary>
+public enum FetchStrategy : byte
+{
+   /// <summary>All its rows.</summary>
+   Full,
+
+   /// <summary>The rows with the keys of the fragment it's joined to, in batches.</summary>
+   Keys,
+
+   /// <summary>Not at all: the fragment it's joined to had no keys, so none of its rows could matter.</summary>
+   Skipped,
+
+   /// <summary>A scalar subquery's value, worked out before the fragments that use it.</summary>
+   Value,
+}
 
 /// <summary>Where a result's rows come from, for messages: a source (<c>shop</c>, <c>SQLite</c>) or the merge engine.</summary>
 internal sealed record RowSource(string Name, string Dialect);

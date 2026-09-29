@@ -27,10 +27,14 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
 {
    private readonly Dictionary<string, (DbConnection Keeper, Func<DbConnection> Open)> sources = new(StringComparer.Ordinal);
    private readonly CatalogBuilder builder = new();
+   private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> openedBySource = new(StringComparer.Ordinal);
    private DuckDbMergeEngine? merge;
    private int opened;
 
    public int Opened => Volatile.Read(ref opened);
+
+   /// <summary>The connections opened to one source.</summary>
+   public int OpenedTo(string alias) => openedBySource.GetValueOrDefault(alias);
 
    /// <summary>The merge engine of the engines made here, unless one is given; made when first needed.</summary>
    public DuckDbMergeEngine Merge => merge ??= new DuckDbMergeEngine();
@@ -75,6 +79,7 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
       DbConnection connection = sources[source.Alias].Open();
       if (connection.State != System.Data.ConnectionState.Open) { await connection.OpenAsync(cancellationToken); }
       Interlocked.Increment(ref opened);
+      openedBySource.AddOrUpdate(source.Alias, 1, (_, n) => n + 1);
       return connection;
    }
 

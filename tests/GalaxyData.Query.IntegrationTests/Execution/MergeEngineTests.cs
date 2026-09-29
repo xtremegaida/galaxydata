@@ -62,13 +62,15 @@ public sealed class MergeEngineTests
          QueryEngine engine = sources.Engine(Overlay, merge: merge);
          CancellationToken token = TestContext.Current.CancellationToken;
 
-         // Every item is fetched (about 200 MB), joined to its category, and sorted in the merge engine.
+         // Every item is fetched (about 200 MB), joined to its category, and sorted in the merge engine: the sort is
+         // by the category's name first, which the items' source doesn't have. Names sort as text (cat 99 ... cat 90,
+         // cat 9, cat 89, ...), 30,000 items each, so row 1,000,000 is the 10,000th item of the 34th name, cat 69.
          await using (QueryResult result = await engine.ExecuteAsync(
-            new QueryRequest("wh.items.select(id, label, cat: category.name).orderBy(desc(label)).skip(1000000).take(2)"), token))
+            new QueryRequest("wh.items.select(id, label, cat: category.name).orderBy(desc(cat), desc(label)).skip(1000000).take(2)"), token))
          {
             (await TestSources.RowsAsync(result)).ShouldBe(
-               "1999999 | 'item 000001999999 with a label long enough to take up room' | 'cat 99'" + Environment.NewLine +
-               "1999998 | 'item 000001999998 with a label long enough to take up room' | 'cat 98'" + Environment.NewLine);
+               "1999969 | 'item 000001999969 with a label long enough to take up room' | 'cat 69'" + Environment.NewLine +
+               "1999869 | 'item 000001999869 with a label long enough to take up room' | 'cat 69'" + Environment.NewLine);
             result.Stats.FetchedRows.ShouldBe(Items + 100);
             // The session's tables are still there, mostly on disk.
             Directory.EnumerateFiles(temp, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length).ShouldBeGreaterThan(64L << 20);

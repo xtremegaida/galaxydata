@@ -178,19 +178,42 @@ internal static class PlanAnalysis
       return plans;
    }
 
+   /// <summary>A guess at how many rows a plan produces, when it rests on sizes the sources reported (see <see cref="Cardinality"/>).</summary>
+   public static long? EstimateRows(PlanNode node) => Cardinality.Estimate(node) is { Known: true } estimate ? estimate.Rows : null;
+
    /// <summary>
-   /// A guess at how many rows a plan produces, when there is one to make: scans know their tables' sizes, a sort
-   /// or projection keeps its input's, a limit caps it.
+   /// Whether a join gives each left row once, whatever the right side holds: a left join that finds at most one
+   /// right row, or an inner join along a navigation every row has (an enforced foreign key of non-null columns).
    /// </summary>
-   public static long? EstimateRows(PlanNode node) => node switch
+   public static bool KeepsLeftRows(JoinNode join)
    {
-      ScanNode scan => scan.Entity.RowCountEstimate,
-      SortNode or ProjectNode => EstimateRows(node.Inputs[0]),
-      LimitNode { Count: PlanLiteral { Value: long count } } limit => EstimateRows(limit.Input) is { } rows ? Math.Min(rows, count) : count,
-      OneRowNode => 1,
-      AggregateNode { Keys.Count: 0 } => 1,
-      _ => null,
-   };
+      if (IsCorrelated(join.Right) && FreeColumns(join.Right).Overlaps(join.Left.Output)) { return false; }
+      return join.Kind switch
+      {
+         JoinKind.Left => MatchesAtMostOnce(join),
+         JoinKind.Inner => join.Navigation is { Multiplicity: Multiplicity.One },
+         _ => false,
+      };
+   }
+
+   /// <summary>
+   /// Whether each left row finds at most one right row: the join follows a many-to-one navigation, or the right side
+   /// is grouped and the condition equates each of its keys with a value of the left row.
+   /// </summary>
+   public static bool MatchesAtMostOnce(JoinNode join)
+   {
+      if (join.Navigation is { IsCollection: false }) { return true; }
+      if (join.Right is not AggregateNode { Keys.Count: > 0 } group || join.Condition == null) { return false; }
+      HashSet<PlanColumn> left = [.. join.Left.Output];
+      HashSet<PlanColumn> matched = [];
+      foreach (PlanExpr part in Conjuncts(join.Condition))
+      {
+         if (part is not PlanBinary { Op: Binding.BinaryOp.Equal, Left: PlanColumnRef a, Right: PlanColumnRef b }) { continue; }
+         if (left.Contains(a.Column)) { matched.Add(b.Column); }
+         else if (left.Contains(b.Column)) { matched.Add(a.Column); }
+      }
+      return group.Keys.All(k => matched.Contains(k.Column));
+   }
 
    /// <summary>The conjuncts joined with <c>and</c>; null for none.</summary>
    public static PlanExpr? Conjunction(IEnumerable<PlanExpr> parts)

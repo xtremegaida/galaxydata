@@ -108,7 +108,7 @@ public sealed class SqlParameterSlot
 
    public object? Constant { get; }
 
-   /// <summary>The <c>$name</c> parameter's name, without the <c>$</c>.</summary>
+   /// <summary>The <c>$name</c> parameter's name, without the <c>$</c>; or the name of a runtime value.</summary>
    public string? ParameterName { get; }
 
    /// <summary>Set when the value is text that becomes a match pattern.</summary>
@@ -123,6 +123,7 @@ public sealed class SqlParameterSlot
          {
             null => BoundTreePrinter.Literal(Constant),
             ParameterSource.User => "$" + ParameterName,
+            ParameterSource.Runtime => ParameterName!,
             ParameterSource source => source.ToString().ToLowerInvariant() + "()",
          };
          return Pattern == null ? value : $"{Pattern} of {value}";

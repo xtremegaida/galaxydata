@@ -86,6 +86,9 @@ public sealed class ExplainFragment
 
    /// <summary>For a fragment fetched by the keys of another, the SQL it runs for each batch of keys; null otherwise.</summary>
    public string? BindJoinTemplate { get; init; }
+
+   /// <summary>The parameters of <see cref="BindJoinTemplate"/>; one of them stands for the batch of keys.</summary>
+   public IReadOnlyList<ExplainParameter> BindJoinParameters { get; init; } = [];
 }
 
 /// <summary>A parameter of a fragment's SQL: its name in the SQL, type, and value in query syntax (<c>'open'</c>, <c>$since</c>).</summary>

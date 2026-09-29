@@ -539,7 +539,8 @@ public sealed class CatalogBuilder
             {
                entity.AddInheritedNavigation(navigation.Navigation);
             }
-            if (baseEntity.Key != null && ResolveColumns(entity, baseEntity.Key.Columns.Select(c => c.Name).ToList(), report: false) is { } key)
+            // Rows that may repeat (concat) have no key, even when they are an entity's.
+            if (baseEntity.Key != null && !MayRepeatRows(query) && ResolveColumns(entity, baseEntity.Key.Columns.Select(c => c.Name).ToList(), report: false) is { } key)
             {
                entity.Key = new KeyDef(null, key);
             }
@@ -551,6 +552,25 @@ public sealed class CatalogBuilder
          }
          return null;
       }
+
+      /// <summary>
+      /// Whether an entity's rows may come more than once from a query: <c>concat</c> keeps the duplicates, and
+      /// <c>selectMany</c> of anything but a navigation repeats rows for each row they're paired with.
+      /// </summary>
+      private static bool MayRepeatRows(BoundQuery query) => query switch
+      {
+         BoundSetOperation { Kind: SetOperationKind.UnionAll } => true,
+         BoundSetOperation or BoundDistinct or BoundGroupBy => false,
+         BoundSelectMany many => many.Collection is not BoundNavigationQuery,
+         BoundWhere where => MayRepeatRows(where.Input),
+         BoundSelect select => MayRepeatRows(select.Input),
+         BoundExtend extend => MayRepeatRows(extend.Input),
+         BoundOrderBy order => MayRepeatRows(order.Input),
+         BoundTake take => MayRepeatRows(take.Input),
+         BoundSkip skip => MayRepeatRows(skip.Input),
+         BoundLetQuery let => let.Let.Value is BoundQuery value && MayRepeatRows(value),
+         _ => false,
+      };
 
       private void AssignDisplayColumns()
       {

@@ -210,16 +210,19 @@ Rules implement `IRewriteRule` and run in phases to a fixpoint.
    - Each fragment selects only the columns the merge SQL reads (recorded while the merge SQL is written); a placeholder column when it reads none.
    - If the whole plan is on one site, the fast path skips DuckDB entirely. A one-source query whose SQL can't be written for its source runs through the merge engine instead, when there is one.
    - `QueryEngineOptions.PushDown = false` fetches bare scans and runs everything else in the merge engine, to compare.
-5. **Cross-source joins:** full fetch by default. An **adaptive bind-join** runs the driver side first and reads its distinct keys:
+5. **Cross-source joins:** an **adaptive bind-join**. The planner marks the fragment on the side of a join whose rows only matter when they match (the right of a left, semi or anti join; the larger side of an inner join; joins in subqueries too), when the key comes straight from a fragment's column on each side (through filters, projections, sorts and DISTINCT on the target side). At run time the driver fragment loads first, and its distinct keys are read from its merge table (converted to the target key's type):
 
 | Key count k | Action |
 |---|---|
-| 0 | skip the target |
-| ≤ 10k | fetch the target in batched IN-lists, sized to the dialect's parameter limit (MSSQL 2100) |
+| 0 | skip the target: no connection is opened |
+| ≤ `MaxBindKeys` (10k), and (adaptive) fewer than the target's estimated rows | fetch the target in batched IN-lists (`MaxBindBatch`, 2,000, and the dialect's parameter limit: MSSQL 2100; whole-number keys are written into the SQL) |
 | more | full fetch |
 
-   Uncorrelated cross-source scalar subqueries run first and become runtime parameters.
-6. **Cardinality:** simple heuristics, using introspected estimates or 10k when there are none. Explain warns about full fetches estimated above 1M rows.
+   Keys must compare exactly in the target's source (`SqlDialect.ComparesExactly`): SQLite targets are only looked up by integer and text keys, since it keeps dates (with a time or a 'T'), guids (in either case) and decimals (unrounded) in forms that read as values they don't equal. Text keys go in one statement or the fragment is fetched in full: a collation that ignores case or trailing spaces could find a row for keys in two batches. Whole decimals are bound to SQLite as integers.
+   `BindJoins = Always` binds whatever the estimates, and `Never` fetches in full, to compare. Fragments are scheduled by dependency (values first, drivers before the fragments bound to them), a few at a time.
+   Uncorrelated scalar subqueries of one source, in an operator that reads others, run first and become runtime parameters (`ParameterSource.Runtime`, `s1`, `s2`, …), so the operator may run in a source itself. The source then compares the value as it would the same value written in the query (a SQLite date held with a time doesn't equal the date, as in a query of SQLite alone). Filters with uncorrelated subqueries now move into join sides too.
+6. **Cardinality** (`Planning/Cardinality`): introspected sizes, or 10k when there are none; filters keep a share by kind of condition (one row for the key equal to a value); joins along a navigation (or to a grouped side on its keys) keep their left rows; limits cap. Explain shows the estimates that rest on reported sizes, and warns about full fetches estimated above 1M rows.
+7. **Top-N** (optimizer): a limit, with the sort that picks its rows, moves below projections and below joins that give each left row once (left joins along a navigation or to a grouped side on its keys; inner joins along a navigation every row has). A page of 50 orders is picked in its source before the customers are joined, and across sources only its customers' keys are looked up. The limit goes down a chain of such joins at once, and a cap stays above them, in case a right side has a key twice after all (a declared key that isn't one, or group keys a source tells apart that the merge engine doesn't). Virtual entities whose rows may repeat (`concat`, `selectMany` of anything but a navigation) don't inherit their base entity's key.
 
 ### 4.5 SQL generation (`Sql/`)
 - **SQL AST:** Select, SetOperation, Join, DerivedTable, and Insert/Update/Delete with Returning.
@@ -484,7 +487,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | M4 | Group scope and HAVING, joins, selectMany, collection navs, any/all/in/subqueries, set ops, decorrelation (semi/anti joins, merged group joins, correlated joins), pushdown and prune rules; `first`/`firstOrDefault` moved to M5 | Examples 2–4 golden and end-to-end on SQLite and DuckDB; optimizer phase snapshots |
 | M5 | Links, hidden keys, EditTarget, RowIdentity, full lineage, `QueryText.Compose`, `ForCount`, explain model and renderer (`gdq explain`), stable paging, `first`/`firstOrDefault` (as the result: the first row, and `first()` of none fails; in expressions: scalar subqueries, null when there is no row) | Link and lineage snapshots; composed filter reaches the scan |
 | M6 | Federation: site assignment and fragmenter, DuckDB merge engine, full fetch, explain with sites and merge SQL | Differential suite: the conformance set on one SQLite database, one DuckDB database, split across SQLite and DuckDB, and with every operator in the merge engine, identical results; spill test at 64 MB; cancellation tests (fetch, merge query, reading) |
-| M7 | Adaptive bind-join, runtime scalar params, TopN through navs, cardinality estimates | A 50-row page sends ≤ 50 keys (`ExecutionStats`); k = 0 early-out; fallback above the key limit |
+| M7 | Adaptive bind-join, runtime scalar params, TopN through navs, cardinality estimates | A 50-row page sends ≤ 50 keys (`ExecutionStats.KeysSent`, `FragmentStats.Strategy/Keys/Batches`); k = 0 early-out; fallback above the key limit; the conformance set split across sources gives the same rows with bind joins always and never |
 | M8 | Excel Folder provider | OpenXml-generated fixtures (multiple, hidden and spaced sheets); Excel ⋈ SQLite join |
 | M9 | PG and MSSQL providers | Container suite runs the same conformance and differential tests; MSSQL varchar parameter typing |
 | M10 | DML planner, script splitter, DML-only guard, coordinated executor; optional FK enforcement per connection on commit (SQLite `PRAGMA foreign_keys = ON`) | Per provider: insert with returned rows, concurrency conflict rolls back all, cross-connection success, simulated partial commit, guard rejects DDL |

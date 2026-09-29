@@ -194,6 +194,22 @@ public sealed class DuckDbMergeEngine : IMergeEngine, IDisposable
          return command;
       }
 
+      public async ValueTask<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken)
+      {
+         DuckDBConnection other = engine.Connect();
+         try
+         {
+            await engine.Provider.PrepareConnectionAsync(other, cancellationToken).ConfigureAwait(false);
+            await other.ExecuteAsync($"SET search_path = '{schema}'", cancellationToken).ConfigureAwait(false);
+            return other;
+         }
+         catch
+         {
+            await other.DisposeAsync().ConfigureAwait(false);
+            throw;
+         }
+      }
+
       public async ValueTask DisposeAsync()
       {
          if (Interlocked.Exchange(ref closed, 1) != 0) { return; }

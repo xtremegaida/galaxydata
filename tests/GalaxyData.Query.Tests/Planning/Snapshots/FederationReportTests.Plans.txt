@@ -8,7 +8,7 @@ Project email#3, who#13 = name#6, city#7, id#1, id#5  @merge
 SELECT c.id, c.customer_ref, c.email
 FROM contacts AS c
 
--- f2: sales (PostgreSQL) id int32?, name string(100)?, city string?
+-- f2: sales (PostgreSQL) id int32?, name string(100)?, city string?; by the keys of f1.customer_ref
 SELECT c.id, c.name, c.city
 FROM customers AS c
 
@@ -27,7 +27,7 @@ Project email#3, name#14, id#1, code#13  @merge
         Scan sales.customers (id#5, city#7, region_code#10)  @sales
     Scan sales.regions (code#13, name#14)  @sales
 
--- f1: crm (SQL Server) id guid, customer_ref int32?, email string
+-- f1: crm (SQL Server) id guid, customer_ref int32?, email string; by the keys of f2.id
 SELECT c.id, c.customer_ref, c.email
 FROM contacts AS c
 WHERE LOWER(c.email) LIKE LOWER(@p0) ESCAPE '\'
@@ -39,7 +39,7 @@ FROM customers AS c
 WHERE c.city = @p0
 -- p0 string = 'Durban'
 
--- f3: sales (PostgreSQL) code string(3)?, name string?
+-- f3: sales (PostgreSQL) code string(3)?, name string?; by the keys of f2.region_code
 SELECT r.code, r.name
 FROM regions AS r
 
@@ -60,7 +60,7 @@ Project name#2, n#14 = coalesce(count#13, 0), id#1  @merge
 SELECT c.id, c.name
 FROM customers AS c
 
--- f2: crm (SQL Server) customer_ref int32?, count int64
+-- f2: crm (SQL Server) customer_ref int32?, count int64; by the keys of f1.id
 SELECT c.customer_ref, COUNT(*) AS count
 FROM contacts AS c
 GROUP BY c.customer_ref
@@ -81,7 +81,7 @@ Project name#2, id#1  @merge
 SELECT c.id, c.name
 FROM customers AS c
 
--- f2: crm (SQL Server) customer_ref int32?
+-- f2: crm (SQL Server) customer_ref int32?; by the keys of f1.id
 SELECT c.customer_ref
 FROM contacts AS c
 WHERE c.email LIKE @p0 ESCAPE '\'
@@ -106,7 +106,7 @@ Project name#2, id#1  @merge
 SELECT c.id, c.name
 FROM customers AS c
 
--- f2: crm (SQL Server) customer_ref int32?
+-- f2: crm (SQL Server) customer_ref int32?; by the keys of f1.id
 SELECT c.customer_ref
 FROM contacts AS c
 
@@ -132,7 +132,7 @@ SELECT TOP (5) c.id, c.customer_ref, c.email
 FROM contacts AS c
 ORDER BY c.email
 
--- f2: sales (PostgreSQL) id int32?, name string(100)?
+-- f2: sales (PostgreSQL) id int32?, name string(100)?; by the keys of f1.customer_ref
 SELECT c.id, c.name
 FROM customers AS c
 
@@ -153,7 +153,7 @@ Project email#3, who#13 = name#6, id#1, id#5  @merge
 SELECT c.id, c.customer_ref, c.email
 FROM contacts AS c
 
--- f2: sales (PostgreSQL) id int32?, name string(100)?
+-- f2: sales (PostgreSQL) id int32?, name string(100)?; by the keys of f1.customer_ref
 SELECT c.id, c.name
 FROM customers AS c
 
@@ -198,7 +198,7 @@ Project city#7, n#14 = count#13  @merge
 SELECT c.customer_ref
 FROM contacts AS c
 
--- f2: sales (PostgreSQL) id int32?, city string?
+-- f2: sales (PostgreSQL) id int32?, city string?; by the keys of f1.customer_ref
 SELECT c.id, c.city
 FROM customers AS c
 
@@ -210,25 +210,25 @@ GROUP BY f2.city
 
 ### sales.orders.where(total > sales.orders.avg(total) and customer_id in crm.contacts.select(customer_ref)).select(id)
 Project id#1  @merge
-  Filter total#4 > value[1]  @merge
-    [1] scalar
-      Aggregate: avg#17 = avg(total#12)  @sales
-        Scan sales.orders (total#12)  @sales
-    Join semi: customer_id#2 == customer_ref#19  @merge
+  Join semi: customer_id#2 == customer_ref#19  @merge
+    Filter total#4 > value[1]  @sales
+      [1] scalar
+        Aggregate: avg#17 = avg(total#12)  @sales
+          Scan sales.orders (total#12)  @sales
       Scan sales.orders (id#1, customer_id#2, total#4)  @sales
-      Scan crm.contacts (customer_ref#19)  @crm
+    Scan crm.contacts (customer_ref#19)  @crm
 
--- f1: sales (PostgreSQL) id int64, customer_id int32, total decimal(10,2)
-SELECT o.id, o.customer_id, o.total
+-- f1: sales (PostgreSQL) id int64, customer_id int32
+SELECT o.id, o.customer_id
 FROM orders AS o
+WHERE o.total > (
+   SELECT avg(o2.total) AS avg
+   FROM orders AS o2
+)
 
--- f2: crm (SQL Server) customer_ref int32?
+-- f2: crm (SQL Server) customer_ref int32?; by the keys of f1.customer_id
 SELECT c.customer_ref
 FROM contacts AS c
-
--- f3: sales (PostgreSQL) avg decimal?
-SELECT avg(o.total) AS avg
-FROM orders AS o
 
 -- merge (DuckDB)
 SELECT f1.id
@@ -237,9 +237,6 @@ WHERE EXISTS (
    SELECT 1
    FROM f2
    WHERE f1.customer_id = f2.customer_ref
-) AND f1.total > (
-   SELECT f3.avg
-   FROM f3
 )
 
 ### sales.customers.select(name, first: crm.contacts.where(c => c.customer_ref == id).orderBy(email).firstOrDefault().email)
@@ -306,7 +303,7 @@ Project value#14 = value[1]  @merge
           Scan sales.customers (id#5, credit_limit#8)  @sales
   OneRow  @merge
 
--- f1: crm (SQL Server) customer_ref int32?
+-- f1: crm (SQL Server) customer_ref int32?; by the keys of f2.id
 SELECT c.customer_ref
 FROM contacts AS c
 
@@ -337,7 +334,7 @@ Project value#14 = value[1]  @merge
 SELECT c.id
 FROM customers AS c
 
--- f2: crm (SQL Server) customer_ref int32?
+-- f2: crm (SQL Server) customer_ref int32?; by the keys of f1.id
 SELECT c.customer_ref
 FROM contacts AS c
 WHERE c.email IS NOT NULL
@@ -363,22 +360,18 @@ Project value#15 = value[1] + value[2]  @merge
       Scan crm.contacts ()  @crm
   OneRow  @merge
 
--- f1: sales (PostgreSQL) count int64
+-- s1: sales (PostgreSQL) count int64
 SELECT count(*) AS count
 FROM orders AS o
 
--- f2: crm (SQL Server) count int64
+-- s2: crm (SQL Server) count int64
 SELECT COUNT(*) AS count
 FROM contacts AS c
 
 -- merge (DuckDB)
-SELECT (
-   SELECT f1.count
-   FROM f1
-) + (
-   SELECT f2.count
-   FROM f2
-) AS "value"
+SELECT $p0 + $p1 AS "value"
+-- p0 int64 = s1
+-- p1 int64 = s2
 
 ### sales.orders.selectMany(o => crm.contacts).count()
 Project value#14 = value[1]  @merge
@@ -405,25 +398,27 @@ SELECT (
 ) AS "value"
 
 ### crm.contacts.orderBy(email).where(customer_ref in crm.contacts.select(customer_ref)).select(email, customer.name).take(1)
-Limit take 1  @merge
-  Project email#3, name#10, id#1, id#9  @merge
+Project email#3, name#10, id#1, id#9  @merge
+  Limit take 1  @merge
     Join left via customer: customer_ref#2 == id#9  @merge
-      Join semi: customer_ref#2 == customer_ref#6  @crm
-        Sort email#3  @crm
-          Scan crm.contacts (id#1, customer_ref#2, email#3)  @crm
-        Scan crm.contacts (customer_ref#6)  @crm
+      Limit take 1  @crm
+        Join semi: customer_ref#2 == customer_ref#6  @crm
+          Sort email#3  @crm
+            Scan crm.contacts (id#1, customer_ref#2, email#3)  @crm
+          Scan crm.contacts (customer_ref#6)  @crm
       Scan sales.customers (id#9, name#10)  @sales
 
 -- f1: crm (SQL Server) id guid, customer_ref int32?, email string
-SELECT c.id, c.customer_ref, c.email
+SELECT TOP (1) c.id, c.customer_ref, c.email
 FROM contacts AS c
 WHERE EXISTS (
    SELECT 1
    FROM contacts AS c2
    WHERE c.customer_ref = c2.customer_ref
 )
+ORDER BY c.email
 
--- f2: sales (PostgreSQL) id int32?, name string(100)?
+-- f2: sales (PostgreSQL) id int32?, name string(100)?; by the keys of f1.customer_ref
 SELECT c.id, c.name
 FROM customers AS c
 
@@ -435,13 +430,14 @@ ORDER BY f1.email
 LIMIT 1
 
 ### sales.orders.orderBy(desc(total)).where(not order_lines.any()).select(id, who: crm.contacts.where(c => c.customer_ref == customer_id).count()).take(1)
-Limit take 1  @merge
-  Project id#1, who#19 = coalesce(count#18, 0)  @merge
+Project id#1, who#19 = coalesce(count#18, 0)  @merge
+  Limit take 1  @merge
     Join left: customer_id#2 == customer_ref#15  @merge
-      Join anti: order_id#9 == id#1  @sales
-        Sort total#4 desc  @sales
-          Scan sales.orders (id#1, customer_id#2, total#4)  @sales
-        Scan sales.order_lines (order_id#9)  @sales
+      Limit take 1  @sales
+        Join anti: order_id#9 == id#1  @sales
+          Sort total#4 desc  @sales
+            Scan sales.orders (id#1, customer_id#2, total#4)  @sales
+          Scan sales.order_lines (order_id#9)  @sales
       Aggregate by customer_ref#15: count#18 = count(*)  @crm
         Scan crm.contacts (customer_ref#15)  @crm
 
@@ -453,8 +449,10 @@ WHERE NOT EXISTS (
    FROM order_lines AS o2
    WHERE o2.order_id = o.id
 )
+ORDER BY o.total DESC
+LIMIT 1
 
--- f2: crm (SQL Server) customer_ref int32?, count int64
+-- f2: crm (SQL Server) customer_ref int32?, count int64; by the keys of f1.customer_id
 SELECT c.customer_ref, COUNT(*) AS count
 FROM contacts AS c
 GROUP BY c.customer_ref

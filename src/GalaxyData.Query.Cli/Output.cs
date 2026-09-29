@@ -139,7 +139,14 @@ internal static class Output
    {
       foreach (QueryFragment fragment in prepared.Fragments)
       {
-         writer.WriteLine($"-- {fragment.Source.Alias} ({fragment.Dialect.Name}){(fragment.Table != null ? ", fetched into " + fragment.Table : string.Empty)}");
+         string how = fragment switch
+         {
+            { Value: { } value } => ", worked out first as " + value,
+            { BindJoin: { } bind } => $", fetched into {fragment.Table} by the keys of {bind.Driver.Table}.{bind.DriverColumn} when they are few enough",
+            { Table: { } table } => ", fetched into " + table,
+            _ => string.Empty,
+         };
+         writer.WriteLine($"-- {fragment.Source.Alias} ({fragment.Dialect.Name}){how}");
          Statement(writer, fragment.Statement, fragment.Dialect);
       }
       if (prepared.Merge != null)

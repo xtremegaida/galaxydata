@@ -10,8 +10,8 @@ namespace GalaxyData.Query.Sqlite;
 
 /// <summary>
 /// SQLite sources. Values are stored by value, not declared type, so parameters are sent in the form stored
-/// data has: decimals as reals (as text they would compare as text, above every number), dates and times as ISO
-/// text, guids as upper-case text.
+/// data has: whole decimals as integers and the others as reals (as text they would compare as text, above every
+/// number; as reals, large whole numbers lose digits), dates and times as ISO text, guids as upper-case text.
 /// </summary>
 public sealed class SqliteSourceProvider : SourceProvider
 {
@@ -29,6 +29,7 @@ public sealed class SqliteSourceProvider : SourceProvider
       parameter.Value = value switch
       {
          null => DBNull.Value,
+         decimal number when decimal.Truncate(number) == number && number >= long.MinValue && number <= long.MaxValue => (long)number,
          decimal number => (double)number,
          bool flag => flag ? 1L : 0L,
          Guid guid => guid.ToString("D").ToUpperInvariant(),
