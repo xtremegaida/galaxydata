@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -207,7 +208,7 @@ public sealed class QueryEngine
       try
       {
          SqlStatement statement = SqlBuilder.Build(plan, dialect, new SqlBuildOptions { DefaultSchema = source.DefaultSchema });
-         fragment = new QueryFragment(source, dialect, statement);
+         fragment = new QueryFragment(source, dialect, statement) { Tables = PlanAnalysis.Tables(plan.Root) };
          return null;
       }
       catch (SqlTranslationException e)
@@ -256,6 +257,8 @@ public sealed class QueryEngine
          long? estimate = PlanAnalysis.EstimateRows(planned.Root);
          QueryFragment fragment = new(planned.Source, planned.Dialect, planned.Statement)
          {
+            Tables = PlanAnalysis.Tables(planned.Root),
+            InMergeEngine = providers[planned.Source.ProviderKind].Host is { } host && ReferenceEquals(host, Merge),
             Table = planned.Table?.Table,
             Value = planned.Value,
             Columns = planned.Columns,
@@ -308,6 +311,27 @@ public sealed class QueryEngine
 
    internal SourceProvider Provider(SourceInfo source) => providers[source.ProviderKind];
 
+   /// <summary>Readies what a fragment reads before its statements run (an Excel folder loads the sheets that changed).</summary>
+   internal ValueTask PrepareReadAsync(QueryFragment fragment, CancellationToken cancellationToken) =>
+      Provider(fragment.Source).PrepareReadAsync(fragment.Source, fragment.Tables, Options, cancellationToken);
+
+   /// <summary>A connection to a source, readied for queries; the caller disposes it.</summary>
+   internal async ValueTask<DbConnection> OpenAsync(SourceInfo source, CancellationToken cancellationToken)
+   {
+      SourceProvider provider = Provider(source);
+      DbConnection connection = await provider.OpenConnectionAsync(source, Connections, cancellationToken).ConfigureAwait(false);
+      try
+      {
+         await provider.PrepareConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
+         return connection;
+      }
+      catch
+      {
+         await connection.DisposeAsync().ConfigureAwait(false);
+         throw;
+      }
+   }
+
    private static string List(IEnumerable<string> items)
    {
       List<string> all = items.ToList();
@@ -335,6 +359,15 @@ public sealed class QueryFragment
    public SqlStatement Statement { get; }
 
    public string Sql => Statement.Text;
+
+   /// <summary>The tables the fragment reads.</summary>
+   public IReadOnlyList<TableEntity> Tables { get; internal init; } = [];
+
+   /// <summary>
+   /// Whether the source's tables are in the merge engine's own database (an Excel folder's sheets), so its rows are
+   /// copied into the merge table there, never leaving it.
+   /// </summary>
+   public bool InMergeEngine { get; internal init; }
 
    /// <summary>The merge table the rows are loaded into (<c>f1</c>); null when the fragment is the whole query or a value.</summary>
    public string? Table { get; internal init; }

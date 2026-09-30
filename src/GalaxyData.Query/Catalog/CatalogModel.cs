@@ -21,6 +21,12 @@ public sealed record SourceInfo(string Alias, string ProviderKind, string Defaul
    /// <c>PRAGMA foreign_keys</c>, untrusted constraints), so a non-null key links to exactly one row.
    /// </summary>
    public bool TrustForeignKeys { get; init; }
+
+   /// <summary>
+   /// The database the source's tables are in, written before their schema in its SQL; for sources whose tables are
+   /// kept in a database with others' (an Excel folder's sheets, in the merge engine's). Null for databases of their own.
+   /// </summary>
+   public string? Catalog { get; init; }
 }
 
 /// <summary>Anything a name can resolve to in the catalog tree: a namespace or an entity.</summary>

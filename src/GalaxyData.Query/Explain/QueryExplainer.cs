@@ -55,12 +55,14 @@ internal static class QueryExplainer
       if (query.Fragments.Count == 0) { return $"Runs in {engine}, {reading}."; }
       List<string> sources = query.Fragments.Select(f => $"{f.Source.Alias} ({f.Dialect.Name})").Distinct().ToList();
       string parts = Count(query.Fragments.Count, "fragment");
-      int full = query.Fragments.Count(f => f.Table != null && f.BindJoin == null);
+      int full = query.Fragments.Count(f => f.Table != null && f.BindJoin == null && !f.InMergeEngine);
+      int copied = query.Fragments.Count(f => f.Table != null && f.BindJoin == null && f.InMergeEngine);
       int bound = query.Fragments.Count(f => f.BindJoin != null);
       int first = query.Fragments.Count(f => f.Value != null);
       List<string> how = [];
       if (first > 0) { how.Add($"{Count(first, "value")} worked out first"); }
       if (full > 0) { how.Add($"{Count(full, "fragment")} fetched in full"); }
+      if (copied > 0) { how.Add($"{Count(copied, "fragment")} copied inside it"); }
       if (bound > 0) { how.Add($"{Count(bound, "fragment")} fetched by the keys of another"); }
       return $"Combines {parts} from {List(sources)} in {engine}, {reading}: {List(how)}.";
    }
@@ -105,9 +107,13 @@ internal static class QueryExplainer
    {
       { Value: { } value } => $"worked out first, as {value}",
       { Table: null } => "whole result",
-      { BindJoin: { } bind } => $"into {fragment.Table}, by the keys of {bind.Driver.Table}.{bind.DriverColumn} when they are few enough, else in full",
+      { BindJoin: { } bind } => $"into {fragment.Table}{Inside(fragment)}, by the keys of {bind.Driver.Table}.{bind.DriverColumn} when they are few enough, else in full",
+      { InMergeEngine: true } => $"copied into {fragment.Table} inside the merge engine",
       _ => "full fetch into " + fragment.Table,
    };
+
+   /// <summary>The rows of a source kept in the merge engine's database never leave it.</summary>
+   private static string Inside(QueryFragment fragment) => fragment.InMergeEngine ? " inside the merge engine" : string.Empty;
 
    private static ExplainParameter Parameter(SqlParameterSlot slot) => new(slot.Name, slot.Type.ToString(), slot.Description);
 

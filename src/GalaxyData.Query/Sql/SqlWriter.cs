@@ -208,6 +208,7 @@ internal sealed class SqlWriter
       switch (source)
       {
          case SqlTable table:
+            if (table.Catalog != null) { text.Append(dialect.Identifier(table.Catalog)).Append('.'); }
             if (table.Schema != null) { text.Append(dialect.Identifier(table.Schema)).Append('.'); }
             text.Append(dialect.Identifier(table.Name));
             if (!string.Equals(table.Name, table.Alias, StringComparison.Ordinal)) { text.Append(" AS ").Append(dialect.Identifier(table.Alias)); }

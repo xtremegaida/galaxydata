@@ -45,5 +45,12 @@ public interface IMergeTableWriter : IAsyncDisposable
    /// <summary>Adds a row: a value for each column, in order, of the CLR type <see cref="ValueConverter"/> gives its logical type, or null.</summary>
    void Append(object?[] row);
 
+   /// <summary>
+   /// Adds the rows of a query the merge engine runs over tables of its own database (a source kept in it, such as an
+   /// Excel folder), selecting a value for each column in order; <paramref name="prepare"/> sets the command's text
+   /// and parameters. How many rows it added.
+   /// </summary>
+   ValueTask<long> AppendQueryAsync(Action<DbCommand> prepare, CancellationToken cancellationToken);
+
    ValueTask CompleteAsync(CancellationToken cancellationToken);
 }

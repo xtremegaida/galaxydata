@@ -17,7 +17,8 @@ namespace GalaxyData.Query.Execution;
 /// Runs a query that combines sources: fetches each fragment from its source into a table of a merge session, a few
 /// at a time, then runs the merge SQL over the tables and streams its rows. The session lasts as long as the result.
 /// A fragment waits for the ones it depends on: the values its SQL takes as parameters, and, when it is fetched by
-/// keys, the fragment whose table has them.
+/// keys, the fragment whose table has them. A fragment of a source kept in the merge engine's database (an Excel
+/// folder) is copied into its table by a query of the merge engine's own.
 /// </summary>
 internal sealed class FederatedExecution
 {
@@ -149,6 +150,7 @@ internal sealed class FederatedExecution
    private async Task FetchAsync(IMergeSession session, QueryFragment fragment, CancellationToken cancellationToken)
    {
       long started = options.Clock.GetTimestamp();
+      await engine.PrepareReadAsync(fragment, cancellationToken).ConfigureAwait(false);
       if (fragment.Value != null)
       {
          await ValueAsync(fragment, cancellationToken).ConfigureAwait(false);
@@ -250,8 +252,7 @@ internal sealed class FederatedExecution
    {
       SourceProvider provider = engine.Provider(fragment.Source);
       string where = $"{fragment.Source.Alias} ({fragment.Dialect.Name})";
-      await using DbConnection connection = await engine.Connections.OpenAsync(fragment.Source, cancellationToken).ConfigureAwait(false);
-      await provider.PrepareConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
+      await using DbConnection connection = await engine.OpenAsync(fragment.Source, cancellationToken).ConfigureAwait(false);
       await using DbCommand command = Command(connection, provider, fragment, fragment.Statement);
       object? value = null;
       using (cancellationToken.Register(Cancel, command))
@@ -272,11 +273,11 @@ internal sealed class FederatedExecution
    /// <summary>Runs one statement of a fragment in its source and loads its rows, as their logical types, into its table; the rows loaded so far.</summary>
    private async Task<long> LoadAsync(QueryFragment fragment, SqlStatement statement, IMergeTableWriter writer, long rows, CancellationToken cancellationToken)
    {
+      if (fragment.InMergeEngine) { return rows + await CopyAsync(fragment, statement, writer, cancellationToken).ConfigureAwait(false); }
       SourceProvider provider = engine.Provider(fragment.Source);
       string where = $"{fragment.Source.Alias} ({fragment.Dialect.Name})";
       IReadOnlyList<MergeColumn> columns = fragment.Columns;
-      await using DbConnection connection = await engine.Connections.OpenAsync(fragment.Source, cancellationToken).ConfigureAwait(false);
-      await provider.PrepareConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
+      await using DbConnection connection = await engine.OpenAsync(fragment.Source, cancellationToken).ConfigureAwait(false);
       await using DbCommand command = Command(connection, provider, fragment, statement);
       using (cancellationToken.Register(Cancel, command))
       {
@@ -306,15 +307,39 @@ internal sealed class FederatedExecution
                throw Unloaded(fragment, rows + 1, e);
             }
             rows++;
-            if (Interlocked.Increment(ref fetched) > options.MaxFetchedRows)
-            {
-               throw new QueryExecutionException(
-                  $"The query fetches more than {options.MaxFetchedRows.Value.ToString("N0", CultureInfo.InvariantCulture)} rows from its sources into the merge engine, the most it may (MaxFetchedRows)");
-            }
+            if (Interlocked.Increment(ref fetched) > options.MaxFetchedRows) { throw TooManyRows(); }
          }
       }
       return rows;
    }
+
+   /// <summary>
+   /// Loads one statement's rows of a fragment of a source kept in the merge engine's database by a query of the
+   /// merge engine's own, so they never leave it; how many.
+   /// </summary>
+   private async Task<long> CopyAsync(QueryFragment fragment, SqlStatement statement, IMergeTableWriter writer, CancellationToken cancellationToken)
+   {
+      SourceProvider provider = engine.Provider(fragment.Source);
+      long copied;
+      try
+      {
+         copied = await writer.AppendQueryAsync(command =>
+         {
+            query.Bind(command, statement, fragment.Dialect, provider, stats.Started, values);
+            if (options.CommandTimeout is { } timeout) { command.CommandTimeout = (int)Math.Ceiling(timeout.TotalSeconds); }
+         }, cancellationToken).ConfigureAwait(false);
+      }
+      catch (DbException e)
+      {
+         cancellationToken.ThrowIfCancellationRequested();
+         throw new QueryExecutionException($"{fragment.Source.Alias} ({fragment.Dialect.Name}) failed to run its part of the query: {e.Message}", e);
+      }
+      if (Interlocked.Add(ref fetched, copied) > options.MaxFetchedRows) { throw TooManyRows(); }
+      return copied;
+   }
+
+   private QueryExecutionException TooManyRows() =>
+      new($"The query fetches more than {options.MaxFetchedRows!.Value.ToString("N0", CultureInfo.InvariantCulture)} rows from its sources into the merge engine, the most it may (MaxFetchedRows)");
 
    private DbCommand Command(DbConnection connection, SourceProvider provider, QueryFragment fragment, SqlStatement statement)
    {

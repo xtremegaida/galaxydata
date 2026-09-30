@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,6 +22,27 @@ public abstract class SourceProvider
    public abstract SqlDialect Dialect { get; }
 
    public abstract ISchemaIntrospector Introspector { get; }
+
+   /// <summary>
+   /// The merge engine whose database holds the tables of this provider's sources, if one does (an Excel folder's
+   /// sheets are loaded into it). A fragment of such a source is loaded into its merge table by a query of the merge
+   /// engine's own, so its rows never leave the database.
+   /// </summary>
+   public virtual IMergeEngine? Host => null;
+
+   /// <summary>Opens a connection to one of the provider's sources: by default, from the application's factory.</summary>
+   public virtual ValueTask<DbConnection> OpenConnectionAsync(SourceInfo source, IConnectionFactory connections, CancellationToken cancellationToken)
+   {
+      ArgumentNullException.ThrowIfNull(connections);
+      return connections.OpenAsync(source, cancellationToken);
+   }
+
+   /// <summary>
+   /// Readies the tables a statement reads before it runs: nothing, for databases; an Excel folder loads the sheets
+   /// whose workbooks changed since they were last loaded.
+   /// </summary>
+   public virtual ValueTask PrepareReadAsync(SourceInfo source, IReadOnlyList<TableEntity> tables, QueryEngineOptions options, CancellationToken cancellationToken) =>
+      ValueTask.CompletedTask;
 
    /// <summary>
    /// Readies a connection the engine was given before a query runs on it: session settings the language's

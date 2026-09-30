@@ -203,6 +203,45 @@ Merge SQL
   LEFT JOIN f2 ON f1.customer_id = f2.id
   ORDER BY f1.id
 
+### run across a folder of workbooks and SQLite, with the SQL
+exit 0
+--- out
+-- xl (DuckDB), copied into f1 inside the merge engine
+SELECT l.customer_id, l.amount
+FROM excel_xl.budget.lines AS l
+
+-- shop (SQLite), fetched into f2 by the keys of f1.customer_id when they are few enough
+SELECT c.id, c.name
+FROM customers AS c
+
+-- merge (DuckDB)
+SELECT f2.name, coalesce(sum(f1.amount), 0) AS total
+FROM f1
+INNER JOIN f2 ON f1.customer_id = f2.id
+GROUP BY f2.name
+ORDER BY f2.name
+
+name      | total
+----------+------
+Acme Ltd  |    15
+Beta Corp |    20
+(2 rows; (time))
+--- err
+gdq: warning: xl: 'broken.xlsx' can't be read: it isn't an .xlsx workbook, or it is encrypted
+
+### schema of a folder of workbooks
+exit 0
+--- out
+xl.budget.lines (table, no key)
+   customer_id int64?, amount double?
+--- err
+gdq: warning: xl: 'broken.xlsx' can't be read: it isn't an .xlsx workbook, or it is encrypted
+
+### a folder that doesn't exist
+exit 2
+--- err
+gdq: The folder of workbooks for 'xl' doesn't exist: missing-folder
+
 ### first() of no rows
 exit 2
 --- err
@@ -230,7 +269,7 @@ error GDQ2001: There is no 'totl' here. Did you mean 'total'?
 ### a source that isn't one
 exit 2
 --- err
-gdq: 'oracle' is not a source kind; use sqlite or duckdb
+gdq: 'oracle' is not a source kind; use sqlite, duckdb or excel
 
 ### a database that doesn't exist
 exit 2

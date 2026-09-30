@@ -40,6 +40,17 @@ internal sealed class DuckDbDialect : SqlDialect
       _ => "VARCHAR",
    };
 
+   /// <summary>
+   /// A date-time compared with a date-time with an offset is taken as UTC: DuckDB compares TIMESTAMP with
+   /// TIMESTAMPTZ, but not the merge engine's TIMESTAMP_NS, without a cast.
+   /// </summary>
+   internal override SqlExpr Compare(SqlBinaryOp op, SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType)
+   {
+      if (leftType.Kind == ScalarKind.DateTime && rightType.Kind == ScalarKind.DateTimeOffset) { left = new SqlCast(left, TypeName(rightType)); }
+      else if (leftType.Kind == ScalarKind.DateTimeOffset && rightType.Kind == ScalarKind.DateTime) { right = new SqlCast(right, TypeName(leftType)); }
+      return new SqlBinary(op, left, right);
+   }
+
    private protected override void WriteBinary(StringBuilder text, byte[] value)
    {
       text.Append("CAST('");

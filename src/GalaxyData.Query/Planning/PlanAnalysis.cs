@@ -163,6 +163,21 @@ internal static class PlanAnalysis
       foreach (PlanNode input in node.Inputs) { AddSources(input, sources); }
    }
 
+   /// <summary>The tables a plan reads, its subqueries' included, each once.</summary>
+   public static List<TableEntity> Tables(PlanNode plan)
+   {
+      List<TableEntity> tables = [];
+      AddTables(plan, tables);
+      return tables;
+   }
+
+   private static void AddTables(PlanNode node, List<TableEntity> tables)
+   {
+      if (node is ScanNode scan && !tables.Contains(scan.Entity)) { tables.Add(scan.Entity); }
+      foreach (PlanNode subquery in Subqueries(node)) { AddTables(subquery, tables); }
+      foreach (PlanNode input in node.Inputs) { AddTables(input, tables); }
+   }
+
    /// <summary>The plans of the subqueries in a node's own expressions.</summary>
    public static List<PlanNode> Subqueries(PlanNode node)
    {

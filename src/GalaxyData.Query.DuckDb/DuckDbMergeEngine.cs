@@ -86,7 +86,7 @@ public sealed class DuckDbMergeEngine : IMergeEngine, IDisposable
    }
 
    /// <summary>A new connection to the merge database, which is opened with its settings the first time.</summary>
-   private DuckDBConnection Connect()
+   internal DuckDBConnection Connect()
    {
       lock (gate)
       {
@@ -176,9 +176,11 @@ public sealed class DuckDbMergeEngine : IMergeEngine, IDisposable
          DuckDBConnection loader = engine.Connect();
          try
          {
+            // Fragments of sources kept in the merge engine run their SQL on it (AppendQueryAsync), in UTC as every query does.
+            await engine.Provider.PrepareConnectionAsync(loader, cancellationToken).ConfigureAwait(false);
             string definitions = string.Join(", ", columns.Select(c => SqlDialect.DuckDb.QuoteIdentifier(c.Name) + " " + DuckDbTypeMapper.TypeName(c.Type)));
             await loader.ExecuteAsync($"CREATE TABLE {schema}.{SqlDialect.DuckDb.QuoteIdentifier(name)} ({definitions})", cancellationToken).ConfigureAwait(false);
-            return new TableWriter(loader, loader.CreateAppender(schema, name), columns);
+            return new TableWriter(loader, schema, name, columns);
          }
          catch
          {
@@ -230,11 +232,13 @@ public sealed class DuckDbMergeEngine : IMergeEngine, IDisposable
    }
 
    /// <summary>
-   /// Appends rows through an appender. Each value is checked against its column before any of the row is appended:
-   /// a row the appender takes only in part must be cleared before the appender is disposed, or DuckDB crashes.
+   /// Appends rows through an appender, made for the first row. Each value is checked against its column before any
+   /// of the row is appended: a row the appender takes only in part must be cleared before the appender is disposed,
+   /// or DuckDB crashes. Rows of queries over the database's own tables are inserted by them.
    /// </summary>
-   private sealed class TableWriter(DuckDBConnection connection, DuckDBAppender appender, IReadOnlyList<MergeColumn> columns) : IMergeTableWriter
+   private sealed class TableWriter(DuckDBConnection connection, string schema, string name, IReadOnlyList<MergeColumn> columns) : IMergeTableWriter
    {
+      private DuckDBAppender? appender;
       private bool completed;
 
       public void Append(object?[] row)
@@ -242,10 +246,11 @@ public sealed class DuckDbMergeEngine : IMergeEngine, IDisposable
          ArgumentNullException.ThrowIfNull(row);
          if (row.Length != columns.Count) { throw new ArgumentException($"A row of {row.Length} values for a table of {columns.Count} columns", nameof(row)); }
          for (int i = 0; i < row.Length; i++) { row[i] = Stored(row[i], columns[i]); }
+         appender ??= connection.CreateAppender(schema, name);
          try
          {
             IDuckDBAppenderRow line = appender.CreateRow();
-            foreach (object? value in row) { line = Value(line, value); }
+            foreach (object? value in row) { line = DuckDbAppending.Append(line, value); }
             line.EndRow();
          }
          catch
@@ -286,31 +291,26 @@ public sealed class DuckDbMergeEngine : IMergeEngine, IDisposable
          return type.Kind == ScalarKind.Decimal && type.Precision == 0 ? (double)(decimal)value : value;
       }
 
-      private static IDuckDBAppenderRow Value(IDuckDBAppenderRow row, object? value) => value switch
+      public async ValueTask<long> AppendQueryAsync(Action<DbCommand> prepare, CancellationToken cancellationToken)
       {
-         null => row.AppendNullValue(),
-         bool flag => row.AppendValue((bool?)flag),
-         short number => row.AppendValue((short?)number),
-         int number => row.AppendValue((int?)number),
-         long number => row.AppendValue((long?)number),
-         float number => row.AppendValue((float?)number),
-         double number => row.AppendValue((double?)number),
-         decimal number => row.AppendValue((decimal?)number),
-         string text => row.AppendValue(text),
-         byte[] bytes => row.AppendValue(bytes),
-         Guid guid => row.AppendValue((Guid?)guid),
-         DateOnly date => row.AppendValue((DateOnly?)date),
-         TimeOnly time => row.AppendValue((TimeOnly?)time),
-         DateTime dateTime => row.AppendValue((DateTime?)dateTime),
-         DateTimeOffset offset => row.AppendValue((DateTimeOffset?)offset),
-         TimeSpan interval => row.AppendValue((TimeSpan?)interval),
-         _ => throw new InvalidCastException($"A {value.GetType().Name} can't be appended"),
-      };
+         ArgumentNullException.ThrowIfNull(prepare);
+         // Rows appended so far go in first, in order.
+         appender?.Close();
+         appender = null;
+         await using DuckDBCommand command = connection.CreateCommand();
+         prepare(command);
+         string names = string.Join(", ", columns.Select(c => SqlDialect.DuckDb.QuoteIdentifier(c.Name)));
+         command.CommandText = $"INSERT INTO {schema}.{SqlDialect.DuckDb.QuoteIdentifier(name)} ({names}) {command.CommandText}";
+         using (cancellationToken.Register(static c => ((DbCommand)c!).Cancel(), command))
+         {
+            return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+         }
+      }
 
       public ValueTask CompleteAsync(CancellationToken cancellationToken)
       {
          completed = true;
-         appender.Close();
+         appender?.Close();
          return ValueTask.CompletedTask;
       }
 
@@ -318,7 +318,7 @@ public sealed class DuckDbMergeEngine : IMergeEngine, IDisposable
       {
          try
          {
-            if (!completed)
+            if (!completed && appender != null)
             {
                // The rows of a load that failed: their table is going too.
                appender.Clear();

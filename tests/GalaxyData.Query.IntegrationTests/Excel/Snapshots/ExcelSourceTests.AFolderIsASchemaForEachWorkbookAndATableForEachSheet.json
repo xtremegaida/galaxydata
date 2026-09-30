@@ -1,0 +1,90 @@
+{
+  "providerKind": "excel",
+  "defaultSchema": "",
+  "tables": [
+    {
+      "schema": "Budget 2024",
+      "name": "Q2",
+      "columns": [
+        {
+          "name": "quarter",
+          "nativeType": "VARCHAR",
+          "type": "string?"
+        },
+        {
+          "name": "target",
+          "ordinal": 1,
+          "nativeType": "BIGINT",
+          "type": "int64?"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [],
+      "rowCountEstimate": 1
+    },
+    {
+      "schema": "Budget 2024",
+      "name": "Sheet 1",
+      "columns": [
+        {
+          "name": "dept",
+          "nativeType": "VARCHAR",
+          "type": "string?"
+        },
+        {
+          "name": "amount",
+          "ordinal": 1,
+          "nativeType": "DOUBLE",
+          "type": "double?"
+        },
+        {
+          "name": "month",
+          "ordinal": 2,
+          "nativeType": "DATE",
+          "type": "date?"
+        },
+        {
+          "name": "customer_id",
+          "ordinal": 3,
+          "nativeType": "BIGINT",
+          "type": "int64?"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [],
+      "rowCountEstimate": 5
+    },
+    {
+      "schema": "customers",
+      "name": "list",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "BIGINT",
+          "type": "int64?"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "nativeType": "VARCHAR",
+          "type": "string?"
+        },
+        {
+          "name": "tier",
+          "ordinal": 2,
+          "nativeType": "VARCHAR",
+          "type": "string?"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [],
+      "rowCountEstimate": 3
+    }
+  ],
+  "warnings": [
+    "'broken.xlsx' can't be read: it isn't an .xlsx workbook, or it is encrypted"
+  ]
+}

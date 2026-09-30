@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Cli;
+using GalaxyData.Query.IntegrationTests.Excel;
 using GalaxyData.Testing;
 using Xunit;
 
@@ -62,6 +63,16 @@ public sealed partial class GdqTests
       {
          File.Delete(overlay);
       }
+      using (TempFolder folder = new())
+      {
+         new XlsxBuilder().Sheet("lines", ["customer_id", "amount"], [1, 10.5], [2, 20], [1, 4.5]).Save(folder.File("budget.xlsx"));
+         await File.WriteAllTextAsync(folder.File("broken.xlsx"), "not a workbook", TestContext.Current.CancellationToken);
+         string excel = "xl=excel:" + folder.Path;
+         transcript.Append(await RunAsync("run across a folder of workbooks and SQLite, with the SQL", ["run", "-s", Sqlite, "-s", excel, "--sql",
+            "xl.budget.lines.join(shop.customers, outer.customer_id == inner.id, b: outer, c: inner).groupBy(c.name).select(name: c.name, total: b.sum(amount)).orderBy(name)"]));
+         transcript.Append(await RunAsync("schema of a folder of workbooks", ["schema", "-s", excel]));
+      }
+      transcript.Append(await RunAsync("a folder that doesn't exist", ["run", "-s", "xl=excel:missing-folder", "xl.budget.lines"]));
       transcript.Append(await RunAsync("first() of no rows", ["run", "-s", Sqlite, "shop.orders.where(total > 1000000).first()"]));
       transcript.Append(await RunAsync("schema, filtered", ["schema", "-s", Sqlite, "order"]));
       transcript.Append(await RunAsync("a query that doesn't bind", ["run", "-s", Sqlite, "shop.orders\n  .where(totl > 5)"]));

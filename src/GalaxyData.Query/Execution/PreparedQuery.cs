@@ -83,11 +83,11 @@ public sealed class PreparedQuery
 
       QueryFragment fragment = Fragments[0];
       SourceProvider provider = engine.Provider(fragment.Source);
-      DbConnection connection = await engine.Connections.OpenAsync(fragment.Source, cancellationToken).ConfigureAwait(false);
+      await engine.PrepareReadAsync(fragment, cancellationToken).ConfigureAwait(false);
+      DbConnection connection = await engine.OpenAsync(fragment.Source, cancellationToken).ConfigureAwait(false);
       DbCommand? command = null;
       try
       {
-         await provider.PrepareConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
          command = connection.CreateCommand();
          provider.PrepareCommand(command);
          Bind(command, fragment.Statement, fragment.Dialect, provider, stats.Started, null);

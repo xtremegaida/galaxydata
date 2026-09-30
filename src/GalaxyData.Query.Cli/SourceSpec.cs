@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DuckDB.NET.Data;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.DuckDb;
+using GalaxyData.Query.Excel;
 using GalaxyData.Query.Execution;
 using GalaxyData.Query.Introspection;
 using GalaxyData.Query.Language;
@@ -19,11 +21,11 @@ namespace GalaxyData.Query.Cli;
 /// <summary>
 /// A source given on the command line as <c>alias=kind:target</c>. The target is a database file (opened read-only),
 /// a <c>.sql</c> script (run into a fresh in-memory database), <c>:memory:</c>, or a connection string (anything with
-/// an <c>=</c> in it).
+/// an <c>=</c> in it); for <c>excel</c>, a folder of workbooks.
 /// </summary>
 internal sealed record SourceSpec(string Alias, string Kind, string Target)
 {
-   public static IReadOnlyList<string> Kinds { get; } = ["sqlite", "duckdb"];
+   public static IReadOnlyList<string> Kinds { get; } = ["sqlite", "duckdb", "excel"];
 
    public static SourceSpec Parse(string text)
    {
@@ -37,7 +39,7 @@ internal sealed record SourceSpec(string Alias, string Kind, string Target)
       string kind = text[(equals + 1)..colon].Trim().ToLowerInvariant();
       string target = text[(colon + 1)..].Trim();
       if (!QueryText.IsBareIdentifier(alias)) { throw new FormatException($"'{alias}' can't be a source alias; use letters, digits and underscores"); }
-      if (!((IList<string>)Kinds).Contains(kind)) { throw new FormatException($"'{kind}' is not a source kind; use {string.Join(" or ", Kinds)}"); }
+      if (!((IList<string>)Kinds).Contains(kind)) { throw new FormatException($"'{kind}' is not a source kind; use {string.Join(", ", Kinds.Take(Kinds.Count - 1))} or {Kinds[^1]}"); }
       if (target.Length == 0) { throw new FormatException($"The source '{alias}' needs a target after '{kind}:'"); }
       return new SourceSpec(alias, kind, target);
    }
@@ -47,15 +49,22 @@ internal sealed record SourceSpec(string Alias, string Kind, string Target)
    public bool IsMemory => Target == ":memory:";
 }
 
-/// <summary>The command line's sources, opened: each keeps a first connection open, which in-memory databases need.</summary>
-internal sealed class CliSources : IConnectionFactory, IAsyncDisposable
+/// <summary>
+/// The command line's sources, opened: each database keeps a first connection open, which in-memory databases need;
+/// folders of workbooks are registered with the Excel provider, which opens their connections itself.
+/// </summary>
+internal sealed class CliSources(ExcelSourceProvider excel) : IConnectionFactory, IAsyncDisposable
 {
    private readonly Dictionary<string, (DbConnection Keeper, Func<DbConnection> Open)> opened = new(StringComparer.Ordinal);
+   private readonly HashSet<string> aliases = new(StringComparer.Ordinal);
    private readonly CatalogBuilder builder = new();
 
-   public static async Task<CliSources> OpenAsync(IEnumerable<SourceSpec> specs, CancellationToken cancellationToken)
+   /// <summary>What the sources' schemas left out (workbooks that can't be read).</summary>
+   public List<string> Warnings { get; } = [];
+
+   public static async Task<CliSources> OpenAsync(IEnumerable<SourceSpec> specs, ExcelSourceProvider excel, CancellationToken cancellationToken)
    {
-      CliSources sources = new();
+      CliSources sources = new(excel);
       try
       {
          foreach (SourceSpec spec in specs) { await sources.AddAsync(spec, cancellationToken); }
@@ -72,7 +81,12 @@ internal sealed class CliSources : IConnectionFactory, IAsyncDisposable
 
    private async Task AddAsync(SourceSpec spec, CancellationToken cancellationToken)
    {
-      if (opened.ContainsKey(spec.Alias)) { throw new FormatException($"The source alias '{spec.Alias}' is given twice"); }
+      if (!aliases.Add(spec.Alias)) { throw new FormatException($"The source alias '{spec.Alias}' is given twice"); }
+      if (spec.Kind == ExcelSourceProvider.Kind)
+      {
+         await AddFolderAsync(spec, cancellationToken);
+         return;
+      }
       (DbConnection keeper, Func<DbConnection> open, SourceProvider provider) = spec.Kind switch
       {
          "sqlite" => Sqlite(spec),
@@ -91,6 +105,15 @@ internal sealed class CliSources : IConnectionFactory, IAsyncDisposable
          await keeper.DisposeAsync();
          throw;
       }
+   }
+
+   private async Task AddFolderAsync(SourceSpec spec, CancellationToken cancellationToken)
+   {
+      if (!Directory.Exists(spec.Target)) { throw new DirectoryNotFoundException($"The folder of workbooks for '{spec.Alias}' doesn't exist: {spec.Target}"); }
+      excel.AddFolder(spec.Alias, new ExcelFolderOptions { Path = Path.GetFullPath(spec.Target) });
+      SourceSchema schema = await excel.IntrospectAsync(spec.Alias, IntrospectionOptions.Default, cancellationToken);
+      builder.AddSource(excel.Source(spec.Alias), schema);
+      foreach (string warning in schema.Warnings ?? []) { Warnings.Add($"{spec.Alias}: {warning}"); }
    }
 
    private static (DbConnection, Func<DbConnection>, SourceProvider) Sqlite(SourceSpec spec)

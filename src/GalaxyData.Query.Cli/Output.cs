@@ -139,11 +139,14 @@ internal static class Output
    {
       foreach (QueryFragment fragment in prepared.Fragments)
       {
+         // The rows of a source kept in the merge engine's database never leave it.
+         string fetched = fragment.InMergeEngine ? "copied" : "fetched";
+         string inside = fragment.InMergeEngine ? " inside the merge engine" : string.Empty;
          string how = fragment switch
          {
             { Value: { } value } => ", worked out first as " + value,
-            { BindJoin: { } bind } => $", fetched into {fragment.Table} by the keys of {bind.Driver.Table}.{bind.DriverColumn} when they are few enough",
-            { Table: { } table } => ", fetched into " + table,
+            { BindJoin: { } bind } => $", {fetched} into {fragment.Table}{inside} by the keys of {bind.Driver.Table}.{bind.DriverColumn} when they are few enough",
+            { Table: { } table } => $", {fetched} into {table}{inside}",
             _ => string.Empty,
          };
          writer.WriteLine($"-- {fragment.Source.Alias} ({fragment.Dialect.Name}){how}");

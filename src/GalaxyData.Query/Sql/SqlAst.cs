@@ -278,6 +278,9 @@ internal abstract class SqlTableSource;
 
 internal sealed class SqlTable(string? schema, string name, string alias) : SqlTableSource
 {
+   /// <summary>The database the table is in, for sources that share one; see <see cref="Catalog.SourceInfo.Catalog"/>.</summary>
+   public string? Catalog { get; init; }
+
    public string? Schema { get; } = schema;
 
    public string Name { get; } = name;

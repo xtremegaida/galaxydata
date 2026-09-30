@@ -33,7 +33,11 @@ public sealed record IntrospectionOptions
 /// The physical schema of one source. Introspectors return tables ordered by schema then name, columns by
 /// ordinal, and keys, indexes and foreign keys by name, so the serialized form is stable and can be hashed.
 /// </summary>
-public sealed record SourceSchema(string ProviderKind, string? ServerVersion, string DefaultSchema, IReadOnlyList<TableSchema> Tables);
+public sealed record SourceSchema(string ProviderKind, string? ServerVersion, string DefaultSchema, IReadOnlyList<TableSchema> Tables)
+{
+   /// <summary>What the introspector couldn't read and left out (a workbook of an Excel folder that is damaged); null when nothing.</summary>
+   public IReadOnlyList<string>? Warnings { get; init; }
+}
 
 public enum TableKind : byte
 {

@@ -9,11 +9,13 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="Shouldly" />
+    <PackageReference Include="DocumentFormat.OpenXml" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\GalaxyData.Query.Cli\GalaxyData.Query.Cli.csproj" />
     <ProjectReference Include="..\..\src\GalaxyData.Query.DuckDb\GalaxyData.Query.DuckDb.csproj" />
+    <ProjectReference Include="..\..\src\GalaxyData.Query.Excel\GalaxyData.Query.Excel.csproj" />
     <ProjectReference Include="..\..\src\GalaxyData.Query.Sqlite\GalaxyData.Query.Sqlite.csproj" />
   </ItemGroup>
 

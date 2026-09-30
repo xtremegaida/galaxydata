@@ -27,16 +27,21 @@ internal sealed class Settings
    public int MaxRows { get; set; } = 1000;
 }
 
-/// <summary>An engine over the command line's sources, with its parameters and a merge engine for queries that combine sources.</summary>
+/// <summary>
+/// An engine over the command line's sources, with its parameters and a merge engine for queries that combine
+/// sources (and to keep the sheets of Excel folders in).
+/// </summary>
 internal sealed class Session : IAsyncDisposable
 {
    private readonly DuckDb.DuckDbMergeEngine merge;
+   private readonly Excel.ExcelSourceProvider excel;
 
-   private Session(CliSources sources, QueryEngine engine, DuckDb.DuckDbMergeEngine merge, QueryParameters parameters)
+   private Session(CliSources sources, QueryEngine engine, DuckDb.DuckDbMergeEngine merge, Excel.ExcelSourceProvider excel, QueryParameters parameters)
    {
       Sources = sources;
       Engine = engine;
       this.merge = merge;
+      this.excel = excel;
       Parameters = parameters;
    }
 
@@ -46,23 +51,38 @@ internal sealed class Session : IAsyncDisposable
 
    public QueryParameters Parameters { get; }
 
+   /// <summary>Opens the sources and builds the engine; what their schemas left out is written to <paramref name="error"/>.</summary>
    public static async Task<Session> OpenAsync(IEnumerable<string> sources, FileInfo? overlayFile, IEnumerable<string> parameters, string? mergeMemory,
-                                               CancellationToken cancellationToken)
+                                               TextWriter error, CancellationToken cancellationToken)
    {
       QueryParameters values = new();
       foreach (string parameter in parameters) { ParameterSpec.AddTo(values, parameter); }
       CatalogOverlay overlay = overlayFile == null
          ? CatalogOverlay.Empty
          : CatalogOverlay.FromJson(await File.ReadAllTextAsync(overlayFile.FullName, cancellationToken));
-      CliSources opened = await CliSources.OpenAsync(sources.Select(SourceSpec.Parse).ToList(), cancellationToken);
+      List<SourceSpec> specs = sources.Select(SourceSpec.Parse).ToList();
       DuckDb.DuckDbMergeEngine merge = new(new DuckDb.DuckDbMergeOptions { MemoryLimit = mergeMemory });
-      QueryEngine engine = new(opened.BuildCatalog(overlay), opened, [Sqlite.SqliteSourceProvider.Instance, DuckDb.DuckDbSourceProvider.Instance], merge);
-      return new Session(opened, engine, merge, values);
+      Excel.ExcelSourceProvider excel = new(merge);
+      CliSources opened;
+      try
+      {
+         opened = await CliSources.OpenAsync(specs, excel, cancellationToken);
+      }
+      catch
+      {
+         excel.Dispose();
+         merge.Dispose();
+         throw;
+      }
+      foreach (string warning in opened.Warnings) { await error.WriteLineAsync("gdq: warning: " + warning); }
+      QueryEngine engine = new(opened.BuildCatalog(overlay), opened, [Sqlite.SqliteSourceProvider.Instance, DuckDb.DuckDbSourceProvider.Instance, excel], merge);
+      return new Session(opened, engine, merge, excel, values);
    }
 
    public async ValueTask DisposeAsync()
    {
       await Sources.DisposeAsync();
+      excel.Dispose();
       merge.Dispose();
    }
 }
@@ -74,7 +94,7 @@ internal static class GdqApp
    {
       Option<string[]> sources = new("--source", "-s")
       {
-         Description = "A source as alias=kind:target, e.g. shop=sqlite:shop.db. Kinds: sqlite, duckdb. A .sql target is run into a new in-memory database; files open read-only.",
+         Description = "A source as alias=kind:target, e.g. shop=sqlite:shop.db. Kinds: sqlite, duckdb, excel (a folder of .xlsx workbooks). A .sql target is run into a new in-memory database; files open read-only.",
          Required = true,
       };
       Option<FileInfo?> overlay = new("--overlay") { Description = "A catalog overlay (JSON): relations across sources, virtual entities, renames." };
@@ -99,20 +119,20 @@ internal static class GdqApp
       };
       Command schema = new("schema", "List the entities of the catalog with their columns and navigations.") { sources, overlay, filter };
       Command repl = new("repl", "Run queries interactively.") { sources, overlay, parameters, format, maxRows, mergeMemory };
-      RootCommand root = new("gdq: query SQLite and DuckDB databases with the GalaxyData query language.") { run, sqlCommand, explain, schema, repl };
+      RootCommand root = new("gdq: query SQLite and DuckDB databases and folders of Excel workbooks with the GalaxyData query language.") { run, sqlCommand, explain, schema, repl };
 
       run.SetAction((parse, token) => Guarded(error, async () =>
       {
          string text = await QueryText(parse.GetValue(query), parse.GetValue(file), token);
          await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), parse.GetValue(parameters) ?? [],
-                                                              parse.GetValue(mergeMemory), token);
+                                                              parse.GetValue(mergeMemory), error, token);
          Settings settings = new() { Format = parse.GetValue(format), ShowSql = parse.GetValue(sql), MaxRows = parse.GetValue(maxRows) };
          return await ExecuteAsync(session, text, settings, output, error, token);
       }));
       sqlCommand.SetAction((parse, token) => Guarded(error, async () =>
       {
          string text = await QueryText(parse.GetValue(query), parse.GetValue(file), token);
-         await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), parse.GetValue(parameters) ?? [], null, token);
+         await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), parse.GetValue(parameters) ?? [], null, error, token);
          PreparedQuery prepared = session.Engine.Prepare(text, session.Parameters);
          Output.Diagnostics(error, text, prepared.Diagnostics);
          if (!prepared.Success) { return 1; }
@@ -122,19 +142,19 @@ internal static class GdqApp
       explain.SetAction((parse, token) => Guarded(error, async () =>
       {
          string text = await QueryText(parse.GetValue(query), parse.GetValue(file), token);
-         await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), parse.GetValue(parameters) ?? [], null, token);
+         await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), parse.GetValue(parameters) ?? [], null, error, token);
          return Explain(session, text, parse.GetValue(verbose), output);
       }));
       schema.SetAction((parse, token) => Guarded(error, async () =>
       {
-         await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), [], null, token);
+         await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), [], null, error, token);
          Output.Catalog(output, session.Engine.Catalog, parse.GetValue(filter));
          return 0;
       }));
       repl.SetAction((parse, token) => Guarded(error, async () =>
       {
          await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), parse.GetValue(parameters) ?? [],
-                                                              parse.GetValue(mergeMemory), token);
+                                                              parse.GetValue(mergeMemory), error, token);
          Settings settings = new() { Format = parse.GetValue(format), MaxRows = parse.GetValue(maxRows) };
          return await new Repl(session, input, output, error, settings).RunAsync(token);
       }));

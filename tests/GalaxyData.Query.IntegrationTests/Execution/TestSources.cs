@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using DuckDB.NET.Data;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.DuckDb;
+using GalaxyData.Query.Excel;
 using GalaxyData.Query.Execution;
 using GalaxyData.Query.Introspection;
 using GalaxyData.Query.Providers;
@@ -21,7 +22,8 @@ namespace GalaxyData.Query.IntegrationTests.Execution;
 
 /// <summary>
 /// In-memory databases the engine can open connections to: a shared-cache SQLite database, or a DuckDB database
-/// reached through duplicates of one connection. The first connection keeps the database alive.
+/// reached through duplicates of one connection. The first connection keeps the database alive. Folders of
+/// workbooks are registered with an Excel provider over <see cref="Merge"/>, which opens their connections itself.
 /// </summary>
 internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
 {
@@ -29,6 +31,7 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
    private readonly CatalogBuilder builder = new();
    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> openedBySource = new(StringComparer.Ordinal);
    private DuckDbMergeEngine? merge;
+   private ExcelSourceProvider? excel;
    private int opened;
 
    public int Opened => Volatile.Read(ref opened);
@@ -38,6 +41,22 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
 
    /// <summary>The merge engine of the engines made here, unless one is given; made when first needed.</summary>
    public DuckDbMergeEngine Merge => merge ??= new DuckDbMergeEngine();
+
+   /// <summary>The Excel provider, over <see cref="Merge"/>; made when first needed.</summary>
+   public ExcelSourceProvider Excel => excel ??= new ExcelSourceProvider(Merge);
+
+   /// <summary>Adds a folder of workbooks as a source; its schema, as read, is kept in <see cref="Schemas"/>.</summary>
+   public async Task<TestSources> AddExcelAsync(string alias, string path, ExcelFolderOptions? options = null)
+   {
+      Excel.AddFolder(alias, options ?? new ExcelFolderOptions { Path = path });
+      SourceSchema schema = await Excel.IntrospectAsync(alias, IntrospectionOptions.Default, CancellationToken.None);
+      builder.AddSource(Excel.Source(alias), schema);
+      Schemas[alias] = schema;
+      return this;
+   }
+
+   /// <summary>The schemas of the folders added, by alias.</summary>
+   public Dictionary<string, SourceSchema> Schemas { get; } = new(StringComparer.Ordinal);
 
    public async Task<TestSources> AddSqliteAsync(string alias, string script, bool trustForeignKeys = false)
    {
@@ -67,7 +86,8 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
 
    /// <summary>An engine over the sources; queries that combine them run in <see cref="Merge"/>, or <paramref name="merge"/>, unless <paramref name="noMerge"/>.</summary>
    public QueryEngine Engine(CatalogOverlay? overlay = null, QueryEngineOptions? options = null, IMergeEngine? merge = null, bool noMerge = false) =>
-      new(Catalog(overlay), this, [SqliteSourceProvider.Instance, DuckDbSourceProvider.Instance], noMerge ? null : merge ?? Merge, options);
+      new(Catalog(overlay), this, excel == null ? [SqliteSourceProvider.Instance, DuckDbSourceProvider.Instance] : [SqliteSourceProvider.Instance, DuckDbSourceProvider.Instance, excel],
+          noMerge ? null : merge ?? Merge, options);
 
    public QueryCatalog Catalog(CatalogOverlay? overlay = null) => builder.WithOverlay(overlay ?? CatalogOverlay.Empty).Build();
 
@@ -86,6 +106,7 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
    public async ValueTask DisposeAsync()
    {
       foreach ((DbConnection keeper, _) in sources.Values) { await keeper.DisposeAsync(); }
+      excel?.Dispose();
       merge?.Dispose();
    }
 

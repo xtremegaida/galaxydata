@@ -242,10 +242,12 @@ internal sealed class SqlBuilder
       Frame frame = new();
       TableEntity table = scan.Entity;
       string alias = Alias(table.Table);
-      string? schema = string.IsNullOrEmpty(table.Schema) || string.Equals(table.Schema, options.DefaultSchema ?? table.Source.DefaultSchema, StringComparison.Ordinal)
+      // A table in a database shared with other sources is named in full.
+      string? schema = table.Source.Catalog == null &&
+                       (string.IsNullOrEmpty(table.Schema) || string.Equals(table.Schema, options.DefaultSchema ?? table.Source.DefaultSchema, StringComparison.Ordinal))
          ? null
          : table.Schema;
-      frame.Select.From = new SqlTable(schema, table.Table, alias);
+      frame.Select.From = new SqlTable(schema, table.Table, alias) { Catalog = table.Source.Catalog };
       foreach (ScanColumn column in scan.Columns) { frame.Columns[column.Output] = new SqlColumn(alias, column.Column.Name); }
       return frame;
    }
