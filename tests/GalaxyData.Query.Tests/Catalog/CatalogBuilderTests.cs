@@ -303,6 +303,73 @@ public sealed class CatalogBuilderTests
       catalog.Diagnostics.Select(d => d.Code).ShouldBe([DiagnosticCodes.NavigationNameTaken, DiagnosticCodes.UnknownNavigation]);
    }
 
+   /// <summary>Each problem with the overlay says which of its items it is with, so a tool can mark that one.</summary>
+   [Fact]
+   public void OverlayProblemsNameTheirItems()
+   {
+      CatalogOverlay overlay = new()
+      {
+         Relations =
+         [
+            new OverlayRelation("shop.addresses", ["id"], "shop.orders", ["id"]) { Name = "buyer" },
+            new OverlayRelation("shop.orders", ["nope"], "shop.customers", ["id"]),
+            new OverlayRelation("shop.order_lines", ["qty"], "shop.addresses", ["id"]) { Name = "line_no" },
+            new OverlayRelation("shop.orders", ["customer_id"], "shop.customers", ["id"]),
+            new OverlayRelation("shop.main.addresses", ["id"], "shop.orders", ["id"]),
+            new OverlayRelation("shop.orders", ["id", "ID"], "shop.order_lines", ["order_id", "line_no"]),
+         ],
+         VirtualEntities =
+         [
+            new OverlayVirtualEntity("reports.fine", "shop.orders.where(total > 1)"),
+            new OverlayVirtualEntity("reports.bad", "shop.orders.where(nope > 1)"),
+         ],
+         Entities =
+         [
+            new OverlayEntitySettings("shop.orders") { DisplayColumn = "status" },
+            new OverlayEntitySettings("shop.customers") { DisplayColumn = "nope", Columns = [new OverlayColumn("name") { Label = "Name" }, new OverlayColumn("NAME") { Hidden = true }] },
+            new OverlayEntitySettings("SHOP.main.Orders") { Hidden = true },
+            new OverlayEntitySettings("reports.bad") { DisplayColumn = "id" },
+         ],
+         Navigations =
+         [
+            new OverlayNavigation("shop.addresses", "buyer") { RenameTo = "client" },
+            new OverlayNavigation("shop.main.addresses", "buyer") { Hidden = true },
+            new OverlayNavigation("shop.nope", "x") { Hidden = true },
+            new OverlayNavigation("reports.bad", "customer") { Hidden = true },
+         ],
+      };
+      QueryCatalog catalog = Build(overlay, ("shop", Shop()));
+      catalog.Diagnostics.Select(d => (d.Code, Item: d.Item?.ToString())).ShouldBe(
+      [
+         (DiagnosticCodes.DuplicateOverlayItem, "EntitySettings[2]"),
+         (DiagnosticCodes.DuplicateOverlayItem, "EntitySettings[1]"),
+         (DiagnosticCodes.UnknownColumn, "EntitySettings[1]"),
+         (DiagnosticCodes.BrokenVirtualEntity, "EntitySettings[3]"),
+         (DiagnosticCodes.DuplicateOverlayItem, "Navigation[1]"),
+         (DiagnosticCodes.UnknownEntity, "Navigation[2]"),
+         (DiagnosticCodes.BrokenVirtualEntity, "Navigation[3]"),
+         (DiagnosticCodes.UnknownColumn, "Relation[1]"),
+         (DiagnosticCodes.NavigationNameTaken, "Relation[2]"),
+         (DiagnosticCodes.DuplicateOverlayItem, "Relation[3]"),
+         (DiagnosticCodes.DuplicateOverlayItem, "Relation[4]"),
+         (DiagnosticCodes.DuplicateOverlayItem, "Relation[5]"),
+         (DiagnosticCodes.BrokenVirtualEntity, "VirtualEntity[1]"),
+      ], ignoreOrder: true);
+      CatalogDiagnostic duplicate = catalog.Diagnostics.First(d => d.Item == new OverlayItemRef(OverlayItemKind.EntitySettings, 2));
+      duplicate.Message.ShouldBe("'SHOP.main.Orders' is shop.orders, which has settings already (as 'shop.orders'), so these are left out");
+      catalog.Entity("shop.orders").Hidden.ShouldBeFalse("the second setting is left out");
+      catalog.Entity("shop.addresses").Nav("client").Hidden.ShouldBeFalse("so is the second override");
+      catalog.Diagnostics.Where(d => d.Item == null).ShouldBeEmpty();
+      catalog.Entity("shop.addresses").Nav("client").Relation.OverlayItem.ShouldBe(new OverlayItemRef(OverlayItemKind.Relation, 0));
+      catalog.Entity("shop.orders").Nav("customer").Relation.OverlayItem.ShouldBeNull();
+      catalog.Diagnostics.First(d => d.Item == new OverlayItemRef(OverlayItemKind.Relation, 3)).Message
+         .ShouldBe("The database declares this relation already (a foreign key): rename its navigations instead");
+      catalog.Diagnostics.First(d => d.Item == new OverlayItemRef(OverlayItemKind.Relation, 5)).Message.ShouldBe("Column id is named twice");
+      ColumnDef name = catalog.Entity("shop.customers").Columns.Single(c => c.Name == "name");
+      (name.Label, name.Hidden).ShouldBe(("Name", false), "the first settings of a column apply, the second are left out");
+      catalog.FindEntity("reports.fine").ShouldBeOfType<VirtualEntity>().OverlayItem.ShouldBe(new OverlayItemRef(OverlayItemKind.VirtualEntity, 0));
+   }
+
    [Fact]
    public void OverlaySettingsDeclareKeysLabelsAndTypes()
    {

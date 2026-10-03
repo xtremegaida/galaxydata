@@ -174,6 +174,6 @@ public sealed class SignInTests
       await using WebAppFactory factory = new();
       TestApi api = new(factory);
       JsonElement problem = await (await api.PostAsync("/api/auth/sign-in", new { userName = "admin" })).ProblemAsync(400, ProblemCodes.InvalidRequest);
-      problem.GetProperty("errors").EnumerateObject().Select(e => e.Name).ShouldBe(["Password"]);
+      problem.GetProperty("errors").EnumerateObject().Select(e => e.Name).ShouldBe(["password"]);
    }
 }

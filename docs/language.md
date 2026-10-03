@@ -1954,7 +1954,8 @@ WHERE order_id = 1003 AND line_no = 1;
 Problems are `QueryDiagnostic`s: a code, a severity, a message, and the range of the query text they are about
 (`Start`, `End`). Binding stops at the first error. Codes starting `GDQ1` are about the text, `GDQ2` about binding
 (`GDQ21..` are warnings), `GDQ3` about planning and running (`GDQ31..` are warnings), and `GDQ5` about the catalog
-(in `ICatalog.Diagnostics`, shown by `gdq schema`).
+(in `ICatalog.Diagnostics`, shown by `gdq schema`; one about an item of the overlay names it, in `Item`: its list
+and index).
 
 | Code | Severity | Meaning |
 |---|---|---|
@@ -2010,6 +2011,7 @@ Problems are `QueryDiagnostic`s: a code, a severity, a message, and the range of
 | GDQ5012 | warning or error | A navigation name is taken: an explicit name had to change (warning), or a rename can't be made (error). |
 | GDQ5013 | warning | A key declared in the overlay for a table that has a primary key; it is ignored. |
 | GDQ5015 | error | An entity path in the overlay that isn't valid, or a virtual entity's name without a namespace, or one that exists already. |
+| GDQ5016 | error | Something the overlay gives twice: settings for an entity (or a column) that has some already, an override of a navigation renamed or hidden already, a relation the overlay or the database has already, or a column named twice; the second is left out. |
 
 ## 13. Limits
 

@@ -214,6 +214,9 @@ public sealed class VirtualEntity : EntityDef
 
    public string QueryText { get; }
 
+   /// <summary>The overlay's virtual entity it is.</summary>
+   public OverlayItemRef? OverlayItem { get; internal set; }
+
    public override EntityKind Kind => EntityKind.Virtual;
 
    /// <summary>The bound definition; null until bound, or when binding failed.</summary>
@@ -356,6 +359,9 @@ public sealed class RelationDef
    public IReadOnlyList<ColumnDef> ToColumns { get; }
 
    public bool IsEnforced { get; }
+
+   /// <summary>The overlay's relation it is, for one the overlay adds.</summary>
+   public OverlayItemRef? OverlayItem { get; internal set; }
 
    /// <summary>The dependent columns are themselves unique, so the inverse is a single reference.</summary>
    public bool FromIsUnique { get; }

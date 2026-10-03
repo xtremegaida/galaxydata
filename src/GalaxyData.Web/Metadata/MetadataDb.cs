@@ -19,6 +19,14 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
 {
    public const string FileName = "galaxydata.db";
 
+   /// <summary>The longest entity path the overlay keeps.</summary>
+   public const int PathLength = 400;
+
+   /// <summary>The longest name of a column or navigation the overlay keeps.</summary>
+   public const int NameLength = 200;
+
+   public const int DescriptionLength = 1000;
+
    public DbSet<AppUser> Users => Set<AppUser>();
 
    public DbSet<AdminAuditEvent> AdminAuditEvents => Set<AdminAuditEvent>();
@@ -28,6 +36,14 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
    public DbSet<SourceConnection> Connections => Set<SourceConnection>();
 
    public DbSet<SchemaSnapshot> SchemaSnapshots => Set<SchemaSnapshot>();
+
+   public DbSet<RelationDefinition> OverlayRelations => Set<RelationDefinition>();
+
+   public DbSet<NavigationOverride> OverlayNavigations => Set<NavigationOverride>();
+
+   public DbSet<VirtualEntityDefinition> OverlayVirtualEntities => Set<VirtualEntityDefinition>();
+
+   public DbSet<EntitySettings> OverlayEntitySettings => Set<EntitySettings>();
 
    /// <summary>The database's path in a data directory.</summary>
    public static string PathIn(DataDirectory data)
@@ -89,6 +105,43 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
          snapshot.Property(s => s.Hash).HasMaxLength(64);
          snapshot.HasOne<SourceConnection>().WithMany().HasForeignKey(s => s.ConnectionId).OnDelete(DeleteBehavior.Cascade);
          snapshot.HasIndex(s => new { s.ConnectionId, s.Id });
+      });
+      // Entity paths are compared exactly: pg.Orders and pg.orders may be two tables. The catalog finds settings
+      // and overrides that reach one entity by two paths.
+      modelBuilder.Entity<RelationDefinition>(relation =>
+      {
+         relation.ToTable("OverlayRelations");
+         relation.Property(r => r.From).HasMaxLength(PathLength);
+         relation.Property(r => r.To).HasMaxLength(PathLength);
+         relation.Property(r => r.Name).HasMaxLength(NameLength);
+         relation.Property(r => r.InverseName).HasMaxLength(NameLength);
+         relation.Property(r => r.Description).HasMaxLength(DescriptionLength);
+         relation.Property(r => r.Version).IsConcurrencyToken();
+      });
+      modelBuilder.Entity<NavigationOverride>(navigation =>
+      {
+         navigation.ToTable("OverlayNavigations");
+         navigation.Property(n => n.Entity).HasMaxLength(PathLength);
+         navigation.Property(n => n.Navigation).HasMaxLength(NameLength);
+         navigation.Property(n => n.RenameTo).HasMaxLength(NameLength);
+         navigation.HasIndex(n => new { n.Entity, n.Navigation }).IsUnique();
+         navigation.Property(n => n.Version).IsConcurrencyToken();
+      });
+      modelBuilder.Entity<VirtualEntityDefinition>(entity =>
+      {
+         entity.ToTable("OverlayVirtualEntities");
+         entity.Property(v => v.Name).HasMaxLength(PathLength);
+         entity.HasIndex(v => v.Name).IsUnique();
+         entity.Property(v => v.Description).HasMaxLength(DescriptionLength);
+         entity.Property(v => v.Version).IsConcurrencyToken();
+      });
+      modelBuilder.Entity<EntitySettings>(settings =>
+      {
+         settings.ToTable("OverlayEntitySettings");
+         settings.Property(s => s.Entity).HasMaxLength(PathLength);
+         settings.HasIndex(s => s.Entity).IsUnique();
+         settings.Property(s => s.DisplayColumn).HasMaxLength(NameLength);
+         settings.Property(s => s.Version).IsConcurrencyToken();
       });
       modelBuilder.Entity<MetadataSetting>(setting =>
       {

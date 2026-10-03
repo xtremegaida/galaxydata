@@ -80,7 +80,7 @@ before the upgrade.
 |---|---|
 | `read` | read data and run queries |
 | `dataManager` | also change data |
-| `admin` | also manage users and connections (and, with later features, the overlay), and see the audit |
+| `admin` | also manage users, connections and the overlay, and see the audit |
 
 **Sessions.** Signing in starts a session: the `gd.auth` cookie, which is HttpOnly and SameSite=Strict. It is a
 browser-session cookie that ends after `Auth:SessionIdleTimeout` without requests.
@@ -264,14 +264,15 @@ The catalog is what queries can name: each connection's tables and views, as its
     changed.
   - `GET /api/connections/{id}/snapshots/{snapshotId}` gives one's schema and what changed.
 
-**The catalog.** It is built from each connection's newest snapshot when first needed, and again after anything it
-is built from changes. A request after a change waits for it, so none reads the old one.
+**The catalog.** It is built from each connection's newest snapshot and the overlay when first needed, and again
+after anything it is built from changes. A request after a change waits for it, so none reads the old one.
 
 - **Its version** is a hash of what it was built from: the same after a restart, different after any change.
 - **The header.** API answers carry the version in the `X-Catalog-Version` header, so clients know when to read the
   catalog again. Answers that don't read the catalog carry it too, while it is up to date.
 - `GET /api/catalog` gives the version, the sources (how their schemas stand, how many entities each has), and
-  what building it found (a table whose shortcut a schema's name hides).
+  what building it found (a table whose shortcut a schema's name hides). What it found about an item of the
+  overlay names it (`item`: its kind and id).
 
 **The tree.** `GET /api/catalog/tree/children?parent={id}` gives a node's children; without `parent`, the sources.
 
@@ -385,6 +386,47 @@ anti-forgery token.
   among the rows the crumb leads to (`found`). A crumb that can't be followed says why, and is the last. A trail has
   at most 50 crumbs.
 
+## The overlay
+
+The overlay adds to what the databases declare (see the language reference, 2.8). Administrators edit it, item by
+item, under `/api/overlay`:
+
+| Kind | Path | What it is |
+|---|---|---|
+| Relations | `relations` | A many-to-one relation the databases don't declare, in one source or across two: `from` and `fromColumns`, to the key or a unique key of `to` (`toColumns`). Its navigations are named `name` and `inverseName`, or by the convention. |
+| Navigation overrides | `navigations` | A navigation renamed (`renameTo`) or hidden, found on `entity` by the name the convention gives it (`navigation`). |
+| Virtual entities | `virtual-entities` | An entity defined by a `query`, named with a namespace (`reports.big_orders`), with a declared `key` when the query's isn't the one wanted. |
+| Entity settings | `entity-settings` | For an `entity`: a declared `key` (for views and tables without one; it serves navigation, never changing rows), its `displayColumn`, whether it is `hidden`, and its `columns`' settings (`hidden`, a `label`, and a `type` it is read as, such as `date` for a SQLite text column). |
+
+- **Entities are paths**, as queries write them (`shop.orders`, `xl['Budget 2024']['Sheet 1']`), so items outlive
+  schema refreshes. Paths are compared exactly, as `pg.Orders` and `pg.orders` may be two tables.
+- **Endpoints**, for each kind: `GET {path}/{id}`, `POST {path}`, `PUT {path}/{id}` (`{<item>, version}`, the
+  version read), `DELETE {path}/{id}?version=`, and `POST {path}/validate?id=`. `GET /api/overlay` gives every item;
+  `GET /api/overlay/export` gives the overlay as a JSON file, as `gdq --overlay` reads it.
+- **Kept, with its issues.** An item is kept whatever the catalog finds wrong with it, and comes with its `issues`:
+  each a `code` (the language reference's GDQ5xxx and GDQ2025), a `severity` and a `message`. An error leaves the
+  item, or the part of it at fault, out of the catalog: a relation whose column isn't there, a column's settings, a
+  rename to a name taken (the override still hides, if it says to). A warning doesn't (a navigation name taken, so
+  another was given). `GET /api/overlay` counts the items with errors, and those with warnings only.
+- **Checked again with every catalog.** An item that worked stops when its column goes, or its source is deleted,
+  and says so the next time the catalog is built: after the schema is read, it is told of in the log at warning
+  level. An entity of a source whose schema isn't read says that is why it isn't there.
+- **Trying an item.** `validate` builds the catalog with the item, in place of item `id` when given, and saves
+  nothing: its issues, and what it makes. A relation gives its navigations' names; a virtual entity the entity it
+  makes, and its query's diagnostics placed in its text; settings and overrides the entity as they make it. `breaks`
+  lists the other items that work now and wouldn't with it (a virtual entity renamed that others use).
+- **Requests.** What can be told without the catalog is a 400 by field: a path that isn't one, a virtual entity
+  without a namespace, a relation without columns or with more on one side, a column twice, a type that isn't one,
+  an override that neither renames nor hides. Names are trimmed. An update's fields are named under its item
+  (`relation.from`).
+- **One for each thing.** An entity has one item of settings, a navigation one override, a name one virtual
+  entity, and a relation is made once: another is `409 overlay-item-exists`. One reaching the same thing another way
+  (`shop.main.orders`, columns in another order, names alike but for case, a relation the database declares) is
+  kept, and left out of the catalog (GDQ5016).
+- **Order.** The catalog takes items in the order they were made, so of two relations wanting a navigation name,
+  the first gets it.
+- **Audited**, each change with what changed, and in the catalog's version, so clients see it.
+
 ## Health
 
 `GET /api/health` reports whether the application can do its work:
@@ -431,7 +473,7 @@ Errors are problem details (RFC 9457, `application/problem+json`). Every problem
 | 502 | `source-unavailable` | A source couldn't be connected to. `source` names it. |
 | 504 | `query-timeout` | A query ran longer than it may, and was stopped. |
 | 500 | `internal-error` | Something unexpected. The answer says nothing of it outside development; the log has it. |
-| 400 | `invalid-request` | The request's values aren't valid. `errors` names each one, with what is wrong. |
+| 400 | `invalid-request` | The request's values aren't valid. `errors` names each one as the request's JSON does (`relation.toColumns`, `columns[0].name`), with what is wrong. |
 | 400 | `xsrf-token-invalid` | A request that changes anything came without a valid anti-forgery token. |
 | 401 | `unauthenticated` | No one is signed in, or the session has ended. |
 | 401 | `invalid-credentials` | No user has that name and password. |
@@ -444,6 +486,7 @@ Errors are problem details (RFC 9457, `application/problem+json`). Every problem
 | 409 | `own-account` | Administrators can't demote, disable, delete or reset themselves. |
 | 409 | `last-admin` | The change would leave no enabled administrator. |
 | 409 | `alias-taken` | Another connection has the alias (aliases ignore case). |
+| 409 | `overlay-item-exists` | The overlay has an item for that already: settings for the entity, an override of the navigation, a virtual entity of the name. |
 | 422 | `wrong-password` | The current password given to change it isn't right. |
 | 422 | `weak-password` | A new password doesn't meet the policy; `detail` says how. |
 | 429 | `too-many-requests` | Too many sign-ins from the address; `Retry-After` says when to try again. |

@@ -27,7 +27,24 @@ public interface ICatalog
 
 public sealed record CatalogDiagnostic(string Code, DiagnosticSeverity Severity, string Message, string? Subject = null)
 {
+   /// <summary>The overlay item the problem is with; null for the sources' own (a foreign key to a table that isn't there).</summary>
+   public OverlayItemRef? Item { get; init; }
+
    public override string ToString() => Subject == null ? $"{Code} {Severity}: {Message}" : $"{Code} {Severity} [{Subject}]: {Message}";
+}
+
+public enum OverlayItemKind
+{
+   Relation,
+   VirtualEntity,
+   EntitySettings,
+   Navigation,
+}
+
+/// <summary>An item of a <see cref="CatalogOverlay"/>: its list, and its index in it.</summary>
+public sealed record OverlayItemRef(OverlayItemKind Kind, int Index)
+{
+   public override string ToString() => $"{Kind}[{Index}]";
 }
 
 public sealed class QueryCatalog : ICatalog

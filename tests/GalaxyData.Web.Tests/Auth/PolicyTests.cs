@@ -52,7 +52,7 @@ public sealed class PolicyTests
       TestApi lee = await TestApi.SignedInAsync(factory, "lee", "first-password-of-a-user", changeTo: "second-password-of-a-user");
       (await lee.SessionAsync()).GetProperty("user").GetProperty("permissions").GetRawText().ShouldBe(permissions);
       (await lee.GetAsync("/api/openapi/v1.json")).StatusCode.ShouldBe(HttpStatusCode.OK);
-      foreach (string path in (string[])["/api/users", "/api/users/1", "/api/audit/admin-events", "/api/connections", "/api/connection-kinds"])
+      foreach (string path in (string[])["/api/users", "/api/users/1", "/api/audit/admin-events", "/api/connections", "/api/connection-kinds", "/api/overlay"])
       {
          HttpStatusCode status = (await lee.GetAsync(path)).StatusCode;
          status.ShouldBe(admin, path);

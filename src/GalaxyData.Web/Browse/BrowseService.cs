@@ -57,7 +57,7 @@ public sealed class BrowseService(CatalogService catalogs, QueryEngines engines,
       if (!shape.Success) { throw new BrowseProblemException(QueryProblem(shape.Diagnostics, source.Text)); }
       Dictionary<string, string[]> errors = [];
       ComposedQuery composed = GridQueryComposer.Compose(source.Text, source.Parameters, shape.Schema!.VisibleColumns, grid, errors)
-         ?? throw new BrowseProblemException(TypedResults.ValidationProblem(errors));
+         ?? throw new BrowseProblemException(ApiProblems.Invalid(errors));
 
       List<Reference> references = References(source.Entity, shape.Schema);
       PreparedQuery page = engine.Prepare(new QueryRequest(composed.Text + Displays(references))
@@ -347,5 +347,5 @@ public sealed class BrowseService(CatalogService catalogs, QueryEngines engines,
    }
 
    private static BrowseProblemException Invalid(string field, string message) =>
-      new(TypedResults.ValidationProblem(new Dictionary<string, string[]> { [field] = [message] }));
+      new(ApiProblems.Invalid(new Dictionary<string, string[]> { [field] = [message] }));
 }

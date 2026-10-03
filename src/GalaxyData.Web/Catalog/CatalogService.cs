@@ -14,6 +14,7 @@ using GalaxyData.Query.Execution;
 using GalaxyData.Query.Introspection;
 using GalaxyData.Web.Connections;
 using GalaxyData.Web.Metadata;
+using GalaxyData.Web.Overlay;
 using GalaxyData.Web.Schemas;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -22,8 +23,9 @@ using Microsoft.Extensions.Logging;
 
 namespace GalaxyData.Web.Catalog;
 
-/// <summary>A catalog as built: the engine's, every source as it stands, and the tree over it.</summary>
-public sealed class CatalogState(long generation, string version, DateTime builtAt, QueryCatalog catalog, IReadOnlyList<CatalogSource> sources, CatalogTree tree)
+/// <summary>A catalog as built: the engine's, every source as it stands, the overlay and what is wrong with it, and the tree over it.</summary>
+public sealed class CatalogState(long generation, string version, DateTime builtAt, QueryCatalog catalog, IReadOnlyList<CatalogSource> sources, CatalogTree tree,
+                                 StoredOverlay overlay, OverlayIssues issues, IReadOnlyList<(SourceInfo Source, SourceSchema Schema)> schemas)
 {
    internal long Generation { get; } = generation;
 
@@ -38,6 +40,26 @@ public sealed class CatalogState(long generation, string version, DateTime built
    public IReadOnlyList<CatalogSource> Sources { get; } = sources;
 
    public CatalogTree Tree { get; } = tree;
+
+   /// <summary>The overlay it was built with.</summary>
+   public StoredOverlay Overlay { get; } = overlay;
+
+   /// <summary>What building it found wrong with each item of the overlay.</summary>
+   public OverlayIssues Issues { get; } = issues;
+
+   /// <summary>The aliases of sources without a schema in it (not read yet, or not readable), ignoring case.</summary>
+   public IReadOnlySet<string> Unread { get; } = sources.Where(s => !s.HasSchema).Select(s => s.Alias).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+   /// <summary>
+   /// The catalog as it would be with another overlay, over the same schemas: to try an item before it is saved.
+   /// It is the engine's alone (no tree), and no source is registered for it.
+   /// </summary>
+   public QueryCatalog With(CatalogOverlay other)
+   {
+      CatalogBuilder builder = new();
+      foreach ((SourceInfo source, SourceSchema schema) in schemas) { builder.AddSource(source, schema); }
+      return builder.WithOverlay(other).Build();
+   }
 }
 
 /// <summary>
@@ -128,7 +150,10 @@ public sealed partial class CatalogService(IServiceScopeFactory scopes, Connecti
          }
       }
 
+      StoredOverlay overlay = await StoredOverlay.LoadAsync(db, cancellationToken);
+
       CatalogBuilder builder = new();
+      List<(SourceInfo, SourceSchema)> inputs = [];
       List<CatalogSource> sources = [];
       List<SourceRuntime> runtimes = [];
       Dictionary<long, Snapshot> used = [];
@@ -162,7 +187,11 @@ public sealed partial class CatalogService(IServiceScopeFactory scopes, Connecti
             runtimes.Add(Runtime(row, kind));
             if (schema != null) { info = row.Source(schema.DefaultSchema); }
          }
-         if (info != null) { builder.AddSource(info, schema!); }
+         if (info != null)
+         {
+            builder.AddSource(info, schema!);
+            inputs.Add((info, schema!));
+         }
          sources.Add(new CatalogSource(row.Id, row.Alias, row.Kind, row.DisplayName, row.SchemaStatus, row.SchemaRefreshedAt, kind?.AlwaysReadOnly == true || row.IsReadOnly)
          {
             HasSchema = info != null,
@@ -172,13 +201,27 @@ public sealed partial class CatalogService(IServiceScopeFactory scopes, Connecti
             hasHead ? head.CheckedAt.Ticks : null);
       }
       schemas = used;
+      foreach ((OverlayItemKind kind, IOverlayItem item) in overlay.All()) { Append(version, kind, item.Id, item.Version); }
 
-      QueryCatalog catalog = builder.WithOverlay(CatalogOverlay.Empty).Build();
+      QueryCatalog catalog = builder.WithOverlay(overlay.Overlay).Build();
       CatalogTree tree = CatalogTree.Build(catalog, sources);
       string hash = Convert.ToHexStringLower(version.GetHashAndReset())[..16];
       await connections.PublishAsync(runtimes);
-      LogBuilt(logger, hash, sources.Count, catalog.Entities.Count, clock.GetElapsedTime(started).TotalMilliseconds);
-      return new CatalogState(generation, hash, clock.GetUtcNow().UtcDateTime, catalog, sources, tree);
+      LogBuilt(logger, hash, sources.Count, catalog.Entities.Count, overlay.Count, clock.GetElapsedTime(started).TotalMilliseconds);
+      HashSet<string> unreadSources = sources.Where(s => !s.HasSchema).Select(s => s.Alias).ToHashSet(StringComparer.OrdinalIgnoreCase);
+      OverlayIssues issues = OverlayIssues.Of(catalog, overlay, unreadSources);
+      Broken(issues, Volatile.Read(ref current)?.Issues);
+      return new CatalogState(generation, hash, clock.GetUtcNow().UtcDateTime, catalog, sources, tree, overlay, issues, inputs);
+   }
+
+   /// <summary>Tells of overlay items that stopped working since the last build (a column gone, a source deleted), or that never did, at the first.</summary>
+   private void Broken(OverlayIssues issues, OverlayIssues? before)
+   {
+      HashSet<(OverlayItemKind, int)> known = before?.Broken.ToHashSet() ?? [];
+      foreach ((OverlayItemKind kind, int id) in issues.Broken.Where(b => !known.Contains(b)))
+      {
+         LogBroken(logger, kind, id, issues.For(kind, id).First(d => d.Severity == Query.Diagnostics.DiagnosticSeverity.Error).Message);
+      }
    }
 
    private bool Cached(long id, DateTime checkedAt) => schemas.TryGetValue(id, out Snapshot? cached) && cached.CheckedAt == checkedAt;
@@ -223,8 +266,11 @@ public sealed partial class CatalogService(IServiceScopeFactory scopes, Connecti
       }
    }
 
-   [LoggerMessage(Level = LogLevel.Debug, Message = "Built the catalog {Version}: {Sources} sources, {Entities} entities, in {Elapsed:0} ms")]
-   private static partial void LogBuilt(ILogger logger, string version, int sources, int entities, double elapsed);
+   [LoggerMessage(Level = LogLevel.Debug, Message = "Built the catalog {Version}: {Sources} sources, {Entities} entities, {OverlayItems} overlay items, in {Elapsed:0} ms")]
+   private static partial void LogBuilt(ILogger logger, string version, int sources, int entities, int overlayItems, double elapsed);
+
+   [LoggerMessage(Level = LogLevel.Warning, Message = "The overlay's {Kind} {Id} doesn't work: {Problem}")]
+   private static partial void LogBroken(ILogger logger, OverlayItemKind kind, int id, string problem);
 
    [LoggerMessage(Level = LogLevel.Error, Message = "The schema snapshot {SnapshotId} of {Alias} can't be read")]
    private static partial void LogDamaged(ILogger logger, Exception exception, string alias, long snapshotId);

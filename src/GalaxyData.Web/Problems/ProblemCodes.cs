@@ -57,6 +57,9 @@ public static class ProblemCodes
    /// <summary>409: another connection has the alias.</summary>
    public const string AliasTaken = "alias-taken";
 
+   /// <summary>409: the overlay has an item for the same thing: settings for the entity, an override of the navigation, a virtual entity of the name.</summary>
+   public const string OverlayItemExists = "overlay-item-exists";
+
    /// <summary>409: administrators can't demote, disable, delete or reset themselves.</summary>
    public const string OwnAccount = "own-account";
 

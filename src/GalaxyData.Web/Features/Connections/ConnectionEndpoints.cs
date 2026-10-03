@@ -112,14 +112,14 @@ public static partial class ConnectionEndpoints
    {
       ConnectionKind? found = kinds.Find(kind);
       if (found == null) { return NoSuchKind(kind, kinds); }
-      if (!found.SupportsRaw) { return TypedResults.ValidationProblem(Errors("mode", $"{found.DisplayName} connections have no connection string")); }
+      if (!found.SupportsRaw) { return ApiProblems.Invalid(Errors("mode", $"{found.DisplayName} connections have no connection string")); }
       try
       {
          return TypedResults.Ok(ConnectionInputs.Convert(found, request.Connection, request.To));
       }
       catch (Exception e) when (e is ArgumentException or FormatException or InvalidCastException or OverflowException or KeyNotFoundException)
       {
-         return TypedResults.ValidationProblem(Errors(request.Connection.Mode == ConnectionMode.Raw ? "connectionString" : "settings", e.Message));
+         return ApiProblems.Invalid(Errors(request.Connection.Mode == ConnectionMode.Raw ? "connectionString" : "settings", e.Message));
       }
    }
 
@@ -146,10 +146,10 @@ public static partial class ConnectionEndpoints
       {
          errors["alias"] = ["An alias is a plain name: a letter or _, then letters, digits and _ (64 at most), and not a word the language has (and, or, not, in, true, false, null)"];
       }
-      if (errors.Count > 0) { return TypedResults.ValidationProblem(errors); }
+      if (errors.Count > 0) { return ApiProblems.Invalid(errors); }
       if (await db.Connections.AnyAsync(c => c.Alias == request.Alias, cancellationToken)) { return AliasTaken(request.Alias); }
       ConnectionResolution resolved = ConnectionInputs.Resolve(kind!, request.Connection, NoSecrets, roots);
-      if (!resolved.IsValid) { return TypedResults.ValidationProblem(resolved.Errors); }
+      if (!resolved.IsValid) { return ApiProblems.Invalid(resolved.Errors); }
 
       DateTime now = clock.GetUtcNow().UtcDateTime;
       SourceConnection connection = new()
@@ -199,7 +199,7 @@ public static partial class ConnectionEndpoints
       Dictionary<string, string>? stored = secrets.Unprotect(connection.Alias, connection.ProtectedSecrets);
       ConnectionResolution resolved = ConnectionInputs.Resolve(kind, request.Connection, stored ?? NoSecrets.ToDictionary(), roots);
       if (stored == null) { Unreadable(request.Connection, resolved); }
-      if (!resolved.IsValid) { return TypedResults.ValidationProblem(resolved.Errors); }
+      if (!resolved.IsValid) { return ApiProblems.Invalid(resolved.Errors); }
 
       Dictionary<string, object?> changes = [];
       Changes("settings", connection.Settings(), resolved.Settings, changes);
@@ -295,19 +295,19 @@ public static partial class ConnectionEndpoints
       FileRoots roots, ConnectionSecrets secrets, ConnectionTester tester, CancellationToken cancellationToken)
    {
       ConnectionKind? kind = kinds.Find(request.Kind);
-      if (kind == null) { return TypedResults.ValidationProblem(Errors("kind", $"There is no kind '{request.Kind}'")); }
+      if (kind == null) { return ApiProblems.Invalid(Errors("kind", $"There is no kind '{request.Kind}'")); }
       Dictionary<string, string>? stored = new(StringComparer.OrdinalIgnoreCase);
       string alias = "(new)";
       if (request.ConnectionId is { } id)
       {
          SourceConnection? connection = await db.Connections.AsNoTracking().SingleOrDefaultAsync(c => c.Id == id, cancellationToken);
-         if (connection == null || connection.Kind != kind.Id) { return TypedResults.ValidationProblem(Errors("connectionId", $"There is no {kind.DisplayName} connection {id}")); }
+         if (connection == null || connection.Kind != kind.Id) { return ApiProblems.Invalid(Errors("connectionId", $"There is no {kind.DisplayName} connection {id}")); }
          stored = secrets.Unprotect(connection.Alias, connection.ProtectedSecrets);
          alias = connection.Alias;
       }
       ConnectionResolution resolved = ConnectionInputs.Resolve(kind, request.Connection, stored ?? NoSecrets.ToDictionary(), roots);
       if (stored == null) { Unreadable(request.Connection, resolved); }
-      if (!resolved.IsValid) { return TypedResults.ValidationProblem(resolved.Errors); }
+      if (!resolved.IsValid) { return ApiProblems.Invalid(resolved.Errors); }
       return TypedResults.Ok(await tester.TestAsync(alias, kind, resolved, cancellationToken));
    }
 

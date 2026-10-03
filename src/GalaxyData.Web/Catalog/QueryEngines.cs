@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using GalaxyData.Query.Catalog;
 using GalaxyData.Query.DuckDb;
 using GalaxyData.Query.Execution;
 using GalaxyData.Web.Hosting;
@@ -23,15 +24,21 @@ public sealed class QueryEngines(SourceConnections connections, SourceProviders 
       lock (gate)
       {
          if (last is { } cached && ReferenceEquals(cached.State, state)) { return cached.Engine; }
-         QuerySettings settings = options.Value.Query;
-         QueryEngine engine = new(state.Catalog, connections, providers.All, merge, new QueryEngineOptions
-         {
-            Clock = clock,
-            Timeout = settings.Timeout,
-            MaxFetchedRows = settings.MaxFetchedRows,
-         });
+         QueryEngine engine = Trial(state.Catalog);
          last = (state, engine);
          return engine;
       }
+   }
+
+   /// <summary>An engine for another catalog (an overlay item tried before it is saved), not kept.</summary>
+   public QueryEngine Trial(QueryCatalog catalog)
+   {
+      QuerySettings settings = options.Value.Query;
+      return new QueryEngine(catalog, connections, providers.All, merge, new QueryEngineOptions
+      {
+         Clock = clock,
+         Timeout = settings.Timeout,
+         MaxFetchedRows = settings.MaxFetchedRows,
+      });
    }
 }

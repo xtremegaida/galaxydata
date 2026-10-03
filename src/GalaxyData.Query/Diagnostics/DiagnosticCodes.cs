@@ -58,4 +58,5 @@ public static class DiagnosticCodes
    public const string NavigationNameTaken = "GDQ5012";
    public const string DeclaredKeyIgnored = "GDQ5013";
    public const string InvalidEntityPath = "GDQ5015";
+   public const string DuplicateOverlayItem = "GDQ5016";
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace GalaxyData.Web.Metadata;
 
@@ -181,6 +182,115 @@ public sealed class SchemaSnapshot
    /// workbooks is loaded as its schema was read, until it is read again.
    /// </summary>
    public string? ReadWith { get; set; }
+}
+
+/// <summary>
+/// An item of the overlay, which adds to what the sources declare: relations, navigations renamed or hidden,
+/// virtual entities and entities' settings. Entities are named by their paths, as queries write them
+/// (<c>shop.orders</c>), so items outlive schema refreshes; one whose entity, column or navigation is gone is kept,
+/// and the catalog says what is wrong with it.
+/// </summary>
+public interface IOverlayItem : IVersioned
+{
+   int Id { get; }
+
+   DateTime CreatedAt { get; set; }
+
+   DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>A many-to-one relation the overlay adds: columns of one entity to a key (or unique key) of another, in any source.</summary>
+public sealed class RelationDefinition : IOverlayItem
+{
+   public int Id { get; set; }
+
+   public string From { get; set; } = string.Empty;
+
+   public List<string> FromColumns { get; set; } = [];
+
+   public string To { get; set; } = string.Empty;
+
+   public List<string> ToColumns { get; set; } = [];
+
+   /// <summary>The navigation's name on <see cref="From"/>; the convention's when null.</summary>
+   public string? Name { get; set; }
+
+   /// <summary>The name of the navigation back, on <see cref="To"/>; the convention's when null.</summary>
+   public string? InverseName { get; set; }
+
+   public string? Description { get; set; }
+
+   public DateTime CreatedAt { get; set; }
+
+   public DateTime UpdatedAt { get; set; }
+
+   public int Version { get; set; }
+}
+
+/// <summary>A navigation renamed or hidden, found by the name the convention gives it.</summary>
+public sealed class NavigationOverride : IOverlayItem
+{
+   public int Id { get; set; }
+
+   public string Entity { get; set; } = string.Empty;
+
+   /// <summary>The name the convention gives it.</summary>
+   public string Navigation { get; set; } = string.Empty;
+
+   public string? RenameTo { get; set; }
+
+   public bool Hidden { get; set; }
+
+   public DateTime CreatedAt { get; set; }
+
+   public DateTime UpdatedAt { get; set; }
+
+   public int Version { get; set; }
+}
+
+/// <summary>An entity defined by a query; its path has a namespace (<c>reports.big_orders</c>).</summary>
+public sealed class VirtualEntityDefinition : IOverlayItem
+{
+   public int Id { get; set; }
+
+   public string Name { get; set; } = string.Empty;
+
+   public string Query { get; set; } = string.Empty;
+
+   /// <summary>Its key, when the query's isn't the one wanted (or it has none).</summary>
+   public List<string>? Key { get; set; }
+
+   public string? Description { get; set; }
+
+   public DateTime CreatedAt { get; set; }
+
+   public DateTime UpdatedAt { get; set; }
+
+   public int Version { get; set; }
+}
+
+/// <summary>An entity's settings: a declared key, its display column, whether it is hidden, and its columns' settings.</summary>
+public sealed class EntitySettings : IOverlayItem
+{
+   public int Id { get; set; }
+
+   public string Entity { get; set; } = string.Empty;
+
+   /// <summary>A key for views and tables without one: for navigating, never for changing rows.</summary>
+   public List<string>? Key { get; set; }
+
+   public string? DisplayColumn { get; set; }
+
+   public bool Hidden { get; set; }
+
+   /// <summary>The columns' settings, as a JSON list of <c>{name, hidden, label, type}</c>.</summary>
+   public string ColumnsJson { get; set; } = "[]";
+
+   public DateTime CreatedAt { get; set; }
+
+   public DateTime UpdatedAt { get; set; }
+
+   public int Version { get; set; }
 }
 
 /// <summary>A value the application keeps for itself.</summary>

@@ -589,7 +589,7 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
   - A failed read keeps the last snapshot in the catalog.
 - **Catalog** (`CatalogService`, `CatalogState`):
   - Built lazily under a semaphore. `Invalidate()` bumps a wanted generation, read before the build reads the database. A caller after a change waits; the build itself isn't cancelled by one caller.
-  - Snapshots are cached by (id, `CheckedAt`), damaged ones too (so they are logged once). The overlay is empty until B5, and re-validating it moves there.
+  - Snapshots are cached by (id, `CheckedAt`), damaged ones too (so they are logged once). The overlay is built in from B5.
   - An Excel folder is registered with the options its snapshot was read with (`ReadWith`), so its sheets load as the catalog's columns say until it is read again.
   - The version is the first 16 hex characters of a SHA-256 over the engine's version and each connection's id, alias, kind, version, status, refresh time and newest snapshot (id, `CheckedAt`). It is the same after a restart.
   - `CatalogVersionFilter` puts `X-Catalog-Version` on `/api` answers that didn't read the catalog, while it is fresh.
@@ -709,6 +709,45 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
   - the API on the shop: a page with its schema, references, collections and count; stable pages; every filter; where and its placed diagnostics; navigations (forward, inverse, self, composite, to nothing); readers; trails; a DuckDB view whose count runs out of time; an Excel sheet.
 
 
+**Built in B5**
+- **Engine:**
+  - A `CatalogDiagnostic` about an overlay item names it: `Item`, an `OverlayItemRef(kind, index)` into the overlay's lists. Before, only a subject string said what it was about, so a tool couldn't tell which of two relations between the same entities was broken.
+  - `RelationDef.OverlayItem` says which overlay relation a relation is, so its navigations' names can be shown.
+  - A second entity-settings item for an entity, or a second override of a navigation, reaching it by another path (`shop.main.orders`), was applied on top of the first; it is now GDQ5016 and left out. So are a column's second settings (`name`, `NAME`), a column named twice in a key or relation, and a relation the overlay or the database has already.
+  - `VirtualEntity.OverlayItem`, like `RelationDef.OverlayItem`.
+  - Settings and overrides of a virtual entity that doesn't work say so (GDQ2025); they were left out without a word.
+- **Model** (migration `Overlay`): `OverlayRelations`, `OverlayNavigations`, `OverlayVirtualEntities` and `OverlayEntitySettings`, each `IOverlayItem` (versioned, created and updated times).
+  - Entity paths are as queries write them, so items outlive refreshes.
+  - Unique indexes (settings by entity, overrides by entity and navigation, virtual entities by name) compare exactly, as `pg.Orders` and `pg.orders` may be two tables. The catalog finds the same entity reached by two paths (GDQ5016).
+  - Column lists are EF primitive collections (JSON text); column settings are a JSON list.
+- **Catalog** (`CatalogService`):
+  - Builds with the stored overlay (`StoredOverlay`: items in the order of their ids).
+  - Puts each item's kind, id and version in the catalog's version.
+  - Maps the engine's diagnostics back to rows (`OverlayIssues`); an unknown entity of a source without a schema says the schema isn't read.
+  - Logs at warning level each item broken since the last build (all broken ones at the first). Re-validating on refresh is this: every build checks every item, and a refresh builds the catalog again.
+  - `CatalogState.With(overlay)` builds a trial catalog over the same schemas, for `validate`.
+- **Endpoints** (`/api/overlay`, `CanAdmin`):
+  - `GET /` (every item with its issues, and counts of items with errors and with warnings only), `GET /export` (the overlay as `gdq --overlay` reads it).
+  - For `relations`, `navigations`, `virtual-entities` and `entity-settings`: `GET {id}`, `POST`, `PUT {id}` (`{<item>, version}`), `DELETE {id}?version=`, `POST validate?id=`.
+  - One `OverlayEditor` does each operation for every kind, through an `OverlayKind<TRow, TInput, TDto>`: reading a request into a row, its fields for the audit, uniqueness, its DTO, what trying it gives.
+  - Items are kept whatever the catalog finds wrong with them, and come back with their issues (code, severity, message): a source may not be read yet, and items that stop working when a schema changes are kept too.
+  - Requests: 400 by field for what can be told without the catalog; 409 `overlay-item-exists`; 409 `concurrency-conflict`.
+  - Updates that change nothing aren't saved or audited; changes are audited (`overlay.relation.created`, ...) with what changed.
+  - `validate`: a relation's navigations; a virtual entity's entity and its query's diagnostics, placed in its text (prepared on a trial engine, `QueryEngines.Trial`); the entity as settings and overrides make it.
+- `GET /api/catalog`'s diagnostics name their overlay item (`item: {kind, id}`).
+- **Found by the review**, fixed:
+  - an update's problems were named two ways: ours relative to the item (`from`), the framework's under the request's field (`relation.fromColumns`); ours are under it now;
+  - the issues said an error leaves the item out, but settings and overrides are applied in part (hidden, though the display column isn't there; hidden, though the rename can't be made). That is kept, as one column renamed shouldn't drop an entity's labels, and said so;
+  - settings for a virtual entity that doesn't work were dropped without an issue;
+  - the same relation could be made twice (now 409, and GDQ5016 for one written another way or that the database declares);
+  - names of navigations, display columns and columns weren't trimmed (`" customer "` didn't find it, and slipped past the unique index);
+  - names alike but for case (`["at", "AT"]`) made one column twice; the catalog says so now (not the request, as two columns may be named so);
+  - any constraint failure on save was taken as "there already"; only a unique one is;
+  - suggested and done: `validate` says which other items the change would break (`breaks`), and finds the virtual entity it made by its item, not by its query text.
+- **Known limitations:** settings of a virtual entity apply after every virtual entity is bound, so one built on another doesn't see its declared key or type overrides. Each `validate` builds a whole catalog (binding every virtual entity).
+- **Validation keys:** the framework's validation problems named fields as the request's types do (`UserName`, `Relation.ToColumns`), and ours as the JSON does. They are all camelCase now: our handlers' problems (`ApiProblems.Invalid`) carry their code, and `ApiProblems.Complete` camel-cases the keys of those without one, the framework's. Our own keys are left alone, as some are provider keywords (`settings.Password`).
+- **Tests:** the engine's items in diagnostics and duplicates; the API: a relation across two sources and browsing along it, an item broken by a refresh (issues, `/api/catalog`, the log) and fixed, versions, no-op updates, the audit, export round-tripped through `CatalogOverlay.FromJson`; virtual entities tried (placed diagnostics), saved, browsed and in the tree; settings (labels, types, hidden columns and entities, declared keys, duplicates by another path); overrides (renamed, hidden, tried in place of themselves); deletes; requests refused by field; a source whose schema can't be read; the role matrix.
+
 **Pending changes, preview and commit**
 - Changes are stored on the server, one changeset per user, and survive refreshes, tabs and restarts.
 - **`POST /changes/ops`** applies a batch atomically: set, insert (by tempId), delete, revert. `ChangeSetMerger` rules:
@@ -810,7 +849,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | B2 | Connections, kinds and descriptors, secrets and masking, test-connection; allowed file roots (see "Built in B2" in §5) |
 | B3 | Snapshots, refresh worker, diff, CatalogService, tree, search, entity descriptors and capabilities; queries' connections (see "Built in B3" in §5) |
 | B4 | GridQueryComposer, codecs, NavigationResolver, CountStrategy, browse endpoints and trails (see "Built in B4" in §5) |
-| B5 | Overlay CRUD and validation |
+| B5 | Overlay CRUD and validation; overlay items named by the engine's diagnostics (see "Built in B5" in §5) |
 | B6 | Query validate, explain and execute; saved queries |
 | B7 | ChangeSets, merger, preview, commit, audit |
 | B8 | Security headers and CSP, rate limits, log redaction, publish target |

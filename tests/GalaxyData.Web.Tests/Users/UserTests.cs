@@ -82,7 +82,7 @@ public sealed class UserTests
       TestApi admin = await TestApi.SignedInAsync(factory);
       JsonElement problem = await (await admin.PostAsync("/api/users", new { userName = name, role = "read", password = "a-good-long-password" }))
          .ProblemAsync(400, ProblemCodes.InvalidRequest);
-      problem.GetProperty("errors").EnumerateObject().Select(e => e.Name).ShouldBe(["UserName"]);
+      problem.GetProperty("errors").EnumerateObject().Select(e => e.Name).ShouldBe(["userName"]);
    }
 
    /// <summary>A role is one of the roles, by name: a number isn't read as one.</summary>

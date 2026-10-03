@@ -70,12 +70,28 @@ public static class ApiProblems
       return problem;
    }
 
-   /// <summary>Gives a problem the code of its status when it has none, so every problem has one.</summary>
+   /// <summary>A request whose values aren't valid (400, <see cref="ProblemCodes.InvalidRequest"/>): what is wrong, by field as the request names it.</summary>
+   public static ValidationProblem Invalid(IDictionary<string, string[]> errors) =>
+      TypedResults.ValidationProblem(errors, extensions: new Dictionary<string, object?> { ["code"] = ProblemCodes.InvalidRequest });
+
+   /// <summary>
+   /// Gives a problem the code of its status when it has none, so every problem has one. A validation problem
+   /// without one is the framework's (ours are <see cref="Invalid"/>), whose fields are named as the request's types
+   /// name them (<c>Relation.ToColumns</c>): they are named as the request's JSON does (<c>relation.toColumns</c>).
+   /// </summary>
    internal static void Complete(ProblemDetails problem)
    {
       if (problem.Extensions.ContainsKey("code")) { return; }
-      problem.Extensions["code"] = problem is HttpValidationProblemDetails
-         ? ProblemCodes.InvalidRequest
-         : ProblemCodes.ForStatus(problem.Status ?? StatusCodes.Status500InternalServerError);
+      if (problem is HttpValidationProblemDetails validation)
+      {
+         validation.Errors = validation.Errors.ToDictionary(e => CamelCase(e.Key), e => e.Value);
+         problem.Extensions["code"] = ProblemCodes.InvalidRequest;
+         return;
+      }
+      problem.Extensions["code"] = ProblemCodes.ForStatus(problem.Status ?? StatusCodes.Status500InternalServerError);
    }
+
+   /// <summary><c>Columns[0].Name</c> as <c>columns[0].name</c>.</summary>
+   private static string CamelCase(string path) =>
+      string.Join('.', path.Split('.').Select(part => part.Length > 0 && char.IsUpper(part[0]) ? char.ToLowerInvariant(part[0]) + part[1..] : part));
 }

@@ -12,6 +12,7 @@ using GalaxyData.Query.Types;
 using GalaxyData.Web.Auth;
 using GalaxyData.Web.Catalog;
 using GalaxyData.Web.Metadata;
+using GalaxyData.Web.Overlay;
 using GalaxyData.Web.Problems;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -27,7 +28,8 @@ public sealed record CatalogDto(string Version, IReadOnlyList<CatalogSourceDto> 
 public sealed record CatalogSourceDto(string Alias, string Kind, string? DisplayName, SchemaStatus Status, DateTime? RefreshedAt, bool IsReadOnly, bool HasSchema,
                                       int Entities, string? Problem);
 
-public sealed record CatalogDiagnosticDto(string Code, DiagnosticSeverity Severity, string Message, string? Subject);
+/// <summary>A problem building the catalog found; one with an item of the overlay names it (<see cref="Item"/>).</summary>
+public sealed record CatalogDiagnosticDto(string Code, DiagnosticSeverity Severity, string Message, string? Subject, OverlayItemDto? Item);
 
 /// <summary>
 /// A node of the catalog's tree. Its id is its path as queries write it (<c>shop</c>, <c>shop.sales</c>,
@@ -118,7 +120,8 @@ public static class CatalogEndpoints
       return TypedResults.Ok(new CatalogDto(state.Version,
          state.Sources.Select(s => new CatalogSourceDto(s.Alias, s.Kind, s.DisplayName, s.Status, s.RefreshedAt, s.IsReadOnly, s.HasSchema,
             counts.GetValueOrDefault(s.Alias), s.Problem)).ToList(),
-         state.Catalog.Diagnostics.Select(d => new CatalogDiagnosticDto(d.Code, d.Severity, d.Message, d.Subject)).ToList()));
+         state.Catalog.Diagnostics.Select(d => new CatalogDiagnosticDto(d.Code, d.Severity, d.Message, d.Subject,
+            d.Item is { } item ? new OverlayItemDto(item.Kind, state.Overlay.IdOf(item)) : null)).ToList()));
    }
 
    private static async Task<Results<Ok<TreeChildrenDto>, ProblemHttpResult>> ChildrenAsync(string? parent, ClaimsPrincipal me, HttpResponse response,
@@ -149,7 +152,7 @@ public static class CatalogEndpoints
       if (string.IsNullOrWhiteSpace(text)) { errors["text"] = ["Give the text to look for"]; }
       else if (text.Length > MaxSearchLength) { errors["text"] = [$"Look for at most {MaxSearchLength} characters"]; }
       if (take is < 1 or > MaxSearchResults) { errors["take"] = [$"Take 1 to {MaxSearchResults}"]; }
-      if (errors.Count > 0) { return TypedResults.ValidationProblem(errors); }
+      if (errors.Count > 0) { return ApiProblems.Invalid(errors); }
       CatalogState state = await StateAsync(response, catalogs, cancellationToken);
       bool canEdit = CanEditData(me);
       (IReadOnlyList<TreeHit> hits, bool more) = state.Tree.Search(text!, take ?? 50);
@@ -162,14 +165,14 @@ public static class CatalogEndpoints
    {
       if (!EntityName.TryParse(name, out EntityName? path))
       {
-         return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["name"] = [$"'{name}' isn't an entity's name, such as shop.orders or xl[\"Budget\"][\"Sheet 1\"]"] });
+         return ApiProblems.Invalid(new Dictionary<string, string[]> { ["name"] = [$"'{name}' isn't an entity's name, such as shop.orders or xl[\"Budget\"][\"Sheet 1\"]"] });
       }
       CatalogState state = await StateAsync(response, catalogs, cancellationToken);
       NameMatch<CatalogItem> match = state.Catalog.Resolve(path);
       if (match.Status == MatchStatus.Ambiguous)
       {
          string candidates = string.Join(", ", match.Candidates.Select(c => c is EntityDef e ? e.DisplayName : c.ToString()));
-         return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["name"] = [$"{name} names more than one thing, whose names differ only in case: {candidates}"] });
+         return ApiProblems.Invalid(new Dictionary<string, string[]> { ["name"] = [$"{name} names more than one thing, whose names differ only in case: {candidates}"] });
       }
       if (match.Item is not EntityDef entity)
       {
@@ -202,7 +205,7 @@ public static class CatalogEndpoints
       return dto;
    }
 
-   private static EntityDto Describe(EntityDef entity, SourceProviders providers, bool canEdit)
+   internal static EntityDto Describe(EntityDef entity, SourceProviders providers, bool canEdit)
    {
       TableEntity? table = entity as TableEntity;
       SqlDialect? dialect = table == null ? null : providers.For(table.Source.ProviderKind).Dialect;
