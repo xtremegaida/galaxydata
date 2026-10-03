@@ -151,8 +151,12 @@ public sealed class ExcelSourceProvider : SourceProvider, IDisposable
       }
    }
 
-   /// <summary>Loads the sheets a statement reads that aren't loaded, or whose workbooks changed.</summary>
-   public override ValueTask PrepareReadAsync(SourceInfo source, IReadOnlyList<TableEntity> tables, QueryEngineOptions options, CancellationToken cancellationToken)
+   /// <summary>
+   /// Loads the sheets a statement reads that aren't loaded, or whose workbooks changed, or that are loaded as another
+   /// catalog types them; the lease keeps them so until the statement has started.
+   /// </summary>
+   public override ValueTask<IDisposable?> PrepareReadAsync(SourceInfo source, IReadOnlyList<TableEntity> tables, QueryEngineOptions options,
+                                                           CancellationToken cancellationToken)
    {
       ArgumentNullException.ThrowIfNull(source);
       ArgumentNullException.ThrowIfNull(tables);

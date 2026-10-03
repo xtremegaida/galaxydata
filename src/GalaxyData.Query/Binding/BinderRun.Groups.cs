@@ -306,7 +306,10 @@ internal sealed partial class BinderRun
          {
             throw Error(argument, DiagnosticCodes.WrongArgumentCount, $"'{SourceText(collection.Syntax ?? method)}' is a collection of values; {name}() takes no argument here");
          }
-         bound = argument == null ? projection : BindExpr(argument, new RecordScope(scope, projection));
+         // any() of values, with no condition, is whether there are any: a group has rows, so it is true.
+         bound = argument != null ? BindExpr(argument, new RecordScope(scope, projection))
+            : kind is AggregateKind.Any or AggregateKind.All ? null
+            : projection;
       }
       return GroupAggregate(kind, name, collection.GroupRow, bound, argument == null ? null : Body(argument), call);
    }

@@ -289,9 +289,20 @@ public abstract class SqlDialect
       new SqlLike(operand, pattern, caseInsensitive, '\\');
 
    /// <summary><c>'true'</c> or <c>'false'</c> for a condition, null for null.</summary>
-   private protected static SqlExpr BooleanText(SqlCall c) => c.Type(0).Nullable
-      ? new SqlCase([new SqlWhen(c.Condition(0), Text("true")), new SqlWhen(new SqlUnary(SqlUnaryOp.Not, c.Condition(0)), Text("false"))], null)
-      : new SqlCase([new SqlWhen(c.Condition(0), Text("true"))], Text("false"));
+   private protected static SqlExpr BooleanText(SqlCall c, int index = 0) => c.Type(index).Nullable
+      ? new SqlCase([new SqlWhen(c.Condition(index), Text("true")), new SqlWhen(new SqlUnary(SqlUnaryOp.Not, c.Condition(index)), Text("false"))], null)
+      : new SqlCase([new SqlWhen(c.Condition(index), Text("true"))], Text("false"));
+
+   /// <summary>
+   /// The arguments of concat(...), true/false values written as <c>true</c> and <c>false</c>, as toString writes
+   /// them: databases write them as 1 and 0, t and f, or true and false.
+   /// </summary>
+   private protected static SqlExpr[] ConcatArguments(SqlCall c)
+   {
+      SqlExpr[] arguments = new SqlExpr[c.Count];
+      for (int i = 0; i < arguments.Length; i++) { arguments[i] = c.Type(i).Kind == ScalarKind.Boolean ? BooleanText(c, i) : c.Arg(i); }
+      return arguments;
+   }
 
    private protected static bool IsInteger(ScalarType type) => type.IsInteger;
 

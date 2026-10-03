@@ -111,6 +111,20 @@ public sealed class ServerTests(Servers servers)
    private const string SlowCount =
       "k.numbers.selectMany(k.numbers, x: outer.n, y: inner.n).selectMany(k.numbers, x: outer.x, y: outer.y, z: inner.n).where((x * 7 + y * 3 + z) % 1000 == 7).count()";
 
+   /// <summary>A query that runs longer than it may is stopped on the server, and fails as a timeout.</summary>
+   [Theory]
+   [InlineData(ServerKind.Postgres)]
+   [InlineData(ServerKind.SqlServer)]
+   public async Task AQueryThatRunsTooLongIsStopped(ServerKind server)
+   {
+      ServerDatabase kinds = await servers.KindsAsync(server);
+      await using TestSources sources = await kinds.SourcesAsync("k");
+      QueryEngine engine = sources.Engine(options: new QueryEngineOptions { Timeout = TimeSpan.FromMilliseconds(500) });
+      Stopwatch watch = Stopwatch.StartNew();
+      await Should.ThrowAsync<QueryTimeoutException>(() => RowsAsync(engine, SlowCount, null));
+      watch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(10));
+   }
+
    /// <summary>Cancelling stops a statement the server is busy with, and the server stops running it.</summary>
    [Theory]
    [InlineData(ServerKind.Postgres)]

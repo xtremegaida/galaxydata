@@ -959,12 +959,18 @@ public sealed class ExcelEdgeTests
       foreach (string rows in (await Task.WhenAll(readers)).SelectMany(r => r)) { valid.ShouldContain(rows); }
    }
 
-   /// <summary>Engines whose catalogs type a column differently (an overlay, a refreshed schema) take turns loading it; each query must read the column as its own catalog types it.</summary>
-   [Fact]
-   public async Task EnginesTypingAColumnDifferentlyEachReadTheirOwnType()
+   /// <summary>
+   /// Engines whose catalogs type a column differently (an overlay, a refreshed schema) take turns loading it; each
+   /// query must read the column as its own catalog types it. A statement holds the sheet as loaded from when it is
+   /// readied until it has started, its own or a fragment's in the merge engine.
+   /// </summary>
+   [Theory]
+   [InlineData(true)]
+   [InlineData(false)]
+   public async Task EnginesTypingAColumnDifferentlyEachReadTheirOwnType(bool pushDown)
    {
       await using ExcelShop shop = await ExcelShop.OpenAsync();
-      QueryEngine text = shop.Sources.Engine(Override("xl.customers.list", ("id", ScalarType.Text())));
+      QueryEngine text = shop.Sources.Engine(Override("xl.customers.list", ("id", ScalarType.Text())), new QueryEngineOptions { PushDown = pushDown });
       QueryEngine numbers = shop.Sources.Engine();
       async Task<List<string>> Run(QueryEngine engine, string query)
       {

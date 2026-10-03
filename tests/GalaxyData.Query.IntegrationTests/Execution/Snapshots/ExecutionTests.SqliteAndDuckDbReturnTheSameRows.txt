@@ -80,6 +80,12 @@ name || id
 ### shop.customers.where(startsWith(name, 'ac') or contains(name, 'ETA')).select(name)
 name || id
 
+### shop.customers.select(name, c: concat(name, ': ', credit_limit > 1000, '/', city == null)).orderBy(name)
+name | c || id
+'Acme Ltd' | 'Acme Ltd: true/false' || 1
+'Beta Corp' | 'Beta Corp: false/false' || 2
+'Gamma Inc' | 'Gamma Inc: /true' || 3
+
 ### shop.customers.where(icontains(name, 'CORP')).select(name)
 name || id
 'Beta Corp' || 2
@@ -258,6 +264,12 @@ name | n | total || id
 'Acme Ltd' | 2 | 349.50 || 1
 'Beta Corp' | 1 | 12.25 || 2
 'Gamma Inc' | 1 | 0.00 || 3
+
+### shop.orders.groupBy(status).select(status, some: customer_id.any(), big: total.any(it > 100), paid: total.all(it > 1), n: total.count(it > 10)).orderBy(status)
+status | some | big | paid | n
+'cancelled' | true | false | false | 0
+'open' | true | true | true | 2
+'shipped' | true | false | true | 1
 
 ### shop.orders.groupBy(y: year(order_date), m: month(order_date)).select(y, m, n: count()).orderBy(y, m)
 y | m | n

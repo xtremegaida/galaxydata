@@ -164,7 +164,7 @@ internal sealed class SqlServerDialect : SqlDialect
          : Binary(SqlBinaryOp.Greater, Position(Call("LOWER", c.Arg(1)), Call("LOWER", c.Arg(0))), Integer(0)),
       FunctionId.Like => Like(c.Arg(0), UserPattern(c)),
       FunctionId.ILike => Like(Call("LOWER", c.Arg(0)), Call("LOWER", UserPattern(c))),
-      FunctionId.Concat => Call("CONCAT", c.Args()),
+      FunctionId.Concat => Call("CONCAT", ConcatArguments(c)),
       FunctionId.Abs => Call("ABS", c.Arg(0)),
       FunctionId.Round => IsInteger(c.Type(0)) ? c.Arg(0) : Call("ROUND", c.Arg(0), c.Count == 2 ? Int(c, 1) : Integer(0)),
       FunctionId.Floor => IsInteger(c.Type(0)) ? c.Arg(0) : Call("FLOOR", c.Arg(0)),

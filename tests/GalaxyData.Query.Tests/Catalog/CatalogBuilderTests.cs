@@ -225,7 +225,25 @@ public sealed class CatalogBuilderTests
       customer.Relation.IsCrossSource.ShouldBeTrue();
       customer.Relation.Origin.ShouldBe(RelationOrigin.Overlay);
       customer.Multiplicity.ShouldBe(Multiplicity.ZeroOrOne);
-      catalog.Entity("shop.customers").NavNames().ShouldBe(["contacts", "addresses", "orders"]);
+      catalog.Entity("shop.customers").NavNames().ShouldBe(["addresses", "orders", "contacts"]);
+      catalog.Diagnostics.ShouldBeEmpty();
+   }
+
+   /// <summary>
+   /// A relation the overlay adds takes no name the databases' foreign keys give: shop's customers keep their own
+   /// orders as <c>orders</c>, and the warehouse's, named by the convention too, are <c>wh_orders</c>.
+   /// </summary>
+   [Fact]
+   public void OverlayRelationsLeaveForeignKeysTheirNames()
+   {
+      CatalogOverlay overlay = new() { Relations = [new OverlayRelation("wh.orders", ["customer_id"], "shop.customers", ["id"])] };
+      QueryCatalog catalog = Build(overlay, ("shop", Shop()), ("wh", Shop()));
+      EntityDef customers = catalog.Entity("shop.customers");
+      customers.Nav("orders").Target.ShouldBeSameAs(catalog.Entity("shop.orders"));
+      customers.Nav("wh_orders").Target.ShouldBeSameAs(catalog.Entity("wh.orders"));
+      EntityDef orders = catalog.Entity("wh.orders");
+      orders.Nav("customer").Target.ShouldBeSameAs(catalog.Entity("wh.customers"));
+      orders.Nav("shop_customer").Target.ShouldBeSameAs(customers);
       catalog.Diagnostics.ShouldBeEmpty();
    }
 
@@ -376,4 +394,29 @@ public sealed class CatalogBuilderTests
       back.ToJson().ShouldBe(json);
       back.Relations.Single().InverseName.ShouldBe("contacts");
    }
+
+   /// <summary>Lists an overlay's JSON leaves out are empty, and the catalog builds with them.</summary>
+   [Fact]
+   public void OverlayJsonMayLeaveListsOut()
+   {
+      CatalogOverlay overlay = CatalogOverlay.FromJson(
+         """{ "relations": [{ "from": "crm.contacts", "fromColumns": ["customer_ref"], "to": "shop.customers", "toColumns": ["id"] }], "entities": [{ "entity": "shop.orders", "hidden": true }] }""");
+      overlay.VirtualEntities.ShouldBeEmpty();
+      overlay.Navigations.ShouldBeEmpty();
+      overlay.Entities.Single().Columns.ShouldBeEmpty();
+      QueryCatalog catalog = Build(overlay,
+         ("shop", Shop()),
+         ("crm", Source(Table("contacts", Col("id"), Col("customer_ref", "int32?")) with { PrimaryKey = Pk("id") })));
+      catalog.Entity("crm.contacts").Nav("customer").Target.ShouldBeSameAs(catalog.Entity("shop.customers"));
+      catalog.Entity("shop.orders").Hidden.ShouldBeTrue();
+   }
+
+   /// <summary>An overlay's JSON without the names a relation, virtual entity or setting needs fails to load, saying which.</summary>
+   [Theory]
+   [InlineData("""{ "relations": [{ "from": "a.b", "to": "c.d", "toColumns": ["id"] }] }""", "A relation of the overlay needs \"from\", \"fromColumns\", \"to\" and \"toColumns\"")]
+   [InlineData("""{ "virtualEntities": [{ "name": "r.x" }] }""", "A virtual entity of the overlay needs \"name\" and \"query\"")]
+   [InlineData("""{ "entities": [{ "hidden": true }] }""", "An entity setting of the overlay needs \"entity\"")]
+   [InlineData("""{ "navigations": [{ "entity": "a.b" }] }""", "A navigation setting of the overlay needs \"entity\" and \"name\"")]
+   public void OverlayJsonWithoutNamesItNeedsFails(string json, string message) =>
+      Should.Throw<System.Text.Json.JsonException>(() => CatalogOverlay.FromJson(json)).Message.ShouldBe(message);
 }

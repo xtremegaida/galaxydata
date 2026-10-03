@@ -24,7 +24,7 @@
   5 region_code string(3)?: direct sales.customers.region_code; edits sales.customers.region_code by id = [0]; links to row sales.regions(code) = [5] via region
   6 uid guid?: direct sales.customers.uid; edits sales.customers.uid by id = [0]
   7 notes json?: direct sales.customers.notes; edits sales.customers.notes by id = [0]
-  rows: sales.customers by id = [0]; related: rows crm.contacts(customer_ref) = [0] via contacts; rows sales.orders(customer_id) = [0] via orders_by_customer; rows sales.orders(ship_customer_id) = [0] via orders_by_ship_customer
+  rows: sales.customers by id = [0]; related: rows sales.orders(customer_id) = [0] via orders_by_customer; rows sales.orders(ship_customer_id) = [0] via orders_by_ship_customer; rows crm.contacts(customer_ref) = [0] via contacts
 
 ### sales.orders
   0 id int64: direct sales.orders.id; edits sales.orders.id by id = [0]
@@ -55,7 +55,7 @@
   6 uid guid?: direct sales.customers.uid; edits sales.customers.uid by id = [0]
   7 notes json?: direct sales.customers.notes; edits sales.customers.notes by id = [0]
   8 big boolean?: computed (credit_limit > 1000) from sales.customers.credit_limit
-  rows: sales.customers by id = [0]; related: rows crm.contacts(customer_ref) = [0] via contacts; rows sales.orders(customer_id) = [0] via orders_by_customer; rows sales.orders(ship_customer_id) = [0] via orders_by_ship_customer
+  rows: sales.customers by id = [0]; related: rows sales.orders(customer_id) = [0] via orders_by_customer; rows sales.orders(ship_customer_id) = [0] via orders_by_ship_customer; rows crm.contacts(customer_ref) = [0] via contacts
 
 ### sales.orders.select(id, c: customer, ship_to: ship_customer)
   0 id int64: direct sales.orders.id; edits sales.orders.id by id = [0]
@@ -156,7 +156,7 @@
   5 region_code string(3)?: direct customer -> sales.customers.region_code; edits sales.customers.region_code by id = [0]; links to row sales.regions(code) = [5] via region
   6 uid guid?: direct customer -> sales.customers.uid; edits sales.customers.uid by id = [0]
   7 notes json?: direct customer -> sales.customers.notes; edits sales.customers.notes by id = [0]
-  rows: sales.customers by id = [0]; related: rows crm.contacts(customer_ref) = [0] via contacts; rows sales.orders(customer_id) = [0] via orders_by_customer; rows sales.orders(ship_customer_id) = [0] via orders_by_ship_customer
+  rows: sales.customers by id = [0]; related: rows sales.orders(customer_id) = [0] via orders_by_customer; rows sales.orders(ship_customer_id) = [0] via orders_by_ship_customer; rows crm.contacts(customer_ref) = [0] via contacts
 
 ### sales.customers.select(name, latest: orders_by_customer.orderBy(desc(order_date)).first(), last: orders_by_customer.orderBy(desc(order_date)).first().total)
   0 name string(100): direct sales.customers.name; edits sales.customers.name by id = [3]

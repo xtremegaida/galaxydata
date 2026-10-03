@@ -53,11 +53,13 @@ internal sealed class Session : IAsyncDisposable
    public QueryParameters Parameters { get; }
 
    /// <summary>
-   /// Opens the sources (read-only, but those named in <paramref name="writable"/>) and builds the engine; what their
-   /// schemas left out is written to <paramref name="error"/>.
+   /// Opens the sources (read-only, but those named in <paramref name="writable"/>) and builds the engine, whose
+   /// queries and changes may run for <paramref name="timeout"/>; what the sources' schemas left out is written to
+   /// <paramref name="error"/>.
    /// </summary>
    public static async Task<Session> OpenAsync(IEnumerable<string> sources, FileInfo? overlayFile, IEnumerable<string> parameters, string? mergeMemory,
-                                               TextWriter error, CancellationToken cancellationToken, IEnumerable<string>? writable = null)
+                                               TextWriter error, CancellationToken cancellationToken, IEnumerable<string>? writable = null,
+                                               TimeSpan? timeout = null)
    {
       QueryParameters values = new();
       foreach (string parameter in parameters) { ParameterSpec.AddTo(values, parameter); }
@@ -81,7 +83,7 @@ internal sealed class Session : IAsyncDisposable
       foreach (string warning in opened.Warnings) { await error.WriteLineAsync("gdq: warning: " + warning); }
       QueryEngine engine = new(opened.BuildCatalog(overlay), opened,
          [Sqlite.SqliteSourceProvider.Instance, DuckDb.DuckDbSourceProvider.Instance, PostgreSql.PostgreSqlSourceProvider.Instance,
-          SqlServer.SqlServerSourceProvider.Instance, excel], merge);
+          SqlServer.SqlServerSourceProvider.Instance, excel], merge, new QueryEngineOptions { Timeout = timeout });
       return new Session(opened, engine, merge, excel, values);
    }
 
@@ -123,22 +125,23 @@ internal static class GdqApp
       Option<bool> commit = new("--commit") { Description = "Write the changes, in a transaction on each connection; without it, they are only shown." };
       Option<bool> anyStatement = new("--any-statement") { Description = "Let the script run statements that don't change data, as an administrator may." };
       Argument<string> target = new("source") { Description = "The alias of the source the script runs on." };
+      Option<double?> timeout = new("--timeout") { Description = "Stop a query, or the writing of changes, that runs longer than this many seconds." };
 
-      Command run = new("run", "Run a query and print its rows.") { sources, overlay, parameters, format, sql, maxRows, mergeMemory, file, query };
+      Command run = new("run", "Run a query and print its rows.") { sources, overlay, parameters, format, sql, maxRows, mergeMemory, timeout, file, query };
       Command sqlCommand = new("sql", "Print the SQL each source runs for a query, without running it.") { sources, overlay, parameters, file, query };
       Command explain = new("explain", "Explain a query without running it: plan, columns with lineage, links and edit targets, and SQL.")
       {
          sources, overlay, parameters, file, verbose, query,
       };
       Command schema = new("schema", "List the entities of the catalog with their columns and navigations.") { sources, overlay, filter };
-      Command repl = new("repl", "Run queries interactively.") { sources, overlay, parameters, format, maxRows, mergeMemory };
+      Command repl = new("repl", "Run queries interactively.") { sources, overlay, parameters, format, maxRows, mergeMemory, timeout };
       Command changes = new("changes", "Show the statements that make the changes to rows in a JSON file (--file), and with --commit write them.")
       {
-         sources, overlay, writable, file, commit,
+         sources, overlay, writable, file, commit, timeout,
       };
       Command script = new("script", "Check a script of data changes (--file) for one source, and with --commit run it in a transaction.")
       {
-         sources, writable, file, anyStatement, commit, target,
+         sources, writable, file, anyStatement, commit, timeout, target,
       };
       RootCommand root = new("gdq: query databases and folders of Excel workbooks with the GalaxyData query language, and change their rows.")
       {
@@ -149,7 +152,7 @@ internal static class GdqApp
       {
          string text = await QueryText(parse.GetValue(query), parse.GetValue(file), token);
          await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), parse.GetValue(parameters) ?? [],
-                                                              parse.GetValue(mergeMemory), error, token);
+                                                              parse.GetValue(mergeMemory), error, token, timeout: Seconds(parse.GetValue(timeout)));
          Settings settings = new() { Format = parse.GetValue(format), ShowSql = parse.GetValue(sql), MaxRows = parse.GetValue(maxRows) };
          return await ExecuteAsync(session, text, settings, output, error, token);
       }));
@@ -178,7 +181,7 @@ internal static class GdqApp
       repl.SetAction((parse, token) => Guarded(error, async () =>
       {
          await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), parse.GetValue(parameters) ?? [],
-                                                              parse.GetValue(mergeMemory), error, token);
+                                                              parse.GetValue(mergeMemory), error, token, timeout: Seconds(parse.GetValue(timeout)));
          Settings settings = new() { Format = parse.GetValue(format), MaxRows = parse.GetValue(maxRows) };
          return await new Repl(session, input, output, error, settings).RunAsync(token);
       }));
@@ -187,7 +190,8 @@ internal static class GdqApp
       {
          FileInfo changeFile = parse.GetValue(file) ?? throw new UsageException("Give the changes in a JSON file, with --file");
          string json = await File.ReadAllTextAsync(changeFile.FullName, token);
-         await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), [], null, error, token, parse.GetValue(writable));
+         await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, parse.GetValue(overlay), [], null, error, token, parse.GetValue(writable),
+                                                              Seconds(parse.GetValue(timeout)));
          DmlPlan plan = session.Engine.PlanChanges(ChangeFile.Parse(json, session.Engine.Catalog));
          await output.WriteAsync(plan.ToDisplayText());
          foreach (DmlIssue issue in plan.Issues) { await error.WriteLineAsync($"gdq: change {issue.ChangeIndex}: {issue.Message}"); }
@@ -203,7 +207,8 @@ internal static class GdqApp
       {
          FileInfo scriptFile = parse.GetValue(file) ?? throw new UsageException("Give the script in a file, with --file");
          string text = await File.ReadAllTextAsync(scriptFile.FullName, token);
-         await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, null, [], null, error, token, parse.GetValue(writable));
+         await using Session session = await Session.OpenAsync(parse.GetValue(sources)!, null, [], null, error, token, parse.GetValue(writable),
+                                                              Seconds(parse.GetValue(timeout)));
          string alias = parse.GetValue(target)!;
          SourceInfo source = session.Engine.Catalog.FindSource(alias) ?? throw new UsageException($"'{alias}' is no source");
          DmlScript parsed;
@@ -223,6 +228,13 @@ internal static class GdqApp
       InvocationConfiguration configuration = new() { Output = output, Error = error };
       return await root.Parse(args).InvokeAsync(configuration, cancellationToken);
    }
+
+   private static TimeSpan? Seconds(double? seconds) => seconds switch
+   {
+      null => null,
+      > 0 and < 86_400 => TimeSpan.FromSeconds(seconds.Value),
+      _ => throw new UsageException("--timeout is a number of seconds, more than 0 and less than a day"),
+   };
 
    private static async Task<string> QueryText(string? query, FileInfo? file, CancellationToken cancellationToken)
    {

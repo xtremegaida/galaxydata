@@ -38,11 +38,14 @@ public abstract class SourceProvider
    }
 
    /// <summary>
-   /// Readies the tables a statement reads before it runs: nothing, for databases; an Excel folder loads the sheets
-   /// whose workbooks changed since they were last loaded.
+   /// Readies the tables a statement reads before it runs, and keeps them as they are until it has started: the lease
+   /// it gives, which the engine disposes then (null for none). Nothing, for databases; an Excel folder loads the
+   /// sheets whose workbooks changed, and keeps others from loading them again, for a catalog that types them
+   /// differently, before the statement reads them.
    /// </summary>
-   public virtual ValueTask PrepareReadAsync(SourceInfo source, IReadOnlyList<TableEntity> tables, QueryEngineOptions options, CancellationToken cancellationToken) =>
-      ValueTask.CompletedTask;
+   public virtual ValueTask<IDisposable?> PrepareReadAsync(SourceInfo source, IReadOnlyList<TableEntity> tables, QueryEngineOptions options,
+                                                          CancellationToken cancellationToken) =>
+      ValueTask.FromResult<IDisposable?>(null);
 
    /// <summary>
    /// Readies a connection the engine was given before a query runs on it: session settings the language's
@@ -61,6 +64,31 @@ public abstract class SourceProvider
    /// constraints), so that a change that can't be committed stops before any connection commits.
    /// </summary>
    public virtual ValueTask PrepareCommitAsync(DbConnection connection, DbTransaction transaction, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+   /// <summary>
+   /// Stops a command that is running, from another thread, when its query is cancelled or out of time: by default
+   /// <see cref="DbCommand.Cancel"/>. SQLite's does nothing, so its provider interrupts the connection instead.
+   /// </summary>
+   public virtual void CancelCommand(DbCommand command)
+   {
+      ArgumentNullException.ThrowIfNull(command);
+      command.Cancel();
+   }
+
+   /// <summary>Stops the command when the token is cancelled, until the registration is disposed.</summary>
+   internal CancellationTokenRegistration StopOnCancel(DbCommand command, CancellationToken cancellationToken) =>
+      cancellationToken.Register(static state =>
+      {
+         (SourceProvider provider, DbCommand running) = ((SourceProvider, DbCommand))state!;
+         try
+         {
+            provider.CancelCommand(running);
+         }
+         catch (Exception e) when (e is DbException or InvalidOperationException or ObjectDisposedException)
+         {
+            // Nothing running to stop.
+         }
+      }, (this, command));
 
    /// <summary>Readies a command for a query before it runs, such as streaming its rows instead of computing them all first.</summary>
    public virtual void PrepareCommand(DbCommand command) { }

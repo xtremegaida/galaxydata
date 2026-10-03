@@ -105,12 +105,16 @@ internal sealed class JoinScope(Scope parent, RowVariable outer, RowVariable inn
    public RowVariable Inner { get; } = inner;
 }
 
-/// <summary>An implicit record: its members are in scope by name and <c>it</c> is the record (<c>orders.sum(total)</c>).</summary>
+/// <summary>
+/// An implicit record: its members are in scope by name and <c>it</c> is the record (<c>orders.sum(total)</c>). For a
+/// value of a collection of values (<c>total.any(it > 100)</c>), <c>it</c> is the value, which has no members.
+/// </summary>
 internal sealed class RecordScope(Scope parent, BoundExpr record) : Scope(parent)
 {
    public BoundExpr Record { get; } = record;
 
-   public RowShape Shape => ((RecordBoundType)Record.Type).Shape;
+   /// <summary>The record's members; null when <see cref="Record"/> is a value.</summary>
+   public RowShape? Shape => (Record.Type as RecordBoundType)?.Shape;
 }
 
 #endregion
@@ -196,9 +200,13 @@ internal sealed partial class BinderRun
       {
          throw Error(name, DiagnosticCodes.InvalidDefinition, $"'{name.Name}' is already defined above");
       }
-      if (context.Catalog.Root.Lookup(name.Name).Status != MatchStatus.NotFound)
+      NameMatch<CatalogItem> shadowed = context.Catalog.Root.Lookup(name.Name);
+      if (shadowed.Status != MatchStatus.NotFound)
       {
-         Warn(name, DiagnosticCodes.ShadowedName, $"'{name.Name}' now means this subtree; the source of the same name is still reached as ::{name.Name}");
+         string example = shadowed.Item is CatalogNamespace ns && (ns.Shortcuts.Count > 0 ? ns.Shortcuts[0] : ns.Entities.Count > 0 ? ns.Entities[0] : null) is { } entity
+            ? $"{name.Name}::{entity.Name}"
+            : $"{name.Name}::…";
+         Warn(name, DiagnosticCodes.ShadowedName, $"'{name.Name}' now means this subtree; the source of the same name is still reached with '::', as in {example}");
       }
       BoundNode bound = BindNode(value, root);
       return bound switch

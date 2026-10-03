@@ -22,6 +22,9 @@ public sealed record QueryRequest(string Text)
 
    /// <summary>Pages the result: skip <see cref="PageRequest.Offset"/> rows, then take at most <see cref="PageRequest.Limit"/>.</summary>
    public PageRequest? Paging { get; init; }
+
+   /// <summary>How long the query may run, for this request: see <see cref="QueryEngineOptions.Timeout"/>, which it overrides.</summary>
+   public TimeSpan? Timeout { get; init; }
 }
 
 public sealed record PageRequest(long Offset, long Limit);
@@ -36,8 +39,19 @@ public sealed class QueryEngineOptions
    /// <summary>Read values that don't convert to their column's type as null instead of failing the query.</summary>
    public bool LenientConversion { get; init; }
 
-   /// <summary>How long a database command may run; null leaves the provider's default.</summary>
+   /// <summary>
+   /// How long a database command may run; null leaves the provider's default. SQLite takes it as how long to wait for
+   /// a locked database, and DuckDB not at all: <see cref="Timeout"/> bounds a query in every database.
+   /// </summary>
    public TimeSpan? CommandTimeout { get; init; }
+
+   /// <summary>
+   /// How long a query may run, from when it starts until its last row is read (fetches, merging and reading
+   /// included), or how long changes may take to write before they commit; null for no limit. Past it, what is
+   /// running is stopped as cancelling stops it: a query fails with <see cref="QueryTimeoutException"/>, and changes
+   /// are rolled back (<see cref="Dml.DmlFailureKind.Timeout"/>).
+   /// </summary>
+   public TimeSpan? Timeout { get; init; }
 
    /// <summary>Rewrite plans before writing their SQL (decorrelation, pushdown, pruning); off only to compare.</summary>
    public bool Optimize { get; init; } = true;
@@ -65,6 +79,9 @@ public sealed class QueryEngineOptions
 
    /// <summary>The most keys in one statement (fewer when the source takes fewer parameters).</summary>
    public int MaxBindBatch { get; init; } = 2_000;
+
+   /// <summary>The longest query text the engine takes, in characters; a longer one is refused before it is parsed.</summary>
+   public int MaxQueryLength { get; init; } = 100_000;
 
    /// <summary>Runs before each connection commits changes; tests make it fail, as a commit can.</summary>
    internal Func<SourceInfo, ValueTask>? BeforeCommit { get; init; }
@@ -123,6 +140,12 @@ public sealed class QueryEngine
    {
       ArgumentNullException.ThrowIfNull(request);
       QueryParameters parameters = request.Parameters ?? QueryParameters.Empty;
+      if (request.Text.Length > Options.MaxQueryLength)
+      {
+         return new PreparedQuery(this, request, parameters, null, [QueryDiagnostic.Error(DiagnosticCodes.QueryTooLong,
+            $"The query is {request.Text.Length.ToString("N0", CultureInfo.InvariantCulture)} characters long, longer than the " +
+            $"{Options.MaxQueryLength.ToString("N0", CultureInfo.InvariantCulture)} the engine takes", 0, 0)], null, []);
+      }
       BoundProgram program = Binder.Bind(request.Text, Catalog, parameters);
       if (!program.Success) { return new PreparedQuery(this, request, parameters, program, [.. program.Diagnostics], null, []); }
       LogicalPlan plan;
@@ -140,13 +163,15 @@ public sealed class QueryEngine
    /// <summary>A query that binds but can't be planned yet: the reason as a diagnostic.</summary>
    private PreparedQuery Unplanned(QueryRequest request, QueryParameters parameters, BoundProgram program, NotSupportedException e) =>
       new(this, request, parameters, program,
-          [.. program.Diagnostics, QueryDiagnostic.Error(DiagnosticCodes.NotTranslatable, $"This query can't be planned yet: {e.Message}", 0, request.Text.Length)],
+          [.. program.Diagnostics, e is PlanTooLargeException
+             ? QueryDiagnostic.Error(DiagnosticCodes.PlanTooLarge, e.Message, 0, request.Text.Length)
+             : QueryDiagnostic.Error(DiagnosticCodes.NotTranslatable, $"This query can't be planned yet: {e.Message}", 0, request.Text.Length)],
           null, []);
 
    /// <summary>The count of a prepared query's rows, from the same binding: see <see cref="PreparedQuery.ForCount"/>.</summary>
    internal PreparedQuery PrepareCount(PreparedQuery query)
    {
-      QueryRequest request = new(query.Text) { Parameters = query.Parameters };
+      QueryRequest request = new(query.Text) { Parameters = query.Parameters, Timeout = query.Timeout };
       if (query.Program is not { Success: true } program) { return new PreparedQuery(this, request, query.Parameters, query.Program, query.Diagnostics, null, []) { IsCount = true }; }
       LogicalPlan plan;
       try
@@ -385,7 +410,7 @@ public sealed class QueryEngine
    internal SourceProvider Provider(SourceInfo source) => providers[source.ProviderKind];
 
    /// <summary>Readies what a fragment reads before its statements run (an Excel folder loads the sheets that changed).</summary>
-   internal ValueTask PrepareReadAsync(QueryFragment fragment, CancellationToken cancellationToken) =>
+   internal ValueTask<IDisposable?> PrepareReadAsync(QueryFragment fragment, CancellationToken cancellationToken) =>
       Provider(fragment.Source).PrepareReadAsync(fragment.Source, fragment.Tables, Options, cancellationToken);
 
    /// <summary>A connection to a source, readied for queries; the caller disposes it.</summary>
@@ -486,4 +511,4 @@ public sealed class QueryException(IReadOnlyList<QueryDiagnostic> diagnostics)
 }
 
 /// <summary>A query that failed while it ran: a database error, or a value that didn't convert.</summary>
-public sealed class QueryExecutionException(string message, Exception? inner = null) : Exception(message, inner);
+public class QueryExecutionException(string message, Exception? inner = null) : Exception(message, inner);

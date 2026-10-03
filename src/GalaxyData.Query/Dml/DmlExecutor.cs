@@ -66,9 +66,20 @@ internal sealed class DmlExecutor(QueryEngine engine)
          throw new ArgumentException($"There are {twice.Count()} scripts for {twice.Key}: a connection runs one", nameof(scripts));
       }
       List<Connection> connections = scripts.Select(s => new Connection(s, engine.Provider(s.Source))).ToList();
+      using Deadline? deadline = Deadline.Start(engine.Options.Timeout, engine.Options.Clock, cancellationToken);
       try
       {
-         DmlFailure? failure = await WriteAsync(connections, cancellationToken).ConfigureAwait(false);
+         DmlFailure? failure;
+         try
+         {
+            failure = await WriteAsync(connections, deadline?.Token ?? cancellationToken).ConfigureAwait(false);
+         }
+         catch (OperationCanceledException) when (deadline?.Expired == true)
+         {
+            SourceInfo source = (connections.LastOrDefault(c => c.Database != null) ?? connections[0]).Script.Source;
+            failure = new DmlFailure(DmlFailureKind.Timeout, source,
+               $"The changes took longer than {Deadline.Describe(deadline.Timeout)} to write, the most they may, and were rolled back", null, null);
+         }
          if (failure != null)
          {
             foreach (Connection connection in connections) { await connection.RollBackAsync().ConfigureAwait(false); }
@@ -168,6 +179,7 @@ internal sealed class DmlExecutor(QueryEngine engine)
          connection.Provider.BindParameter(parameter, slot.Constant, slot);
          command.Parameters.Add(parameter);
       }
+      using CancellationTokenRegistration stop = connection.Provider.StopOnCancel(command, cancellationToken);
       switch (statement.Counting)
       {
          case DmlRowCount.Selected:

@@ -30,6 +30,19 @@ public sealed class DuckDbMergeOptions
 
    /// <summary>The threads DuckDB may use; null for its default, one per core.</summary>
    public int? Threads { get; init; }
+
+   /// <summary>
+   /// Where DuckDB looks for its extensions; null for DuckDB's default (<c>~/.duckdb/extensions</c>). The engine
+   /// needs none it hasn't got: ICU, which knows time zones, is built into DuckDB.NET's native library, and without
+   /// it DuckDB works in UTC, as the engine does anyway. For offline machines, install any others here beforehand.
+   /// </summary>
+   public string? ExtensionDirectory { get; init; }
+
+   /// <summary>
+   /// Whether DuckDB may download an extension from the internet the first time a statement needs one; off, it
+   /// loads only extensions already installed, and a statement that needs another fails at once.
+   /// </summary>
+   public bool DownloadExtensions { get; init; }
 }
 
 /// <summary>
@@ -100,7 +113,11 @@ public sealed class DuckDbMergeEngine : IMergeEngine, IDisposable
 
    private DuckDBConnection OpenRoot()
    {
-      DuckDBConnection connection = new("Data Source=" + (options.DatabasePath ?? ":memory:"));
+      // Extension settings take effect only from the database's start: DuckDB loads ICU then, when it can.
+      DuckDBConnectionStringBuilder builder = new() { DataSource = options.DatabasePath ?? ":memory:" };
+      if (options.ExtensionDirectory != null) { builder["extension_directory"] = options.ExtensionDirectory; }
+      if (!options.DownloadExtensions) { builder["autoinstall_known_extensions"] = "false"; }
+      DuckDBConnection connection = new(builder.ConnectionString);
       connection.Open();
       try
       {

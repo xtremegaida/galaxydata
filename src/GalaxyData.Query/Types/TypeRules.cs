@@ -114,9 +114,19 @@ public static class TypeRules
    /// <summary>The kind of values a type holds, for "{kind} values ..." messages: "guid", "text", "binary".</summary>
    public static string KindName(ScalarType type) => type.Kind switch
    {
+      ScalarKind.Boolean => "true/false",
+      ScalarKind.Int16 or ScalarKind.Int32 or ScalarKind.Int64 => "whole-number",
+      ScalarKind.Decimal or ScalarKind.Single or ScalarKind.Double => "number",
+      ScalarKind.String => "text",
       ScalarKind.Binary => "binary",
       ScalarKind.Guid => "guid",
-      _ => Describe(type),
+      ScalarKind.Date => "date",
+      ScalarKind.Time => "time",
+      ScalarKind.DateTime => "date-time",
+      ScalarKind.DateTimeOffset => "date-time-with-offset",
+      ScalarKind.Interval => "interval",
+      ScalarKind.Json => "JSON",
+      _ => "unknown-type",
    };
 
    /// <summary>

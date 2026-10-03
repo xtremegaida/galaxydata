@@ -370,27 +370,30 @@ public sealed class CatalogBuilder
             relation.Forward = new NavigationDef(relation, isInverse: false);
             relation.Inverse = new NavigationDef(relation, isInverse: true);
          }
-         List<RelationDef> ordered =
-         [
-            .. batch.Where(r => explicitNames.ContainsKey(r)),
-            .. batch.Where(r => !explicitNames.ContainsKey(r)),
-         ];
+         // Names the overlay gives come first, then the conventions' names of the sources' own foreign keys, so a
+         // relation the overlay adds never takes a name the database's schema gives.
+         int Rank(RelationDef relation, Func<OverlayRelation, string?> given) =>
+            explicitNames.TryGetValue(relation, out OverlayRelation? spec) && given(spec) != null ? 0 : relation.Origin == RelationOrigin.ForeignKey ? 1 : 2;
 
-         foreach (RelationDef relation in ordered)
+         foreach (RelationDef relation in batch.OrderBy(r => Rank(r, s => s.Name)))
          {
             explicitNames.TryGetValue(relation, out OverlayRelation? spec);
             string preferred = spec?.Name ?? NavigationNaming.ForwardBase(relation, naming);
-            Assign(relation.Forward, preferred, relation.Name, spec?.Name != null);
+            Assign(relation.Forward, preferred, relation.Name ?? AcrossSources(relation.To, preferred, relation), spec?.Name != null);
          }
 
          ILookup<EntityDef, RelationDef> byPrincipal = relations.ToLookup(r => r.To);
-         foreach (RelationDef relation in ordered)
+         foreach (RelationDef relation in batch.OrderBy(r => Rank(r, s => s.InverseName)))
          {
             explicitNames.TryGetValue(relation, out OverlayRelation? spec);
             string preferred = spec?.InverseName ?? NavigationNaming.InverseBase(relation, byPrincipal[relation.To]);
-            Assign(relation.Inverse, preferred, relation.Name, spec?.InverseName != null);
+            Assign(relation.Inverse, preferred, relation.Name ?? AcrossSources(relation.From, preferred, relation), spec?.InverseName != null);
          }
       }
+
+      /// <summary>For a navigation to another source whose name is taken: the name after that source's alias (<c>wh_orders</c>).</summary>
+      private static string? AcrossSources(EntityDef target, string preferred, RelationDef relation) =>
+         relation.IsCrossSource && target is TableEntity table ? table.Source.Alias + "_" + preferred : null;
 
       private void Assign(NavigationDef navigation, string preferred, string? fallback, bool isExplicit)
       {

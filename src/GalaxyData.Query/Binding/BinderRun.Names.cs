@@ -34,6 +34,7 @@ internal sealed partial class BinderRun
             case RecordScope record:
             {
                if (string.Equals(name, ItKeyword, StringComparison.Ordinal)) { return record.Record; }
+               if (record.Shape == null) { break; }
                NameMatch<ShapeMember> member = record.Shape.Find(name);
                if (member.Status == MatchStatus.Ambiguous) { throw AmbiguousMember(id, name, member); }
                if (member.IsFound) { return MemberNode(record.Record, member.Item!, id); }
@@ -220,7 +221,7 @@ internal sealed partial class BinderRun
                break;
             case RecordScope record:
                candidates.Add(ItKeyword);
-               candidates.AddRange(record.Shape.Members.Select(m => m.Name));
+               candidates.AddRange(record.Shape?.Members.Select(m => m.Name) ?? []);
                break;
             case JoinScope:
                candidates.Add(OuterKeyword);

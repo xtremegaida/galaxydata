@@ -21,6 +21,7 @@ public sealed class PreparedQuery
    private readonly QueryEngine engine;
    private readonly QueryParameters parameters;
    private readonly PageRequest? paging;
+   private readonly TimeSpan? timeout;
 
    internal PreparedQuery(QueryEngine engine, QueryRequest request, QueryParameters parameters, BoundProgram? program,
                           IReadOnlyList<QueryDiagnostic> diagnostics, LogicalPlan? plan, IReadOnlyList<QueryFragment> fragments)
@@ -28,6 +29,7 @@ public sealed class PreparedQuery
       this.engine = engine;
       this.parameters = parameters;
       paging = request.Paging;
+      timeout = request.Timeout;
       Program = program;
       Text = request.Text;
       Diagnostics = diagnostics;
@@ -38,6 +40,9 @@ public sealed class PreparedQuery
    public string Text { get; }
 
    internal QueryParameters Parameters => parameters;
+
+   /// <summary>The request's own timeout, if it has one.</summary>
+   internal TimeSpan? Timeout => timeout;
 
    internal BoundProgram? Program { get; }
 
@@ -74,16 +79,43 @@ public sealed class PreparedQuery
    /// <summary>What the query would do, without running it; <paramref name="verbose"/> adds the plan after each optimizer phase.</summary>
    public QueryExplain Explain(bool verbose = false) => QueryExplainer.Explain(this, Program, paging, IsCount, engine.Options.Optimize, verbose);
 
+   /// <summary>
+   /// Runs the query: its result streams the rows. With a timeout (the request's, or the engine's), the query is
+   /// stopped when it has run that long, reading included, and fails with <see cref="QueryTimeoutException"/>.
+   /// </summary>
    public async Task<QueryResult> ExecuteAsync(CancellationToken cancellationToken = default)
    {
       if (!Success) { throw new QueryException(Diagnostics); }
+      QueryEngineOptions options = engine.Options;
+      Deadline? deadline = Deadline.Start(timeout ?? options.Timeout, options.Clock, cancellationToken);
+      try
+      {
+         QueryResult result = await RunAsync(deadline?.Token ?? cancellationToken).ConfigureAwait(false);
+         result.Expires(deadline);
+         return result;
+      }
+      catch (Exception e) when (deadline?.Expired == true && e is OperationCanceledException or QueryExecutionException or DbException)
+      {
+         deadline.Dispose();
+         throw deadline.Exception();
+      }
+      catch
+      {
+         deadline?.Dispose();
+         throw;
+      }
+   }
+
+   private async Task<QueryResult> RunAsync(CancellationToken cancellationToken)
+   {
       QueryEngineOptions options = engine.Options;
       ExecutionStats stats = new(options.Clock.GetUtcNow(), options.Clock);
       if (Merge != null) { return await new FederatedExecution(engine, this, stats).RunAsync(cancellationToken).ConfigureAwait(false); }
 
       QueryFragment fragment = Fragments[0];
       SourceProvider provider = engine.Provider(fragment.Source);
-      await engine.PrepareReadAsync(fragment, cancellationToken).ConfigureAwait(false);
+      // What the statement reads stays as it is until the statement has started.
+      using IDisposable? lease = await engine.PrepareReadAsync(fragment, cancellationToken).ConfigureAwait(false);
       DbConnection connection = await engine.OpenAsync(fragment.Source, cancellationToken).ConfigureAwait(false);
       DbCommand? command = null;
       try
@@ -95,7 +127,11 @@ public sealed class PreparedQuery
          DbDataReader reader;
          try
          {
-            reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            // Most providers check the token only between rows; a statement busy computing the first is stopped.
+            using (provider.StopOnCancel(command, cancellationToken))
+            {
+               reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            }
          }
          catch (DbException e)
          {

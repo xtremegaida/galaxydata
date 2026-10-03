@@ -40,6 +40,9 @@ public enum DmlFailureKind : byte
 
    /// <summary>A connection failed to commit.</summary>
    Commit,
+
+   /// <summary>The changes took longer to write than they may (<see cref="Execution.QueryEngineOptions.Timeout"/>), and were rolled back.</summary>
+   Timeout,
 }
 
 /// <summary>What stopped the changes: where, why, and the database's error if there was one.</summary>

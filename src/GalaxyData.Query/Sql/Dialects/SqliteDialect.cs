@@ -120,7 +120,7 @@ internal sealed class SqliteDialect : SqlDialect
       // LIKE ignores ASCII case; a pattern that is a value is matched as GLOB, which doesn't.
       FunctionId.Like => c.IsFixedText(1) ? Binary(SqlBinaryOp.Glob, c.Arg(0), c.Pattern(1, PatternStyle.Glob, PatternShape.AsWritten)) : Like(c.Arg(0), c.Arg(1)),
       FunctionId.ILike => Like(c.Arg(0), c.Arg(1)),
-      FunctionId.Concat => Call("concat", c.Args()),
+      FunctionId.Concat => Call("concat", ConcatArguments(c)),
       FunctionId.Abs => Call("abs", c.Arg(0)),
       FunctionId.Round => IsInteger(c.Type(0)) ? c.Arg(0) : Call("round", c.Args()),
       FunctionId.Floor => IsInteger(c.Type(0)) ? c.Arg(0) : Call("floor", c.Arg(0)),

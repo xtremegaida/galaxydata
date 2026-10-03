@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GalaxyData.Query.Types;
@@ -28,11 +29,39 @@ public sealed record CatalogOverlay
    public string ToJson(bool indented = true) =>
       JsonSerializer.Serialize(this, indented ? CatalogOverlayJsonContext.Indented.CatalogOverlay : CatalogOverlayJsonContext.Default.CatalogOverlay);
 
+   /// <summary>
+   /// An overlay from its JSON: lists left out are empty; a relation, virtual entity, entity setting or navigation
+   /// without the names it needs is a <see cref="JsonException"/> that says which.
+   /// </summary>
    public static CatalogOverlay FromJson(string json)
    {
       ArgumentNullException.ThrowIfNull(json);
-      return JsonSerializer.Deserialize(json, CatalogOverlayJsonContext.Default.CatalogOverlay) ?? Empty;
+      CatalogOverlay overlay = JsonSerializer.Deserialize(json, CatalogOverlayJsonContext.Default.CatalogOverlay) ?? Empty;
+      // The serializer sets lists the JSON leaves out to null, not to their defaults (they are init-only).
+      return overlay with
+      {
+         Relations = [.. (overlay.Relations ?? []).Select(Checked)],
+         VirtualEntities = [.. (overlay.VirtualEntities ?? []).Select(v => v.Name != null && v.Query != null ? v : throw Missing("A virtual entity", "\"name\" and \"query\""))],
+         Entities = [.. (overlay.Entities ?? []).Select(e => e.Entity != null ? e with { Columns = [.. (e.Columns ?? []).Select(c => c.Name != null ? c : throw Missing("A column setting", "\"name\""))] }
+                                                                            : throw Missing("An entity setting", "\"entity\""))],
+         Navigations = [.. (overlay.Navigations ?? []).Select(n => n.Entity != null && n.Name != null ? n : throw Missing("A navigation setting", "\"entity\" and \"name\""))],
+         Naming = overlay.Naming is { } naming
+            ? naming with
+            {
+               SeparatedSuffixes = naming.SeparatedSuffixes ?? NavigationNamingOptions.Default.SeparatedSuffixes,
+               CamelSuffixes = naming.CamelSuffixes ?? NavigationNamingOptions.Default.CamelSuffixes,
+               DisplayColumnNames = naming.DisplayColumnNames ?? NavigationNamingOptions.Default.DisplayColumnNames,
+            }
+            : null,
+      };
    }
+
+   private static OverlayRelation Checked(OverlayRelation relation) =>
+      relation.From != null && relation.To != null && relation.FromColumns is { Count: > 0 } && relation.ToColumns is { Count: > 0 }
+         ? relation
+         : throw Missing("A relation", "\"from\", \"fromColumns\", \"to\" and \"toColumns\"");
+
+   private static JsonException Missing(string what, string needs) => new($"{what} of the overlay needs {needs}");
 }
 
 /// <summary>A many-to-one link from <see cref="From"/> columns to unique columns of <see cref="To"/>.</summary>

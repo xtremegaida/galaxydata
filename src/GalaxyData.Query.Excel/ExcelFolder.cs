@@ -194,15 +194,81 @@ internal sealed class ExcelFolder
    };
 
    /// <summary>Loads the sheets of the tables that aren't loaded, or whose workbooks or columns changed since they were.</summary>
-   public async ValueTask PrepareAsync(IReadOnlyList<TableEntity> tables, bool lenient, CancellationToken cancellationToken)
+   /// <summary>
+   /// Readies the sheets a statement reads, and holds each as loaded until the lease is disposed: a query of a
+   /// catalog that types one differently waits to load it again until no statement is about to read it. Sheets are
+   /// leased in name order, so two queries never wait for each other.
+   /// </summary>
+   public async ValueTask<IDisposable?> PrepareAsync(IReadOnlyList<TableEntity> tables, bool lenient, CancellationToken cancellationToken)
    {
-      foreach (TableEntity table in tables) { await PrepareAsync(table, lenient, cancellationToken).ConfigureAwait(false); }
+      List<IDisposable> leases = [];
+      try
+      {
+         foreach (TableEntity table in tables.Distinct().OrderBy(t => t.Schema, StringComparer.Ordinal).ThenBy(t => t.Table, StringComparer.Ordinal))
+         {
+            leases.Add(await PrepareAsync(table, lenient, cancellationToken).ConfigureAwait(false));
+         }
+         return new Leases(leases);
+      }
+      catch
+      {
+         foreach (IDisposable lease in leases) { lease.Dispose(); }
+         throw;
+      }
    }
 
-   private async ValueTask PrepareAsync(TableEntity table, bool lenient, CancellationToken cancellationToken)
+   private sealed class Leases(List<IDisposable> leases) : IDisposable
+   {
+      public void Dispose()
+      {
+         foreach (IDisposable lease in leases) { lease.Dispose(); }
+         leases.Clear();
+      }
+   }
+
+   /// <summary>A statement's hold on a sheet as loaded; disposing it lets a load waiting for the sheet go ahead.</summary>
+   private sealed class Lease(SheetState state) : IDisposable
+   {
+      private int disposed;
+
+      public void Dispose()
+      {
+         if (Interlocked.Exchange(ref disposed, 1) == 1) { return; }
+         state.Gate.Wait();
+         try
+         {
+            if (--state.Readers == 0 && state.Drained is { } drained)
+            {
+               state.Drained = null;
+               drained.SetResult();
+            }
+         }
+         finally
+         {
+            state.Gate.Release();
+         }
+      }
+   }
+
+   private async ValueTask<IDisposable> PrepareAsync(TableEntity table, bool lenient, CancellationToken cancellationToken)
    {
       SheetState state = sheets.GetOrAdd(table.Schema + "\0" + table.Table, _ => new SheetState());
       TableColumn[] wanted = table.Columns.Select(c => new TableColumn(c.Name, c.Type)).ToArray();
+      while (true)
+      {
+         Task? readers = await TryPrepareAsync(state, table, wanted, lenient, cancellationToken).ConfigureAwait(false);
+         if (readers == null) { return new Lease(state); }
+         // Statements about to read the sheet as it is loaded: it is loaded again once they have started.
+         await readers.WaitAsync(cancellationToken).ConfigureAwait(false);
+      }
+   }
+
+   /// <summary>
+   /// Leases the sheet, loading it first when it must be and no statement holds it; otherwise the task of the
+   /// statements holding it, to wait for.
+   /// </summary>
+   private async ValueTask<Task?> TryPrepareAsync(SheetState state, TableEntity table, TableColumn[] wanted, bool lenient, CancellationToken cancellationToken)
+   {
       await state.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
       try
       {
@@ -223,10 +289,21 @@ internal sealed class ExcelFolder
             throw new QueryExecutionException($"{Alias}: the workbook '{table.Schema}.xlsx' is no longer in {Path}; refresh the source's schema");
          }
          FileStamp stamp = new(file.LastWriteTimeUtc, file.Length);
-         if (state.Stamp == stamp && state.Columns != null && state.Columns.SequenceEqual(wanted) && (lenient || !state.Nulled)) { return; }
+         if (state.Stamp == stamp && state.Columns != null && state.Columns.SequenceEqual(wanted) && (lenient || !state.Nulled))
+         {
+            state.Readers++;
+            return null;
+         }
+         if (state.Readers > 0)
+         {
+            state.Drained ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            return state.Drained.Task;
+         }
          state.Nulled = await Task.Run(() => Load(file, table, wanted, lenient, cancellationToken), cancellationToken).ConfigureAwait(false);
          state.Stamp = stamp;
          state.Columns = wanted;
+         state.Readers++;
+         return null;
       }
       finally
       {
@@ -439,7 +516,14 @@ internal sealed class ExcelFolder
 
    private sealed class SheetState
    {
+      /// <summary>Guards the state, and is held while the sheet is loaded.</summary>
       public SemaphoreSlim Gate { get; } = new(1, 1);
+
+      /// <summary>The statements that hold the sheet as loaded, until they have started.</summary>
+      public int Readers { get; set; }
+
+      /// <summary>Set when a load waits for <see cref="Readers"/> to drop to none.</summary>
+      public TaskCompletionSource? Drained { get; set; }
 
       public FileStamp? Stamp { get; set; }
 

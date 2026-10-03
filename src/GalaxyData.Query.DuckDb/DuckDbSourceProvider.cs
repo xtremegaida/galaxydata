@@ -25,15 +25,23 @@ public sealed class DuckDbSourceProvider : SourceProvider
 
    public override ISchemaIntrospector Introspector { get; } = new DuckDbSchemaIntrospector();
 
+   /// <summary>
+   /// Sets the time zone to UTC where DuckDB has one to set: the ICU extension, when it is loaded or installed.
+   /// Without it, DuckDB works in UTC anyway, and setting one would have DuckDB download ICU, or wait for the
+   /// network to say it can't.
+   /// </summary>
    public override async ValueTask PrepareConnectionAsync(DbConnection connection, CancellationToken cancellationToken)
    {
+      string? icu = await connection.ScalarTextAsync(
+         "SELECT count(*) FROM duckdb_extensions() WHERE extension_name = 'icu' AND (loaded OR installed)", cancellationToken).ConfigureAwait(false);
+      if (icu != "1") { return; }
       try
       {
          await connection.ExecuteAsync("SET TimeZone = 'UTC'", cancellationToken).ConfigureAwait(false);
       }
       catch (DbException)
       {
-         // Without the ICU extension there is no TimeZone setting, and DuckDB works in UTC anyway.
+         // ICU is installed but not loaded, and can't be (autoloading is off): DuckDB works in UTC.
       }
    }
 

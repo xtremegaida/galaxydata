@@ -60,7 +60,7 @@ internal sealed class FederatedExecution
          DbDataReader reader;
          try
          {
-            using (cancellationToken.Register(Cancel, command))
+            using (provider.StopOnCancel(command, cancellationToken))
             {
                reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -150,7 +150,8 @@ internal sealed class FederatedExecution
    private async Task FetchAsync(IMergeSession session, QueryFragment fragment, CancellationToken cancellationToken)
    {
       long started = options.Clock.GetTimestamp();
-      await engine.PrepareReadAsync(fragment, cancellationToken).ConfigureAwait(false);
+      // What the fragment reads stays as it is until its rows are fetched.
+      using IDisposable? lease = await engine.PrepareReadAsync(fragment, cancellationToken).ConfigureAwait(false);
       if (fragment.Value != null)
       {
          await ValueAsync(fragment, cancellationToken).ConfigureAwait(false);
@@ -255,7 +256,7 @@ internal sealed class FederatedExecution
       await using DbConnection connection = await engine.OpenAsync(fragment.Source, cancellationToken).ConfigureAwait(false);
       await using DbCommand command = Command(connection, provider, fragment, fragment.Statement);
       object? value = null;
-      using (cancellationToken.Register(Cancel, command))
+      using (provider.StopOnCancel(command, cancellationToken))
       {
          await using DbDataReader reader = await Execute(command, where, cancellationToken).ConfigureAwait(false);
          if (await Read(reader, where, cancellationToken).ConfigureAwait(false))
@@ -279,7 +280,7 @@ internal sealed class FederatedExecution
       IReadOnlyList<MergeColumn> columns = fragment.Columns;
       await using DbConnection connection = await engine.OpenAsync(fragment.Source, cancellationToken).ConfigureAwait(false);
       await using DbCommand command = Command(connection, provider, fragment, statement);
-      using (cancellationToken.Register(Cancel, command))
+      using (provider.StopOnCancel(command, cancellationToken))
       {
          await using DbDataReader reader = await Execute(command, where, cancellationToken).ConfigureAwait(false);
          object?[] row = new object?[columns.Count];
@@ -378,7 +379,4 @@ internal sealed class FederatedExecution
          throw new QueryExecutionException($"{where} failed while reading rows of its part of the query: {e.Message}", e);
       }
    }
-
-   /// <summary>Stops a running command when the query is cancelled: most providers only check the token between rows.</summary>
-   private static void Cancel(object? command) => QueryResult.Cancel(command);
 }

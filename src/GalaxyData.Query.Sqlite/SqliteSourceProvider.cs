@@ -1,4 +1,5 @@
 using System;
+using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using System.Threading;
@@ -9,6 +10,8 @@ using GalaxyData.Query.Introspection;
 using GalaxyData.Query.Providers;
 using GalaxyData.Query.Sql;
 using GalaxyData.Query.Types;
+using Microsoft.Data.Sqlite;
+using SQLitePCL;
 
 namespace GalaxyData.Query.Sqlite;
 
@@ -26,6 +29,16 @@ public sealed class SqliteSourceProvider : SourceProvider
    public override SqlDialect Dialect => SqlDialect.Sqlite;
 
    public override ISchemaIntrospector Introspector { get; } = new SqliteSchemaIntrospector();
+
+   /// <summary>
+   /// Interrupts the command's connection (<c>sqlite3_interrupt</c>): Microsoft.Data.Sqlite's <c>Cancel</c> does
+   /// nothing, and checks a token only before a statement starts, so a busy one would run to its end.
+   /// </summary>
+   public override void CancelCommand(DbCommand command)
+   {
+      ArgumentNullException.ThrowIfNull(command);
+      if (command.Connection is SqliteConnection { State: ConnectionState.Open, Handle: { } handle }) { raw.sqlite3_interrupt(handle); }
+   }
 
    /// <summary>
    /// Foreign keys are checked as each statement runs, or not, as the source says (see

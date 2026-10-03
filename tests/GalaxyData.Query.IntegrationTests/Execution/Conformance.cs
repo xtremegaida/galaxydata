@@ -40,6 +40,7 @@ internal static partial class Conformance
       "shop.customers.select(n: upper(name), l: length(name), f: left(name, 3), r: right(name, 3), s: substring(name, 2, 3), i: indexOf(name, ' ')).orderBy(n)",
       "shop.customers.where(startsWith(name, 'Ac') or endsWith(name, 'Inc') or contains(name, 'eta')).select(name).orderBy(name)",
       "shop.customers.where(startsWith(name, 'ac') or contains(name, 'ETA')).select(name)",
+      "shop.customers.select(name, c: concat(name, ': ', credit_limit > 1000, '/', city == null)).orderBy(name)",
       "shop.customers.where(icontains(name, 'CORP')).select(name)",
       "shop.customers.where(like(name, '%Ltd')).select(name)",
       "shop.orders.select(id, y: year(order_date), m: month(order_date), d: day(order_date), plus: addDays(order_date, 30), next: addMonths(order_date, 1), days: daysBetween(order_date, toDate('2026-03-01'))).orderBy(id)",
@@ -73,6 +74,7 @@ internal static partial class Conformance
       "shop.orders.count()",
       "shop.orders.groupBy(status).where(count() > 1).select(status, n: count(), mean: avg(total), big: any(total > 100), all: all(total > 10)).orderBy(status)",
       "shop.orders.groupBy(customer).select(customer.name, n: count(), total: sum(total)).orderBy(name)",
+      "shop.orders.groupBy(status).select(status, some: customer_id.any(), big: total.any(it > 100), paid: total.all(it > 1), n: total.count(it > 10)).orderBy(status)",
       "shop.orders.groupBy(y: year(order_date), m: month(order_date)).select(y, m, n: count()).orderBy(y, m)",
       "shop.order_lines.groupBy(order).select(id: order.id, order.status, lines: count(), qty: qty.sum()).orderBy(id)",
       "shop.orders.groupBy().select(n: count(), total: sum(total), low: min(total), high: max(total))",
@@ -126,9 +128,10 @@ internal static partial class Conformance
    /// The conformance queries' rows as a report; <paramref name="rewrite"/> changes each query's text for the sources
    /// (the report shows the query as written).
    /// </summary>
-   internal static async Task<string> RunAllAsync(TestSources sources, CatalogOverlay? overlay = null, QueryEngineOptions? options = null, Func<string, string>? rewrite = null)
+   internal static async Task<string> RunAllAsync(TestSources sources, CatalogOverlay? overlay = null, QueryEngineOptions? options = null, Func<string, string>? rewrite = null,
+                                                  IMergeEngine? merge = null)
    {
-      QueryEngine engine = sources.Engine(overlay ?? Overlay, options);
+      QueryEngine engine = sources.Engine(overlay ?? Overlay, options, merge);
       StringBuilder report = new();
       foreach (string query in Queries)
       {

@@ -7,6 +7,7 @@ using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Cli;
 using GalaxyData.Query.IntegrationTests.Excel;
 using GalaxyData.Testing;
+using Shouldly;
 using Xunit;
 
 namespace GalaxyData.Query.IntegrationTests.Cli;
@@ -95,6 +96,23 @@ public sealed partial class GdqTests
          ":nope\n" +
          ":quit\n"));
       Golden.Match(transcript.ToString());
+   }
+
+   /// <summary>A query that runs longer than --timeout is stopped, and says so.</summary>
+   [Fact]
+   public async Task Timeout()
+   {
+      using TempFolder folder = new();
+      string script = folder.File("nums.sql");
+      await File.WriteAllTextAsync(script,
+         "CREATE TABLE nums (n INTEGER NOT NULL); WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM c WHERE n < 1000) INSERT INTO nums SELECT n FROM c;",
+         TestContext.Current.CancellationToken);
+      const string slow = "s.nums.selectMany(s.nums, a: outer.n, b: inner.n).selectMany(s.nums, a: outer.a, b: outer.b, c: inner.n).where((a * 7 + b * 3 + c) % 1000 == 7).count()";
+      string transcript = await RunAsync("a query that runs too long", ["run", "-s", "s=sqlite:" + script, "--timeout", "0.3", slow]);
+      transcript.ShouldContain("exit 2");
+      transcript.ShouldContain("gdq: The query ran longer than 300 ms, the most it may, and was stopped");
+      (await RunAsync("a timeout that isn't one", ["run", "-s", "s=sqlite:" + script, "--timeout", "-1", "s.nums.count()"]))
+         .ShouldContain("gdq: --timeout is a number of seconds, more than 0 and less than a day");
    }
 
    /// <summary>Changes to rows from a JSON file, and edited scripts: shown, written, refused.</summary>

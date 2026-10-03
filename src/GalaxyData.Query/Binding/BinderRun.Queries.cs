@@ -17,6 +17,9 @@ internal sealed partial class BinderRun
       "count", "countDistinct", "sum", "avg", "min", "max", "any", "all", "contains", "first", "firstOrDefault",
    };
 
+   /// <summary>The methods of a query, as they are written; some have a shorter spelling too (<c>orderByDesc</c>).</summary>
+   internal static IReadOnlyCollection<string> QueryMethods => SupportedMethods;
+
    private static bool IsQueryMethod(string name) => SupportedMethods.Contains(name);
 
    private BoundNode BindCall(CallSyntax call, Scope scope)

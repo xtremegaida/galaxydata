@@ -99,6 +99,8 @@ public sealed class QueryResult : IAsyncDisposable, IAsyncEnumerable<object?[]>
    private bool finished;
    private CancellationToken watched;
    private CancellationTokenRegistration watching;
+   private Deadline? deadline;
+   private CancellationTokenRegistration expiring;
 
    /// <summary>A result read from <paramref name="reader"/>; disposing it disposes the reader, the command, then <paramref name="owner"/>.</summary>
    internal QueryResult(ResultSchema schema, RowSource source, SourceProvider provider, DbCommand command, DbDataReader reader,
@@ -127,14 +129,28 @@ public sealed class QueryResult : IAsyncDisposable, IAsyncEnumerable<object?[]>
    /// <summary>The row the last successful <see cref="ReadAsync"/> read.</summary>
    public object?[] Current { get; private set; } = [];
 
+   /// <summary>The query's deadline, which stops the command when the time is up; the result disposes it.</summary>
+   internal void Expires(Deadline? time)
+   {
+      if (time == null) { return; }
+      deadline = time;
+      expiring = provider.StopOnCancel(command, time.Token);
+   }
+
    public async ValueTask<bool> ReadAsync(CancellationToken cancellationToken = default)
    {
       if (finished) { return false; }
+      if (deadline?.Expired == true) { throw deadline.Exception(); }
       Watch(cancellationToken);
       bool read;
       try
       {
          read = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+      }
+      catch (Exception e) when (deadline?.Expired == true && !cancellationToken.IsCancellationRequested && e is DbException or OperationCanceledException or InvalidOperationException)
+      {
+         // The command was stopped when the time was up.
+         throw deadline.Exception();
       }
       catch (DbException e)
       {
@@ -180,19 +196,7 @@ public sealed class QueryResult : IAsyncDisposable, IAsyncEnumerable<object?[]>
       if (!cancellationToken.CanBeCanceled || cancellationToken == watched) { return; }
       watching.Dispose();
       watched = cancellationToken;
-      watching = cancellationToken.Register(Cancel, command);
-   }
-
-   internal static void Cancel(object? command)
-   {
-      try
-      {
-         ((DbCommand)command!).Cancel();
-      }
-      catch (Exception e) when (e is DbException or InvalidOperationException or ObjectDisposedException)
-      {
-         // Nothing running to stop.
-      }
+      watching = provider.StopOnCancel(command, cancellationToken);
    }
 
    /// <summary>A raw value as its logical type's CLR value; false, with null and the reason, when it doesn't convert.</summary>
@@ -255,6 +259,8 @@ public sealed class QueryResult : IAsyncDisposable, IAsyncEnumerable<object?[]>
    {
       finished = true;
       await watching.DisposeAsync().ConfigureAwait(false);
+      await expiring.DisposeAsync().ConfigureAwait(false);
+      deadline?.Dispose();
       await reader.DisposeAsync().ConfigureAwait(false);
       await command.DisposeAsync().ConfigureAwait(false);
       await owner.DisposeAsync().ConfigureAwait(false);

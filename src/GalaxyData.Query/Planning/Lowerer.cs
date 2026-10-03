@@ -1269,9 +1269,20 @@ internal sealed class Lowerer
    }
 }
 
+/// <summary>
+/// The ids of a plan's columns. A plan may make at most <see cref="Limit"/>: named subtrees and virtual entities are
+/// planned afresh at each use, so a few that each use the one before twice would make a plan too large to hold.
+/// </summary>
 internal sealed class PlanIds
 {
+   public const int Limit = 100_000;
+
    private int next;
 
-   public int Next() => ++next;
+   public int Next() => ++next <= Limit ? next : throw new PlanTooLargeException();
 }
+
+/// <summary>A query whose plan would be larger than plans may be (<see cref="PlanIds.Limit"/> columns).</summary>
+internal sealed class PlanTooLargeException()
+   : NotSupportedException($"This query is too large to plan: it would make more than {PlanIds.Limit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} columns. " +
+               "Named subtrees and virtual entities are planned afresh at each use, so ones that each use another more than once grow quickly");

@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.DuckDb;
 using GalaxyData.Query.Execution;
+using GalaxyData.Query.Providers;
 using Shouldly;
 using Xunit;
 
@@ -87,6 +88,32 @@ public sealed class MergeEngineTests
       finally
       {
          if (Directory.Exists(temp)) { Directory.Delete(temp, recursive: true); }
+      }
+   }
+
+   /// <summary>
+   /// The merge engine needs no extension it hasn't got: with none installed and downloads off, as on a machine
+   /// offline, every query of the conformance set gives what SQLite does, and nothing is downloaded. (ICU, for time
+   /// zones, is built into DuckDB.NET's native library.)
+   /// </summary>
+   [Fact]
+   public async Task TheMergeEngineNeedsNoExtensions()
+   {
+      string extensions = Path.Combine(Path.GetTempPath(), "gdq-no-extensions-" + Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(extensions);
+      try
+      {
+         using DuckDbMergeEngine merge = new(new DuckDbMergeOptions { ExtensionDirectory = extensions });
+         await using TestSources sources = await TestSources.SqliteShopAsync();
+         string expected = await Conformance.RunAllAsync(sources);
+         (await Conformance.RunAllAsync(sources, options: new QueryEngineOptions { PushDown = false }, merge: merge)).ShouldBe(expected);
+         await using DuckDB.NET.Data.DuckDBConnection connection = merge.Connect();
+         (await connection.ScalarTextAsync("SELECT current_setting('autoinstall_known_extensions')", TestContext.Current.CancellationToken)).ShouldBe("False");
+         Directory.EnumerateFileSystemEntries(extensions).ShouldBeEmpty();
+      }
+      finally
+      {
+         Directory.Delete(extensions, recursive: true);
       }
    }
 

@@ -107,7 +107,7 @@ Rejected: `For`, `If`, `Break`, `Continue`, nested blocks, `=` in expressions, a
 
 **Scopes**, searched innermost first:
 1. lambda parameters;
-2. the implicit row: `it`, `outer`/`inner` inside join arguments, `key` in group scope, then the row's columns, navs and record members, then a column unique across record members;
+2. the implicit row: `it`, `outer`/`inner` inside join arguments, `key` in group scope, then the row's columns, navs and record members (a record's own columns are reached through it: `o.status` after a join);
 3. the group scope;
 4. outer rows (correlation);
 5. named subtrees and `$params`;
@@ -138,7 +138,7 @@ A lambda argument disables the implicit row scope. Join conditions must use `out
 - `substring` is 1-based.
 - `sum` over an empty set is 0.
 - String comparison follows the executing engine's collation. This is the documented exception; `ilike` and `icontains` give consistent case-insensitive matching.
-- Also left to the database (tested, see 4.10): the digits of decimal division and averages, `toString` of date-times, times and doubles, division by zero (the servers fail, SQLite gives null, DuckDB infinity), `char(n)` padding, and characters outside the BMP (SQL Server counts two without an `_SC` collation).
+- Also left to the database (tested, see 4.10): the digits of decimal division and averages, `toString` of date-times, times and doubles, division by zero (the servers fail, SQLite gives null, DuckDB infinity), `char(n)` padding, characters outside the BMP (SQL Server counts two without an `_SC` collation), and text that doesn't convert in `toInt`, `toLong`, `toDouble`, `toDecimal` and `toBool` (SQLite gives 0 or null, the others fail the query). See `docs/language.md` 9.3.
 
 ---
 
@@ -252,7 +252,7 @@ Rules implement `IRewriteRule` and run in phases to a fixpoint.
   - Each query gets its own schema `q_<n>`, and the session connection's `search_path` finds the fragment tables (`f1`, `f2`, …) by name; dropped when the result is disposed.
   - Fragments load in parallel (`MaxParallelFetches`, 4 by default) on `Duplicate()` connections, through typed appenders; values cross as their logical CLR types. The first failure stops the others and is the error reported.
   - Fragment reads from DuckDB sources and the final query run in streaming mode.
-  - Cancellation: the token stops fetches between rows, and a registration calls `DbCommand.Cancel()` (DuckDB interrupt, `sqlite3_interrupt`) for statements that are busy, including while a result is read. `MaxFetchedRows` caps what one query fetches; timeouts are M11.
+  - Cancellation: the token stops fetches between rows, and a registration calls `DbCommand.Cancel()` (DuckDB interrupt, `sqlite3_interrupt`) for statements that are busy, including while a result is read. `MaxFetchedRows` caps what one query fetches; timeouts are in 4.11.
   - SQLite's dynamic typing is handled by `ValueConverter`: a failure is an error with source, row and column context, or null in lenient mode.
   - How values are held in the merge engine: every value is checked against its column before a row is appended (a partly appended row must be cleared, or DuckDB crashes). Decimals are `DECIMAL(38, scale)`, since SQLite doesn't hold values to their declared precision; decimals of no declared precision (SQLite reals, averages) are doubles (about 15 significant digits). Date-times are `TIMESTAMP`, to the microsecond (as PostgreSQL and DuckDB keep them) over every year .NET has: `TIMESTAMP_NS` (M6 to M8) reached only 1677 to 2262, and wrapped SQL Server's common 9999-12-31 around; date-times with offsets are UTC instants, as DuckDB sources give them. Values of unknown types are text to the merge SQL (so `toString(x)` works there), and result columns of unknown types give back the source's values.
   - `ExecutionStats.Fragments` gives each fragment's rows and time; a warning (GDQ3101) marks fragments expected to fetch more than `LargeFetchRows` (1M).
@@ -328,6 +328,37 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
 - **Tests** (`tests/GalaxyData.Query.ContainerTests`): `servers.sh up` starts PostgreSQL (port 55432) and SQL Server Developer (51433) in Docker; `GDQ_TEST_POSTGRES` and `GDQ_TEST_SQLSERVER` name other servers (logins that may create databases). Each fixture database is made once per run under a name of its own and dropped after. Tests of a server that can't be reached are skipped (failed when it was named). The conformance set on each server, in the merge engine, split across the two servers (every bind-join mode, both ways) and with SQLite and DuckDB; introspection snapshots; a value of each type read directly and through the merge engine and sent back as a parameter; SQL Server's parameter declarations in its plan cache (no `CONVERT_IMPLICIT`); bind joins at the parameter limit; a case-insensitive database; cancelling a statement stops it on the server; the CLI.
 - **Documented differences** (tested as what each gives): decimal division and averages have each database's digits (PostgreSQL 20 places, SQL Server 6 to 10, DuckDB a double's); toString of date-times, times, offsets and doubles is each database's text; division by zero fails on the servers (SQLite gives null, the merge engine infinity); PostgreSQL's text functions ignore char(n) padding, which the value read keeps; SQL Server counts a character outside the BMP as two without an `_SC` collation; `tinyint + tinyint` overflows past 255 in SQL Server (the language's int16 would not); the merge engine keeps date-times to the microsecond (datetime2(7)'s last digit goes).
 - **Known limitations:** SQLite groups and takes min/max of offset date-times by their text.
+
+### 4.11 Hardening (M11)
+- **Timeouts:** `QueryEngineOptions.Timeout`, or a request's own `QueryRequest.Timeout`, bounds a query from its start until its last row is read: fetches, merging and reading all count. Counts (`ForCount`) keep to the request's timeout.
+  - When the time is up, what is running is stopped as cancelling stops it, and the query fails with `QueryTimeoutException`, a `QueryExecutionException` (the backend maps it to 504). A caller's own cancellation is still `OperationCanceledException`.
+  - Changes keep to the same timeout until they commit: past it they are rolled back, with `DmlFailureKind.Timeout`.
+  - `CommandTimeout` is passed on as it was, but SQLite takes it as how long to wait for a lock, and DuckDB ignores it; only `Timeout` bounds every database.
+- **Stopping statements:** `SourceProvider.CancelCommand` stops a busy command, around executing as well as reading (single-source queries, fragments, values, the merge query, changes).
+  - Microsoft.Data.Sqlite's `Cancel` does nothing, and it checks a token only before a statement starts, so a busy SQLite statement ran to its end (found in M11). Its provider interrupts the connection instead (`sqlite3_interrupt`).
+- **Excel sheets held until read:** `SourceProvider.PrepareReadAsync` gives a lease, which the engine disposes once the statement has started (for a fragment, once it is fetched). An Excel folder holds each sheet as loaded until then; a load for a catalog that types the sheet differently waits for the leases to go, and sheets are leased in name order, so two queries never wait for each other.
+  - Found in M11: such a load could land between one query readying the sheet and its statement starting, which then read the column as the other catalog types it. A test of it had passed by timing, and failed on most runs once M11 changed what happens as a statement is readied and started.
+- **Guardrails:**
+  - Query text is at most `MaxQueryLength` characters (100,000; GDQ1002).
+  - The parser nests at most 256 levels, and each operator in a chain is a level of its own.
+  - A plan makes at most 100,000 columns (GDQ3005). Named subtrees and virtual entities are planned afresh at each use, so before M11 eighteen names, each using the one before twice, made 108 MB of SQL in 7.5 s, and a few more would have used up memory.
+  - `MaxFetchedRows` caps the rows a query fetches into the merge engine, copies inside it included.
+- **DuckDB offline:** the merge engine downloads no extension unless `DuckDbMergeOptions.DownloadExtensions` is set; `ExtensionDirectory` says where DuckDB looks for installed ones. Both take effect from the database's start (connection string), as DuckDB loads extensions then.
+  - ICU, for time zones, is built into DuckDB.NET's native library (1.5.5 reports it statically linked); the copy in `~/.duckdb` was downloaded by an earlier version.
+  - The DuckDB provider sets the time zone to UTC only when ICU is loaded or installed. Otherwise setting one would have DuckDB download ICU, or wait for the network to say it can't, and DuckDB works in UTC anyway.
+- **Tests:**
+  - **Timeouts:** in SQLite, DuckDB, the merge engine, while reading, for requests and counts, for changes, on both servers, and in the CLI (`--timeout`).
+  - **Fuzzing:** about 10,000 conformance queries, mangled token by token with a fixed seed, are prepared, explained, counted and run; about one in six still plans. Only diagnostics or `QueryExecutionException`s may come out. Odd texts (empty, `\0`, deep nesting, overflowing numbers) are tested the same way.
+  - **Concurrency:** every conformance query eight times at once on one engine gives what it gives alone, and changes written while queries read are all or nothing to them.
+  - **Offline:** the merge engine with no extensions and downloads off gives the conformance results.
+  - **Too large:** queries too long, or with plans too large, are refused.
+- **Language reference:** `docs/language.md`. Tests keep it in step: every function, query method and diagnostic code is in it, every `gdq` example runs, and every `gdq-error` example is refused.
+- **Found while writing the reference**, fixed:
+  - an overlay's JSON that left a list out failed to load (the serializer set init-only lists to null); lists may now be left out, and a relation, virtual entity or setting without the names it needs says which;
+  - a relation the overlay added took the name the database's own foreign key gave (`shop.customers.orders` led to another source's orders). The sources' foreign keys are named first now, and an overlay navigation to another source whose name is taken gets the source's alias before it (`wh_orders`);
+  - `any()` of a group's values with no condition, and a condition over them naming anything but `it`, failed with exceptions;
+  - GDQ2101 pointed to `::shop`, which doesn't parse (it is `shop::orders`);
+  - `concat` wrote true/false values as each database does (1, t, true); it now writes `true` and `false`, as `toString` does.
 
 ---
 
@@ -527,7 +558,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | M8 | Excel Folder provider (own cell reader, sheets loaded into the merge engine's database, reloaded when workbooks change) | OpenXml-generated fixtures (multiple, hidden, chart, empty and spaced sheets; lock files, damaged files, subfolders); Excel ⋈ SQLite join (navigation and join(), sheets fetched by keys, runtime values) |
 | M9 | PG and MSSQL providers (see 4.10) | Container suite runs the same conformance and differential tests; MSSQL varchar parameter typing |
 | M10 | DML planner, script splitter, DML-only guard, coordinated executor, `ResultRowEditor`; foreign-key checking per connection (SQLite's `PRAGMA foreign_keys`: on, off, or as the connection has it); `gdq changes` and `gdq script` (see 4.8) | Per provider: insert with returned rows, concurrency conflict rolls back all, cross-connection success, simulated partial commit, guard rejects DDL |
-| M11 | Hardening, timeouts, guardrails, language reference doc (`docs/language.md`) | |
+| M11 | Hardening, timeouts, guardrails, language reference doc (`docs/language.md`); see 4.11 | Queries and changes stopped by timeouts in every database; malformed and oversized queries give diagnostics, never other exceptions; concurrent queries; the merge engine offline; the reference's examples run |
 
 **App backend**
 
@@ -592,7 +623,7 @@ Engine work starts at **M0**. The first commit goes on a new branch off `master`
 - **Results depending on where an operator runs** (collation, nulls, division, dates, SQLite LIKE): the semantic contract, per-dialect emulation and differential tests. Collation is the documented exception.
 - **SQLite dates:** a per-source date storage setting (ISO text by default) and format-aware parameters.
 - **DuckDB memory and spill:** confirm in M6 that in-memory tables spill. If they don't, switch the merge database to a temp file (a single option).
-- **DuckDB extensions offline:** the Excel folder needs none (M8 reads the cells itself). ICU (time zones) isn't in DuckDB.NET's native library, and DuckDB downloads it when first used; without it, sources work in UTC anyway. Offline deployments: pre-install it into an extension directory (M11).
+- **DuckDB extensions offline:** none are needed. The Excel folder reads its cells itself (M8), and ICU (time zones) is built into DuckDB.NET's native library. The merge engine downloads none unless allowed, and looks for others in `ExtensionDirectory` (M11).
 - **Group-key matching complexity:** a large table of positive and negative binder tests.
 - **Reserved words** (`and`, `or`, `not`, `in`, `if`, `for`): escape with `it["in"]`. The app quotes names through `QueryText`.
 - **AG Grid Community's infinite model with pagination when the total is unknown:** spike this early in F4. The fallback is `MatPaginator` driving the datasource; the URL format doesn't change.

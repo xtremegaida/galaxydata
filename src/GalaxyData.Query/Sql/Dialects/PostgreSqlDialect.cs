@@ -89,7 +89,7 @@ internal sealed class PostgreSqlDialect : SqlDialect
          : Binary(SqlBinaryOp.Greater, Call("strpos", Call("lower", c.Arg(0)), Call("lower", c.Arg(1))), Integer(0)),
       FunctionId.Like => Like(c.Arg(0), c.Arg(1)),
       FunctionId.ILike => Like(c.Arg(0), c.Arg(1), caseInsensitive: true),
-      FunctionId.Concat => Call("concat", c.Args()),
+      FunctionId.Concat => Call("concat", ConcatArguments(c)),
       FunctionId.Abs => Call("abs", c.Arg(0)),
       FunctionId.Round => Round(c),
       FunctionId.Floor => IsInteger(c.Type(0)) ? c.Arg(0) : Call("floor", c.Arg(0)),

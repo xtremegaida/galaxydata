@@ -4,6 +4,7 @@ namespace GalaxyData.Query.Diagnostics;
 public static class DiagnosticCodes
 {
    public const string SyntaxError = "GDQ1001";
+   public const string QueryTooLong = "GDQ1002";
 
    public const string UnknownName = "GDQ2001";
    public const string AmbiguousName = "GDQ2002";
@@ -40,6 +41,7 @@ public static class DiagnosticCodes
    public const string NoProvider = "GDQ3002";
    public const string NotTranslatable = "GDQ3003";
    public const string NoSource = "GDQ3004";
+   public const string PlanTooLarge = "GDQ3005";
    public const string LargeFetch = "GDQ3101";
 
    public const string InvalidSourceAlias = "GDQ5001";
