@@ -230,7 +230,7 @@ internal sealed class FederatedExecution
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                // A value that isn't one of the key's type can't equal a key.
-               if (QueryResult.TryConvert(merge.Provider.ReadValue(reader, 0), type, out object? key, out _) && key != null) { keys.Add(key); }
+               if (QueryResult.TryRead(merge.Provider, reader, 0, type, out object? key, out _) && key != null) { keys.Add(key); }
             }
          }
          catch (DbException e)
@@ -261,7 +261,7 @@ internal sealed class FederatedExecution
          if (await Read(reader, where, cancellationToken).ConfigureAwait(false))
          {
             ScalarType type = fragment.Columns[0].Type;
-            if (!QueryResult.TryConvert(provider.ReadValue(reader, 0), type, out value, out Exception? error) && !options.LenientConversion)
+            if (!QueryResult.TryRead(provider, reader, 0, type, out value, out Exception? error) && !options.LenientConversion)
             {
                throw QueryResult.Unconverted($"The value {fragment.Value} from {fragment.Source.Alias}: {fragment.Source.Alias}", type, error);
             }
@@ -287,7 +287,7 @@ internal sealed class FederatedExecution
          {
             for (int i = 0; i < row.Length; i++)
             {
-               if (!QueryResult.TryConvert(provider.ReadValue(reader, i), columns[i].Type, out row[i], out Exception? error) && !options.LenientConversion)
+               if (!QueryResult.TryRead(provider, reader, i, columns[i].Type, out row[i], out Exception? error) && !options.LenientConversion)
                {
                   throw QueryResult.Unconverted($"Row {rows + 1} from {fragment.Source.Alias}, column '{columns[i].Name}': {fragment.Source.Alias}", columns[i].Type, error);
                }

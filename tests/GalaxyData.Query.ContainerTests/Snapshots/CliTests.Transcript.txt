@@ -1,0 +1,99 @@
+### run example 1 on PostgreSQL, with its SQL
+exit 0
+--- out
+-- shop (PostgreSQL)
+SELECT o.id, o.total, c.name AS who, c.city, c.id
+FROM orders AS o
+INNER JOIN customers AS c ON o.customer_id = c.id
+WHERE o.status = @p0
+ORDER BY o.id
+-- @p0 string(20) = 'open'
+
+id   | total  | who       | city
+-----+--------+-----------+-------------
+1001 | 250.00 | Acme Ltd  | Cape Town
+1003 |  12.25 | Beta Corp | Johannesburg
+(2 rows; (time))
+
+### run example 1 on SQL Server, with its SQL
+exit 0
+--- out
+-- shop (SQL Server)
+SELECT o.id, o.total, c.name AS who, c.city, c.id
+FROM orders AS o
+INNER JOIN customers AS c ON o.customer_id = c.id
+WHERE o.status = @p0
+ORDER BY o.id
+-- @p0 string(20,ansi) = 'open'
+
+id   | total  | who       | city
+-----+--------+-----------+-------------
+1001 | 250.00 | Acme Ltd  | Cape Town
+1003 |  12.25 | Beta Corp | Johannesburg
+(2 rows; (time))
+
+### the SQL of a page of groups, on SQL Server
+exit 0
+--- out
+-- shop (SQL Server)
+SELECT c.name, COUNT_BIG(*) AS n, COALESCE(SUM(o.total), 0) AS total, o.customer_id AS id
+FROM orders AS o
+INNER JOIN customers AS c ON o.customer_id = c.id
+GROUP BY o.customer_id, c.name
+ORDER BY COALESCE(SUM(o.total), 0) DESC
+OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY
+
+### run across PostgreSQL and SQL Server
+exit 0
+--- out
+id   | total  | who       | city
+-----+--------+-----------+-------------
+1001 | 250.00 | Acme Ltd  | Cape Town
+1003 |  12.25 | Beta Corp | Johannesburg
+(2 rows; (time))
+
+### explain across PostgreSQL and SQL Server
+exit 0
+--- out
+Combines 2 fragments from sales (PostgreSQL) and crm (SQL Server) in the merge engine (DuckDB), reading sales.orders and crm.customers: 1 fragment fetched in full and 1 fragment fetched by the keys of another.
+
+Plan
+  Sort  id  @merge  (~1 row)
+    Project  id, total, who: customer.name, customer.city, customer.id  @merge  (~1 row)
+      Left join  customer: customer_id == customer.id  @merge  (~1 row)
+        Filter  status == 'open'  @sales  (~1 row)
+          Scan  sales.orders  @sales  (~4 rows)
+        Scan  crm.customers as customer  @crm  (~3 rows)
+
+Columns
+  0 id int64: direct sales.orders.id; edits sales.orders.id by id = [0]
+  1 total decimal(10,2): direct sales.orders.total; edits sales.orders.total by id = [0]
+  2 who string(100)?: direct customer -> crm.customers.name; edits crm.customers.name by id = [4]
+  3 city string(40)?: direct customer -> crm.customers.city; edits crm.customers.city by id = [4]
+  4 id int32? (hidden): direct customer -> crm.customers.id
+
+SQL for sales (PostgreSQL, full fetch into f1)
+  SELECT o.id, o.customer_id, o.total
+  FROM orders AS o
+  WHERE o.status = @p0
+  -- p0 string(20) = 'open'
+
+SQL for crm (SQL Server, into f2, by the keys of f1.customer_id when they are few enough, else in full)
+  SELECT c.id, c.name, c.city
+  FROM customers AS c
+  -- for each batch of keys:
+  SELECT c.id, c.name, c.city
+  FROM customers AS c
+  WHERE c.id IN (@p0)
+  -- p0 int32? = keys of f1.customer_id
+
+Merge SQL
+  SELECT f1.id, f1.total, f2.name AS who, f2.city, f2.id
+  FROM f1
+  LEFT JOIN f2 ON f1.customer_id = f2.id
+  ORDER BY f1.id
+
+### a server source needs a connection string
+exit 2
+--- err
+gdq: The source 'shop' needs a connection string after 'sqlserver:', e.g. Server=localhost;Database=shop;Integrated Security=true

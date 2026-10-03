@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Shouldly" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\GalaxyData.Query.Cli\GalaxyData.Query.Cli.csproj" />
+    <ProjectReference Include="..\..\src\GalaxyData.Query.DuckDb\GalaxyData.Query.DuckDb.csproj" />
+    <ProjectReference Include="..\..\src\GalaxyData.Query.Excel\GalaxyData.Query.Excel.csproj" />
+    <ProjectReference Include="..\..\src\GalaxyData.Query.PostgreSql\GalaxyData.Query.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\src\GalaxyData.Query.Sqlite\GalaxyData.Query.Sqlite.csproj" />
+    <ProjectReference Include="..\..\src\GalaxyData.Query.SqlServer\GalaxyData.Query.SqlServer.csproj" />
+  </ItemGroup>
+
+  <!-- The conformance set, the test sources and the fixtures are the integration tests' own. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\*.cs" LinkBase="Shared" />
+    <Compile Include="..\GalaxyData.Query.IntegrationTests\Fixtures.cs" LinkBase="Shared" />
+    <Compile Include="..\GalaxyData.Query.IntegrationTests\Execution\Conformance.cs" LinkBase="Shared" />
+    <Compile Include="..\GalaxyData.Query.IntegrationTests\Execution\TestSources.cs" LinkBase="Shared" />
+    <None Include="..\fixtures\**\*.sql" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

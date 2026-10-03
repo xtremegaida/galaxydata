@@ -7,3 +7,4 @@
 *.xlsx binary
 *.db binary
 *.duckdb binary
+*.sh text eol=lf

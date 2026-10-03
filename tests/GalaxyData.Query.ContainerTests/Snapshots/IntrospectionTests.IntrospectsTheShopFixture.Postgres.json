@@ -1,0 +1,506 @@
+{
+  "providerKind": "postgres",
+  "serverVersion": "(version)",
+  "defaultSchema": "public",
+  "tables": [
+    {
+      "schema": "crm",
+      "name": "contacts",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "uuid",
+          "type": "guid"
+        },
+        {
+          "name": "customer_ref",
+          "ordinal": 1,
+          "nativeType": "integer",
+          "type": "int32?"
+        },
+        {
+          "name": "email",
+          "ordinal": 2,
+          "nativeType": "text",
+          "type": "string"
+        },
+        {
+          "name": "Display Name",
+          "ordinal": 3,
+          "nativeType": "text",
+          "type": "string?"
+        }
+      ],
+      "primaryKey": {
+        "name": "contacts_pkey",
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [
+        {
+          "name": "contacts_email_key",
+          "columns": [
+            "email"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "contacts_email_key",
+          "columns": [
+            "email"
+          ],
+          "isUnique": true
+        },
+        {
+          "name": "contacts_pkey",
+          "columns": [
+            "id"
+          ],
+          "isUnique": true,
+          "isPrimaryKey": true
+        }
+      ],
+      "foreignKeys": [],
+      "rowCountEstimate": 1
+    },
+    {
+      "schema": "public",
+      "name": "addresses",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "integer",
+          "type": "int32"
+        },
+        {
+          "name": "customer_id",
+          "ordinal": 1,
+          "nativeType": "integer",
+          "type": "int32"
+        },
+        {
+          "name": "line1",
+          "ordinal": 2,
+          "nativeType": "text",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "ordinal": 3,
+          "nativeType": "text",
+          "type": "string?"
+        }
+      ],
+      "primaryKey": {
+        "name": "addresses_pkey",
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "addresses_pkey",
+          "columns": [
+            "id"
+          ],
+          "isUnique": true,
+          "isPrimaryKey": true
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "addresses_customer_id_fkey",
+          "columns": [
+            "customer_id"
+          ],
+          "refSchema": "public",
+          "refTable": "customers",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": true
+        }
+      ],
+      "rowCountEstimate": 2
+    },
+    {
+      "schema": "public",
+      "name": "audit_log",
+      "columns": [
+        {
+          "name": "at",
+          "nativeType": "timestamp without time zone",
+          "type": "datetime?"
+        },
+        {
+          "name": "message",
+          "ordinal": 1,
+          "nativeType": "text",
+          "type": "string?"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [],
+      "rowCountEstimate": 0
+    },
+    {
+      "schema": "public",
+      "name": "customers",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "integer",
+          "type": "int32",
+          "isIdentity": true
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "nativeType": "text",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "ordinal": 2,
+          "nativeType": "character varying(40)",
+          "type": "string(40)?"
+        },
+        {
+          "name": "credit_limit",
+          "ordinal": 3,
+          "nativeType": "numeric(10,2)",
+          "type": "decimal(10,2)?",
+          "comment": "In rand"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 4,
+          "nativeType": "timestamp without time zone",
+          "type": "datetime?",
+          "defaultSql": "now()"
+        }
+      ],
+      "primaryKey": {
+        "name": "customers_pkey",
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "customers_pkey",
+          "columns": [
+            "id"
+          ],
+          "isUnique": true,
+          "isPrimaryKey": true
+        },
+        {
+          "name": "ux_customers_name",
+          "columns": [
+            "name"
+          ],
+          "isUnique": true
+        }
+      ],
+      "foreignKeys": [],
+      "rowCountEstimate": 3,
+      "comment": "People and companies who order"
+    },
+    {
+      "schema": "public",
+      "name": "employees",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "integer",
+          "type": "int32"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "nativeType": "text",
+          "type": "string"
+        },
+        {
+          "name": "manager_id",
+          "ordinal": 2,
+          "nativeType": "integer",
+          "type": "int32?"
+        }
+      ],
+      "primaryKey": {
+        "name": "employees_pkey",
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "employees_pkey",
+          "columns": [
+            "id"
+          ],
+          "isUnique": true,
+          "isPrimaryKey": true
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "employees_manager_id_fkey",
+          "columns": [
+            "manager_id"
+          ],
+          "refSchema": "public",
+          "refTable": "employees",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": false
+        }
+      ],
+      "rowCountEstimate": 3
+    },
+    {
+      "schema": "public",
+      "name": "open_orders",
+      "kind": "View",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "bigint",
+          "type": "int64?"
+        },
+        {
+          "name": "customer_id",
+          "ordinal": 1,
+          "nativeType": "integer",
+          "type": "int32?"
+        },
+        {
+          "name": "total",
+          "ordinal": 2,
+          "nativeType": "numeric(10,2)",
+          "type": "decimal(10,2)?"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    {
+      "schema": "public",
+      "name": "order_lines",
+      "columns": [
+        {
+          "name": "order_id",
+          "nativeType": "bigint",
+          "type": "int64"
+        },
+        {
+          "name": "line_no",
+          "ordinal": 1,
+          "nativeType": "integer",
+          "type": "int32"
+        },
+        {
+          "name": "product_code",
+          "ordinal": 2,
+          "nativeType": "character varying(20)",
+          "type": "string(20)"
+        },
+        {
+          "name": "qty",
+          "ordinal": 3,
+          "nativeType": "integer",
+          "type": "int32"
+        },
+        {
+          "name": "price",
+          "ordinal": 4,
+          "nativeType": "numeric(10,2)",
+          "type": "decimal(10,2)"
+        },
+        {
+          "name": "amount",
+          "ordinal": 5,
+          "nativeType": "numeric(12,2)",
+          "type": "decimal(12,2)?",
+          "isComputed": true
+        }
+      ],
+      "primaryKey": {
+        "name": "order_lines_pkey",
+        "columns": [
+          "order_id",
+          "line_no"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "order_lines_pkey",
+          "columns": [
+            "order_id",
+            "line_no"
+          ],
+          "isUnique": true,
+          "isPrimaryKey": true
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "order_lines_order_id_fkey",
+          "columns": [
+            "order_id"
+          ],
+          "refSchema": "public",
+          "refTable": "orders",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": true,
+          "onDelete": "CASCADE"
+        }
+      ],
+      "rowCountEstimate": 4
+    },
+    {
+      "schema": "public",
+      "name": "orders",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "bigint",
+          "type": "int64"
+        },
+        {
+          "name": "customer_id",
+          "ordinal": 1,
+          "nativeType": "integer",
+          "type": "int32"
+        },
+        {
+          "name": "ship_address_id",
+          "ordinal": 2,
+          "nativeType": "integer",
+          "type": "int32?"
+        },
+        {
+          "name": "bill_address_id",
+          "ordinal": 3,
+          "nativeType": "integer",
+          "type": "int32?"
+        },
+        {
+          "name": "status",
+          "ordinal": 4,
+          "nativeType": "character varying(20)",
+          "type": "string(20)",
+          "defaultSql": "'open'::character varying"
+        },
+        {
+          "name": "total",
+          "ordinal": 5,
+          "nativeType": "numeric(10,2)",
+          "type": "decimal(10,2)"
+        },
+        {
+          "name": "order_date",
+          "ordinal": 6,
+          "nativeType": "date",
+          "type": "date"
+        },
+        {
+          "name": "placed_at",
+          "ordinal": 7,
+          "nativeType": "timestamp with time zone",
+          "type": "datetimeoffset?"
+        },
+        {
+          "name": "tags",
+          "ordinal": 8,
+          "nativeType": "text[]",
+          "type": "unknown?",
+          "readAs": "text"
+        }
+      ],
+      "primaryKey": {
+        "name": "orders_pkey",
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "ix_orders_open",
+          "columns": [
+            "order_date"
+          ],
+          "filter": "status::text = 'open'::text"
+        },
+        {
+          "name": "ix_orders_status",
+          "columns": [
+            "status"
+          ]
+        },
+        {
+          "name": "orders_pkey",
+          "columns": [
+            "id"
+          ],
+          "isUnique": true,
+          "isPrimaryKey": true
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "orders_bill_address_id_fkey",
+          "columns": [
+            "bill_address_id"
+          ],
+          "refSchema": "public",
+          "refTable": "addresses",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": true
+        },
+        {
+          "name": "orders_customer_id_fkey",
+          "columns": [
+            "customer_id"
+          ],
+          "refSchema": "public",
+          "refTable": "customers",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": true
+        },
+        {
+          "name": "orders_ship_address_id_fkey",
+          "columns": [
+            "ship_address_id"
+          ],
+          "refSchema": "public",
+          "refTable": "addresses",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": true
+        }
+      ],
+      "rowCountEstimate": 4,
+      "hasTriggers": true
+    }
+  ]
+}

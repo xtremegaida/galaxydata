@@ -12,20 +12,24 @@ using GalaxyData.Query.Excel;
 using GalaxyData.Query.Execution;
 using GalaxyData.Query.Introspection;
 using GalaxyData.Query.Language;
+using GalaxyData.Query.PostgreSql;
 using GalaxyData.Query.Providers;
 using GalaxyData.Query.Sqlite;
+using GalaxyData.Query.SqlServer;
+using Microsoft.Data.SqlClient;
 using Microsoft.Data.Sqlite;
+using Npgsql;
 
 namespace GalaxyData.Query.Cli;
 
 /// <summary>
 /// A source given on the command line as <c>alias=kind:target</c>. The target is a database file (opened read-only),
 /// a <c>.sql</c> script (run into a fresh in-memory database), <c>:memory:</c>, or a connection string (anything with
-/// an <c>=</c> in it); for <c>excel</c>, a folder of workbooks.
+/// an <c>=</c> in it); for <c>postgres</c> and <c>sqlserver</c>, a connection string; for <c>excel</c>, a folder of workbooks.
 /// </summary>
 internal sealed record SourceSpec(string Alias, string Kind, string Target)
 {
-   public static IReadOnlyList<string> Kinds { get; } = ["sqlite", "duckdb", "excel"];
+   public static IReadOnlyList<string> Kinds { get; } = ["sqlite", "duckdb", "postgres", "sqlserver", "excel"];
 
    public static SourceSpec Parse(string text)
    {
@@ -41,6 +45,11 @@ internal sealed record SourceSpec(string Alias, string Kind, string Target)
       if (!QueryText.IsBareIdentifier(alias)) { throw new FormatException($"'{alias}' can't be a source alias; use letters, digits and underscores"); }
       if (!((IList<string>)Kinds).Contains(kind)) { throw new FormatException($"'{kind}' is not a source kind; use {string.Join(", ", Kinds.Take(Kinds.Count - 1))} or {Kinds[^1]}"); }
       if (target.Length == 0) { throw new FormatException($"The source '{alias}' needs a target after '{kind}:'"); }
+      if (kind is "postgres" or "sqlserver" && !target.Contains('=', StringComparison.Ordinal))
+      {
+         throw new FormatException($"The source '{alias}' needs a connection string after '{kind}:', e.g. " +
+            (kind == "postgres" ? "Host=localhost;Database=shop;Username=me" : "Server=localhost;Database=shop;Integrated Security=true"));
+      }
       return new SourceSpec(alias, kind, target);
    }
 
@@ -51,11 +60,13 @@ internal sealed record SourceSpec(string Alias, string Kind, string Target)
 
 /// <summary>
 /// The command line's sources, opened: each database keeps a first connection open, which in-memory databases need;
-/// folders of workbooks are registered with the Excel provider, which opens their connections itself.
+/// folders of workbooks are registered with the Excel provider, which opens their connections itself. PostgreSQL
+/// connections come from a data source of the provider's making, which reads enums.
 /// </summary>
 internal sealed class CliSources(ExcelSourceProvider excel) : IConnectionFactory, IAsyncDisposable
 {
    private readonly Dictionary<string, (DbConnection Keeper, Func<DbConnection> Open)> opened = new(StringComparer.Ordinal);
+   private readonly List<NpgsqlDataSource> dataSources = [];
    private readonly HashSet<string> aliases = new(StringComparer.Ordinal);
    private readonly CatalogBuilder builder = new();
 
@@ -87,11 +98,7 @@ internal sealed class CliSources(ExcelSourceProvider excel) : IConnectionFactory
          await AddFolderAsync(spec, cancellationToken);
          return;
       }
-      (DbConnection keeper, Func<DbConnection> open, SourceProvider provider) = spec.Kind switch
-      {
-         "sqlite" => Sqlite(spec),
-         _ => DuckDb(spec),
-      };
+      (DbConnection keeper, Func<DbConnection> open, SourceProvider provider) = Connect(spec);
       try
       {
          if (keeper.State != System.Data.ConnectionState.Open) { await keeper.OpenAsync(cancellationToken); }
@@ -127,6 +134,32 @@ internal sealed class CliSources(ExcelSourceProvider excel) : IConnectionFactory
       return (new SqliteConnection(connectionString), () => new SqliteConnection(connectionString), SqliteSourceProvider.Instance);
    }
 
+   private (DbConnection Keeper, Func<DbConnection> Open, SourceProvider Provider) Connect(SourceSpec spec)
+   {
+      try
+      {
+         return spec.Kind switch
+         {
+            "sqlite" => Sqlite(spec),
+            "postgres" => Postgres(spec),
+            "sqlserver" => (new SqlConnection(spec.Target), () => new SqlConnection(spec.Target), SqlServerSourceProvider.Instance),
+            _ => DuckDb(spec),
+         };
+      }
+      catch (ArgumentException e)
+      {
+         // The providers' connection string builders reject keywords they don't know, and values that don't parse.
+         throw new FormatException($"The connection string of '{spec.Alias}' isn't one {spec.Kind} takes: {e.Message}", e);
+      }
+   }
+
+   private (DbConnection, Func<DbConnection>, SourceProvider) Postgres(SourceSpec spec)
+   {
+      NpgsqlDataSource source = PostgreSqlSourceProvider.CreateDataSource(spec.Target);
+      dataSources.Add(source);
+      return (source.CreateConnection(), source.CreateConnection, PostgreSqlSourceProvider.Instance);
+   }
+
    private static (DbConnection, Func<DbConnection>, SourceProvider) DuckDb(SourceSpec spec)
    {
       string connectionString = spec switch
@@ -155,5 +188,7 @@ internal sealed class CliSources(ExcelSourceProvider excel) : IConnectionFactory
    {
       foreach ((DbConnection keeper, _) in opened.Values) { await keeper.DisposeAsync(); }
       opened.Clear();
+      foreach (NpgsqlDataSource source in dataSources) { await source.DisposeAsync(); }
+      dataSources.Clear();
    }
 }

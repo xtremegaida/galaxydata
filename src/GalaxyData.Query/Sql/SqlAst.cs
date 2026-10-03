@@ -34,6 +34,9 @@ internal sealed class SqlColumn(string? table, string column) : SqlExpr
 
    public string Column { get; } = column;
 
+   /// <summary>The type of a table's column as its database declares it (<c>datetime</c>), for the values compared with it.</summary>
+   public string? NativeType { get; init; }
+
    public override int Precedence => SqlPrecedence.Atom;
 }
 

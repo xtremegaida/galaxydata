@@ -167,6 +167,26 @@ public abstract class SqlDialect
    internal virtual SqlExpr Modulo(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       new SqlBinary(SqlBinaryOp.Modulo, left, right);
 
+   /// <summary>The longest name the database takes, as <see cref="NameLength"/> counts: longer aliases are cut short.</summary>
+   internal virtual int MaxNameLength => int.MaxValue;
+
+   /// <summary>A name's length as the database limits it: in characters, or bytes.</summary>
+   private protected virtual int NameLength(string name) => name.Length;
+
+   /// <summary><paramref name="name"/>, cut short so that with <paramref name="suffix"/> it fits <see cref="MaxNameLength"/>.</summary>
+   internal string FitName(string name, string suffix)
+   {
+      string fitted = name;
+      while (fitted.Length > 0 && NameLength(fitted + suffix) > MaxNameLength)
+      {
+         fitted = fitted[..^(fitted.Length > 1 && char.IsLowSurrogate(fitted[^1]) ? 2 : 1)];
+      }
+      return fitted + suffix;
+   }
+
+   /// <summary>A sort key; dialects adjust values whose storage doesn't sort the way the language does.</summary>
+   internal virtual SqlExpr SortKey(SqlExpr key, ScalarType type) => key;
+
    /// <summary>A comparison; dialects adjust operands whose storage doesn't compare the way the language does.</summary>
    internal virtual SqlExpr Compare(SqlBinaryOp op, SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       new SqlBinary(op, left, right);

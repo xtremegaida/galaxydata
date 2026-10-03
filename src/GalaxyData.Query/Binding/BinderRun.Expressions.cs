@@ -143,7 +143,10 @@ internal sealed partial class BinderRun
                target.Kind is ScalarKind.String or ScalarKind.Date or ScalarKind.DateTime or ScalarKind.DateTimeOffset or ScalarKind.Time or ScalarKind.Guid;
             // Whole numbers take the width they meet (a count of days is an int), checked against the value when the query runs.
             bool whole = parameter.Scalar.IsInteger && target.IsInteger;
-            if (parameter.Scalar.Kind == ScalarKind.Unknown || textual || whole)
+            // Decimals take the precision and scale they meet, so SQL Server's parameter matches the column (a value that
+            // needs more digits gets them when the query runs).
+            bool decimals = parameter.Scalar.Kind == ScalarKind.Decimal && target.Kind == ScalarKind.Decimal;
+            if (parameter.Scalar.Kind == ScalarKind.Unknown || textual || whole || decimals)
             {
                return new BoundParameter(parameter.Name, target.WithNullable(parameter.Scalar.Nullable), parameter.Syntax);
             }

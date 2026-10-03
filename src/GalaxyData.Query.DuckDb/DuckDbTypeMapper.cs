@@ -53,7 +53,9 @@ public static class DuckDbTypeMapper
    /// The DuckDB type that holds a logical type's values, as the merge engine's tables declare their columns. Decimals
    /// get the widest precision with their scale, since not every source holds values to the declared precision
    /// (SQLite doesn't); decimals of no declared precision or scale (SQLite reals, averages) are doubles, which keep
-   /// their magnitude where a fixed scale would round small values away. Date-times keep their ticks.
+   /// their magnitude where a fixed scale would round small values away. Date-times are kept to the microsecond, as
+   /// PostgreSQL and DuckDB keep them, over every year .NET has: nanoseconds would reach only 1677 to 2262, and
+   /// SQL Server's 9999-12-31 and 0001-01-01 are common.
    /// </summary>
    public static string TypeName(ScalarType type) => type.Kind switch
    {
@@ -68,7 +70,7 @@ public static class DuckDbTypeMapper
       ScalarKind.Guid => "UUID",
       ScalarKind.Date => "DATE",
       ScalarKind.Time => "TIME",
-      ScalarKind.DateTime => "TIMESTAMP_NS",
+      ScalarKind.DateTime => "TIMESTAMP",
       ScalarKind.DateTimeOffset => "TIMESTAMPTZ",
       ScalarKind.Interval => "INTERVAL",
       // Text, JSON (kept as text) and values of unknown types (as their text).

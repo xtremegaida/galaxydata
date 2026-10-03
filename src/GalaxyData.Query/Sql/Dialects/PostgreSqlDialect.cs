@@ -17,6 +17,11 @@ internal sealed class PostgreSqlDialect : SqlDialect
 
    public override int MaxParameters => 65535;
 
+   /// <summary>PostgreSQL cuts names longer than 63 bytes short, so two long names could become one.</summary>
+   internal override int MaxNameLength => 63;
+
+   private protected override int NameLength(string name) => Encoding.UTF8.GetByteCount(name);
+
    private protected override bool IsBare(string name)
    {
       foreach (char c in name)
@@ -112,8 +117,8 @@ internal sealed class PostgreSqlDialect : SqlDialect
       FunctionId.Between => new SqlBetween(c.Arg(0), c.Arg(1), c.Arg(2)),
       FunctionId.ToInt => Whole(c, ScalarType.Int32),
       FunctionId.ToLong => Whole(c, ScalarType.Int64),
-      FunctionId.ToDouble => Cast(c.Arg(0), ScalarType.Double),
-      FunctionId.ToDecimal => Cast(c.Arg(0), c.Result),
+      FunctionId.ToDouble => Cast(Number(c), ScalarType.Double),
+      FunctionId.ToDecimal => Cast(Number(c), c.Result),
       FunctionId.ToText => Cast(c.Arg(0), ScalarType.Text()),
       FunctionId.ToDate => Cast(c.Arg(0), ScalarType.Date),
       FunctionId.ToDateTime => Cast(c.Arg(0), ScalarType.DateTime),
@@ -123,18 +128,25 @@ internal sealed class PostgreSqlDialect : SqlDialect
 
    private SqlExpr Extract(string field, SqlCall c) => Cast(Template($"EXTRACT({field} FROM {{0}})", c.Arg(0)), ScalarType.Int32);
 
-   /// <summary>round(double, digits) doesn't exist, so doubles round as numeric and convert back.</summary>
+   /// <summary>
+   /// Doubles round as numeric and convert back: round(double, digits) doesn't exist, and round(double) rounds halves
+   /// to even, where the language (and numeric) rounds them away from zero.
+   /// </summary>
    private SqlExpr Round(SqlCall c)
    {
       ScalarType type = c.Type(0);
       if (IsInteger(type)) { return c.Arg(0); }
-      if (c.Count == 2 && type.Kind is ScalarKind.Double or ScalarKind.Single)
+      if (type.Kind is ScalarKind.Double or ScalarKind.Single)
       {
-         return Cast(Call("round", Cast(c.Arg(0), ScalarType.Decimal()), Int(c, 1)), type);
+         SqlExpr exact = Cast(c.Arg(0), ScalarType.Decimal());
+         return Cast(c.Count == 2 ? Call("round", exact, Int(c, 1)) : Call("round", exact), type);
       }
       return Call("round", TextThenInts(c));
    }
 
    private SqlExpr Whole(SqlCall c, ScalarType type) =>
-      Cast(IsFractional(c.Type(0)) ? Call("trunc", c.Arg(0)) : c.Arg(0), type);
+      Cast(IsFractional(c.Type(0)) ? Call("trunc", c.Arg(0)) : Number(c), type);
+
+   /// <summary>The argument as a number: a boolean as 1 or 0, which only integer casts from.</summary>
+   private SqlExpr Number(SqlCall c) => c.Type(0).Kind == ScalarKind.Boolean ? Cast(c.Arg(0), ScalarType.Int32) : c.Arg(0);
 }

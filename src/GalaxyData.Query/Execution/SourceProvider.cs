@@ -60,6 +60,16 @@ public abstract class SourceProvider
       parameter.Value = value ?? DBNull.Value;
    }
 
+   /// <summary>
+   /// Sets the parameter of a slot of generated SQL: by default, as a value of the slot's type. A provider may use
+   /// what else the slot tells, such as whether the value is compared with a column.
+   /// </summary>
+   public virtual void BindParameter(DbParameter parameter, object? value, SqlParameterSlot slot)
+   {
+      ArgumentNullException.ThrowIfNull(slot);
+      BindParameter(parameter, value, slot.Type);
+   }
+
    /// <summary>The raw value of a column; <see cref="ValueConverter"/> turns it into the logical type's CLR value.</summary>
    public virtual object? ReadValue(DbDataReader reader, int ordinal)
    {

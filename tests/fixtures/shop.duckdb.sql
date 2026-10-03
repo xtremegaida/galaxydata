@@ -65,11 +65,11 @@ INSERT INTO customers (id, name, city, credit_limit) VALUES
 INSERT INTO addresses (id, customer_id, line1, city) VALUES
    (1, 1, '1 Main Rd', 'Cape Town'),
    (2, 2, '9 High St', 'Johannesburg');
-INSERT INTO orders (id, customer_id, ship_address_id, bill_address_id, status, total, order_date) VALUES
-   (1001, 1, 1, 1, 'open', 250.00, DATE '2026-01-05'),
-   (1002, 1, 1, NULL, 'shipped', 99.50, DATE '2026-01-09'),
-   (1003, 2, 2, 2, 'open', 12.25, DATE '2026-02-01'),
-   (1004, 3, NULL, NULL, 'cancelled', 0.00, DATE '2026-02-14');
+INSERT INTO orders (id, customer_id, ship_address_id, bill_address_id, status, total, order_date, placed_at) VALUES
+   (1001, 1, 1, 1, 'open', 250.00, DATE '2026-01-05', TIMESTAMPTZ '2026-01-05 10:30:00+02:00'),
+   (1002, 1, 1, NULL, 'shipped', 99.50, DATE '2026-01-09', TIMESTAMPTZ '2026-01-09 23:15:00-05:00'),
+   (1003, 2, 2, 2, 'open', 12.25, DATE '2026-02-01', TIMESTAMPTZ '2026-01-05 11:00:00+05:00'),
+   (1004, 3, NULL, NULL, 'cancelled', 0.00, DATE '2026-02-14', NULL);
 INSERT INTO order_lines (order_id, line_no, product_code, qty, price) VALUES
    (1001, 1, 'P-100', 2, 100.00),
    (1001, 2, 'P-200', 1, 50.00),

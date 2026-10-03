@@ -119,10 +119,10 @@ INNER JOIN products AS p ON o.product_code = p.code
 ### sales.customers.where(between(credit_limit, 100, 5000.5) and like(name, 'A%'))
 SELECT c.id, c.name, c.city, c.credit_limit, c.created, c.region_code, c.uid, c.notes
 FROM customers AS c
-WHERE c.credit_limit BETWEEN @p0 AND @p1 AND c.name LIKE @p2 ESCAPE '\'
+WHERE c.credit_limit BETWEEN @p0 AND @p1 AND c.name GLOB @p2
 -- p0 decimal(10,2) = 100
 -- p1 decimal(10,2) = 5000.5
--- p2 string = 'A%'
+-- p2 string = glob pattern of 'A%'
 
 ### sales.customers.where(startsWith(name, 'A_c') and endsWith(name, $suffix) and contains(name, city) and icontains(name, 'ME'))
 SELECT c.id, c.name, c.city, c.credit_limit, c.created, c.region_code, c.uid, c.notes
@@ -144,7 +144,7 @@ WHERE (c.credit_limit > @p0) = (c.city IS NOT NULL)
 -- p0 decimal(10,2) = 100
 
 ### sales.orders.select(id, d: daysBetween(order_date, shipped_at), m: addMonths(order_date, 1), h: hour(shipped_at), at: now(), on: today())
-SELECT o.id, CAST(julianday(date(o.shipped_at)) - julianday(date(o.order_date)) AS INTEGER) AS d, date(o.order_date, 1 || ' months') AS m, CAST(strftime('%H', o.shipped_at) AS INTEGER) AS h, @p0 AS "at", @p1 AS "on"
+SELECT o.id, CAST(julianday(date(o.shipped_at)) - julianday(date(o.order_date)) AS INTEGER) AS d, date(o.order_date, 1 || ' months', 'floor') AS m, CAST(strftime('%H', o.shipped_at) AS INTEGER) AS h, @p0 AS "at", @p1 AS "on"
 FROM orders AS o
 -- p0 datetime = now()
 -- p1 date = today()

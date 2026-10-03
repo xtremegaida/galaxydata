@@ -75,7 +75,9 @@ internal sealed class Session : IAsyncDisposable
          throw;
       }
       foreach (string warning in opened.Warnings) { await error.WriteLineAsync("gdq: warning: " + warning); }
-      QueryEngine engine = new(opened.BuildCatalog(overlay), opened, [Sqlite.SqliteSourceProvider.Instance, DuckDb.DuckDbSourceProvider.Instance, excel], merge);
+      QueryEngine engine = new(opened.BuildCatalog(overlay), opened,
+         [Sqlite.SqliteSourceProvider.Instance, DuckDb.DuckDbSourceProvider.Instance, PostgreSql.PostgreSqlSourceProvider.Instance,
+          SqlServer.SqlServerSourceProvider.Instance, excel], merge);
       return new Session(opened, engine, merge, excel, values);
    }
 
@@ -94,7 +96,7 @@ internal static class GdqApp
    {
       Option<string[]> sources = new("--source", "-s")
       {
-         Description = "A source as alias=kind:target, e.g. shop=sqlite:shop.db. Kinds: sqlite, duckdb, excel (a folder of .xlsx workbooks). A .sql target is run into a new in-memory database; files open read-only.",
+         Description = "A source as alias=kind:target, e.g. shop=sqlite:shop.db. Kinds: sqlite, duckdb, postgres and sqlserver (a connection string), excel (a folder of .xlsx workbooks). A .sql target is run into a new in-memory database; files open read-only.",
          Required = true,
       };
       Option<FileInfo?> overlay = new("--overlay") { Description = "A catalog overlay (JSON): relations across sources, virtual entities, renames." };

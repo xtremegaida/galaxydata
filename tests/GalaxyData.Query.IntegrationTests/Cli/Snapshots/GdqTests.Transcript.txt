@@ -253,7 +253,7 @@ exit 0
 shop.open_orders (view, no key)
    id int64?, customer_id int64?, total decimal(10,2)?
 shop.orders (table, key id)
-   id int64, customer_id int64, ship_address_id int64?, bill_address_id int64?, status string, total decimal(10,2), order_date date
+   id int64, customer_id int64, ship_address_id int64?, bill_address_id int64?, status string, total decimal(10,2), order_date date, placed_at datetimeoffset?
    customer -> shop.customers?, ship_address -> shop.addresses?, bill_address -> shop.addresses?, order_lines -> shop.order_lines*
 shop.order_lines (table, key order_id, line_no)
    order_id int64, line_no int64, product_code string(20), qty int64, price decimal(10,2)
@@ -269,7 +269,7 @@ error GDQ2001: There is no 'totl' here. Did you mean 'total'?
 ### a source that isn't one
 exit 2
 --- err
-gdq: 'oracle' is not a source kind; use sqlite, duckdb or excel
+gdq: 'oracle' is not a source kind; use sqlite, duckdb, postgres, sqlserver or excel
 
 ### a database that doesn't exist
 exit 2
@@ -302,17 +302,17 @@ Beta Corp | Johannesburg
 Acme Ltd  | Cape Town
 (2 rows; (time))
 gdq> $min = 50 (int64)
-gdq> id   | customer_id | ship_address_id | bill_address_id | status    | total  | order_date
------+-------------+-----------------+-----------------+-----------+--------+-----------
-1001 |           1 |               1 |               1 | open      | 250.00 | 2026-01-05
-1002 |           1 |               1 |            null | shipped   |  99.50 | 2026-01-09
-1003 |           2 |               2 |               2 | open      |  12.25 | 2026-02-01
-1004 |           3 |            null |            null | cancelled |   0.00 | 2026-02-14
+gdq> id   | customer_id | ship_address_id | bill_address_id | status    | total  | order_date | placed_at
+-----+-------------+-----------------+-----------------+-----------+--------+------------+--------------------------
+1001 |           1 |               1 |               1 | open      | 250.00 | 2026-01-05 | 2026-01-05 08:30:00+00:00
+1002 |           1 |               1 |            null | shipped   |  99.50 | 2026-01-09 | 2026-01-10 04:15:00+00:00
+1003 |           2 |               2 |               2 | open      |  12.25 | 2026-02-01 | 2026-01-05 06:00:00+00:00
+1004 |           3 |            null |            null | cancelled |   0.00 | 2026-02-14 | null
 (4 rows; (time))
-gdq> id   | customer_id | ship_address_id | bill_address_id | status  | total  | order_date
------+-------------+-----------------+-----------------+---------+--------+-----------
-1001 |           1 |               1 |               1 | open    | 250.00 | 2026-01-05
-1002 |           1 |               1 |            null | shipped |  99.50 | 2026-01-09
+gdq> id   | customer_id | ship_address_id | bill_address_id | status  | total  | order_date | placed_at
+-----+-------------+-----------------+-----------------+---------+--------+------------+--------------------------
+1001 |           1 |               1 |               1 | open    | 250.00 | 2026-01-05 | 2026-01-05 08:30:00+00:00
+1002 |           1 |               1 |            null | shipped |  99.50 | 2026-01-09 | 2026-01-10 04:15:00+00:00
 (2 rows; (time))
 gdq> ...> id   | total
 -----+-------

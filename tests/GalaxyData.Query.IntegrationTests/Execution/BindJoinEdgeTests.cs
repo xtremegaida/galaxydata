@@ -411,10 +411,10 @@ public sealed class BindJoinEdgeTests
    public async Task OddShapesUnderAPage(string query)
    {
       await using TestSources sqlite = await TestSources.SqliteShopAsync();
-      string expected = await RowsAsync(sqlite.Engine(ExecutionTests.Overlay, new QueryEngineOptions { Optimize = false }), query);
-      (await RowsAsync(sqlite.Engine(ExecutionTests.Overlay), query)).ShouldBe(expected, query);
-      await using TestSources split = await FederationTests.SplitShopAsync();
-      (await RowsAsync(split.Engine(FederationTests.SplitOverlay, Always), FederationTests.Split(query))).ShouldBe(expected, "split " + query);
+      string expected = await RowsAsync(sqlite.Engine(Conformance.Overlay, new QueryEngineOptions { Optimize = false }), query);
+      (await RowsAsync(sqlite.Engine(Conformance.Overlay), query)).ShouldBe(expected, query);
+      await using TestSources split = await Conformance.SplitShopAsync();
+      (await RowsAsync(split.Engine(Conformance.SplitOverlay, Always), Conformance.Split(query))).ShouldBe(expected, "split " + query);
    }
 
    // ---------------------------------------------------------------- options
@@ -422,8 +422,8 @@ public sealed class BindJoinEdgeTests
    [Fact]
    public async Task NoLimitOnKeys()
    {
-      await using TestSources sources = await FederationTests.SplitShopAsync();
-      QueryEngine engine = sources.Engine(FederationTests.SplitOverlay, new QueryEngineOptions { MaxBindKeys = int.MaxValue });
+      await using TestSources sources = await Conformance.SplitShopAsync();
+      QueryEngine engine = sources.Engine(Conformance.SplitOverlay, new QueryEngineOptions { MaxBindKeys = int.MaxValue });
       string rows = await RowsAsync(engine, "sales.orders.where(status == 'open').select(id, who: customer.name).orderBy(id)");
       rows.ShouldBe("1001 | 'Acme Ltd'" + Environment.NewLine + "1003 | 'Beta Corp'" + Environment.NewLine);
    }
@@ -562,11 +562,11 @@ public sealed class BindJoinEdgeTests
    {
       await using TestSources sqlite = await TestSources.SqliteShopAsync();
       await using TestSources duckdb = await TestSources.DuckDbShopAsync();
-      await using TestSources split = await FederationTests.SplitShopAsync();
-      string expected = await RowsAsync(sqlite.Engine(ExecutionTests.Overlay), query);
-      (await RowsAsync(duckdb.Engine(ExecutionTests.Overlay), query)).ShouldBe(expected, "duckdb " + query);
-      (await RowsAsync(split.Engine(FederationTests.SplitOverlay, Always), FederationTests.Split(query))).ShouldBe(expected, "split " + query);
-      (await RowsAsync(split.Engine(FederationTests.SplitOverlay, Never), FederationTests.Split(query))).ShouldBe(expected, "split never " + query);
-      (await RowsAsync(sqlite.Engine(ExecutionTests.Overlay, new QueryEngineOptions { PushDown = false }), query)).ShouldBe(expected, "merge only " + query);
+      await using TestSources split = await Conformance.SplitShopAsync();
+      string expected = await RowsAsync(sqlite.Engine(Conformance.Overlay), query);
+      (await RowsAsync(duckdb.Engine(Conformance.Overlay), query)).ShouldBe(expected, "duckdb " + query);
+      (await RowsAsync(split.Engine(Conformance.SplitOverlay, Always), Conformance.Split(query))).ShouldBe(expected, "split " + query);
+      (await RowsAsync(split.Engine(Conformance.SplitOverlay, Never), Conformance.Split(query))).ShouldBe(expected, "split never " + query);
+      (await RowsAsync(sqlite.Engine(Conformance.Overlay, new QueryEngineOptions { PushDown = false }), query)).ShouldBe(expected, "merge only " + query);
    }
 }

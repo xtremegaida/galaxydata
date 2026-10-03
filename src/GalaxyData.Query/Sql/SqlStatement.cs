@@ -48,6 +48,12 @@ public enum PatternShape : byte
    Prefix,
    Suffix,
    Contains,
+
+   /// <summary>
+   /// The text is a LIKE pattern already, as the language writes them (<c>%</c>, <c>_</c>, and <c>\</c> escaping the
+   /// next character): written in the style's syntax, SQL Server's <c>[</c> escaped, or as a GLOB pattern.
+   /// </summary>
+   AsWritten,
 }
 
 /// <summary>Turns text into a pattern that matches it literally: startsWith(name, 'a_b') becomes <c>LIKE 'a\_b%'</c>.</summary>
@@ -56,6 +62,7 @@ public sealed record PatternTransform(PatternStyle Style, PatternShape Shape)
    public string Apply(string text)
    {
       ArgumentNullException.ThrowIfNull(text);
+      if (Shape == PatternShape.AsWritten) { return Translate(text); }
       StringBuilder pattern = new(text.Length + 4);
       string any = Style == PatternStyle.Glob ? "*" : "%";
       if (Shape != PatternShape.Prefix) { pattern.Append(any); }
@@ -79,7 +86,31 @@ public sealed record PatternTransform(PatternStyle Style, PatternShape Shape)
       return pattern.ToString();
    }
 
-   public override string ToString() => $"{Shape.ToString().ToLowerInvariant()} {(Style == PatternStyle.Glob ? "glob" : "like")} pattern";
+   /// <summary>A LIKE pattern of the language in the style's syntax.</summary>
+   private string Translate(string like)
+   {
+      StringBuilder pattern = new(like.Length + 4);
+      for (int i = 0; i < like.Length; i++)
+      {
+         char c = like[i];
+         bool escaped = c == '\\' && i + 1 < like.Length;
+         if (escaped) { c = like[++i]; }
+         if (Style == PatternStyle.Glob)
+         {
+            if (!escaped && c == '%') { pattern.Append('*'); }
+            else if (!escaped && c == '_') { pattern.Append('?'); }
+            else if (c is '*' or '?' or '[') { pattern.Append('[').Append(c).Append(']'); }
+            else { pattern.Append(c); }
+         }
+         else if (escaped) { pattern.Append('\\').Append(c); }
+         else if (Style == PatternStyle.LikeWithBrackets && c == '[') { pattern.Append("\\["); }
+         else { pattern.Append(c); }
+      }
+      return pattern.ToString();
+   }
+
+   public override string ToString() =>
+      Shape == PatternShape.AsWritten ? $"{(Style == PatternStyle.Glob ? "glob" : "like")} pattern" : $"{Shape.ToString().ToLowerInvariant()} {(Style == PatternStyle.Glob ? "glob" : "like")} pattern";
 }
 
 /// <summary>
@@ -113,6 +144,19 @@ public sealed class SqlParameterSlot
 
    /// <summary>Set when the value is text that becomes a match pattern.</summary>
    public PatternTransform? Pattern { get; }
+
+   /// <summary>
+   /// Whether the SQL compares the value with a column (<c>c.status = @p0</c>, <c>c.id IN (@p0, @p1)</c>), so the
+   /// database may take its type from the column's: PostgreSQL compares text sent untyped as an enum, a char(n) or
+   /// citext, which text doesn't compare with, or not as they do.
+   /// </summary>
+   public bool ComparedWithColumn { get; internal set; }
+
+   /// <summary>
+   /// The type of the table column the value is compared with, as its database declares it, when known: SQL Server
+   /// compares a <c>datetime</c> only with a <c>datetime</c> exactly.
+   /// </summary>
+   public string? ColumnType { get; internal set; }
 
    /// <summary>What the value is, in query syntax: <c>'open'</c>, <c>$since</c>, <c>now()</c>.</summary>
    public string Description

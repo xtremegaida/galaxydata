@@ -174,6 +174,24 @@ id | same | before
 1003 | false | false
 1004 | false | false
 
+### shop.orders.where(placed_at != null).select(id, placed_at, h: hour(placed_at), d: date(placed_at), day: day(placed_at), at: toDateTime(placed_at), days: daysBetween(placed_at, toDate('2026-03-01'))).orderBy(id)
+id | placed_at | h | d | day | at | days
+1001 | 2026-01-05 08:30:00+00:00 | 8 | 2026-01-05 | 5 | 2026-01-05 08:30:00 | 55
+1002 | 2026-01-10 04:15:00+00:00 | 4 | 2026-01-10 | 10 | 2026-01-10 04:15:00 | 50
+1003 | 2026-01-05 06:00:00+00:00 | 6 | 2026-01-05 | 5 | 2026-01-05 06:00:00 | 55
+
+### shop.orders.where(placed_at > toDateTime('2026-01-10 00:00') or placed_at < toDateTime('2026-01-05 07:00')).select(id).orderBy(id)
+id
+1002
+1003
+
+### shop.orders.orderBy(desc(placed_at)).select(id, placed_at)
+id | placed_at
+1002 | 2026-01-10 04:15:00+00:00
+1001 | 2026-01-05 08:30:00+00:00
+1003 | 2026-01-05 06:00:00+00:00
+1004 | null
+
 ### shop.customers.select(name, l: left(name, $n), d: addDays(toDate('2026-01-01'), $n)).orderBy(name)
 name | l | d || id
 'Acme Ltd' | 'Acm' | 2026-01-04 || 1
@@ -342,6 +360,12 @@ name | s || id
 'Acme Ltd' | 1747500 || 1
 'Beta Corp' | 12250 || 2
 'Gamma Inc' | 0 || 3
+
+### shop.customers.select(name, s: orders.sum(credit_limit), n: orders.count(credit_limit), m: orders.max(credit_limit + total)).orderBy(name)
+name | s | n | m || id
+'Acme Ltd' | 10000.00 | 2 | 5250.00 || 1
+'Beta Corp' | 1000.00 | 1 | 1012.25 || 2
+'Gamma Inc' | 0.00 | 0 | null || 3
 
 ### shop.orders.groupBy(customer_id).extend(n: count()).select(customer_id, m: shop.customers.where(c => c.credit_limit > n).count()).orderBy(customer_id)
 customer_id | m

@@ -61,7 +61,7 @@ SELECT c.id, c.name
 FROM customers AS c
 
 -- f2: crm (SQL Server) customer_ref int32?, count int64; by the keys of f1.id
-SELECT c.customer_ref, COUNT(*) AS count
+SELECT c.customer_ref, COUNT_BIG(*) AS count
 FROM contacts AS c
 GROUP BY c.customer_ref
 
@@ -365,7 +365,7 @@ SELECT count(*) AS count
 FROM orders AS o
 
 -- s2: crm (SQL Server) count int64
-SELECT COUNT(*) AS count
+SELECT COUNT_BIG(*) AS count
 FROM contacts AS c
 
 -- merge (DuckDB)
@@ -453,7 +453,7 @@ ORDER BY o.total DESC
 LIMIT 1
 
 -- f2: crm (SQL Server) customer_ref int32?, count int64; by the keys of f1.customer_id
-SELECT c.customer_ref, COUNT(*) AS count
+SELECT c.customer_ref, COUNT_BIG(*) AS count
 FROM contacts AS c
 GROUP BY c.customer_ref
 

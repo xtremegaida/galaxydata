@@ -1,0 +1,28 @@
+id: integer -> int32
+b: boolean -> boolean?
+i16: smallint -> int16?
+i32: integer -> int32?
+i64: bigint -> int64?
+dec: numeric(12,4) -> decimal(12,4)?
+num: numeric -> decimal?
+f32: real -> single?
+f64: double precision -> double?
+txt: text -> string?
+vc: character varying(10) -> string(10)?
+ch: character(3) -> string(3)?
+js: json -> json?
+jsb: jsonb -> json?
+bin: bytea -> binary?
+uid: uuid -> guid?
+d: date -> date?
+t: time without time zone -> time?
+ts: timestamp(3) without time zone -> datetime?
+tstz: timestamp with time zone -> datetimeoffset?
+iv: interval -> interval?
+mo: money -> unknown?
+en: mood -> string?
+pos: positive -> int32?
+cd: code -> string(10)?
+arr: integer[] -> unknown?
+ip: inet -> unknown?
+x: xml -> unknown?

@@ -97,14 +97,20 @@ public sealed class MergeValueTests
       sources.Merge.ActiveSessions.ShouldBe(0);
    }
 
-   [Fact]
-   public async Task DateTimesKeepTheirTicksAndOffsetsTheirInstant()
+   /// <summary>Date-times are held to the microsecond, over every year: far ones don't wrap around, as nanoseconds would.</summary>
+   [Theory]
+   [InlineData("2026-01-05 10:00:00.1234567", "2026-01-05 10:00:00.123456")]
+   [InlineData("9999-12-31 23:59:59.9999999", "9999-12-31 23:59:59.999999")]
+   [InlineData("0001-01-01 00:00:00", "0001-01-01 00:00:00")]
+   [InlineData("2300-06-01 12:00:00", "2300-06-01 12:00:00")]
+   public async Task DateTimesKeepTheirMicrosecondsAndOffsetsTheirInstant(string at, string held)
    {
-      (TestSources sources, QueryEngine engine) = await SourcesAsync("at DATETIME, happened DATETIMEOFFSET", "(1, '2026-01-05 10:00:00.1234567', '2026-01-05 10:00:00+02:00', 1)");
+      (TestSources sources, QueryEngine engine) = await SourcesAsync("at DATETIME, happened DATETIMEOFFSET", $"(1, '{at}', '2026-01-05 10:00:00+02:00', 1)");
       await using TestSources _ = sources;
       object?[] alone = await FirstRowAsync(engine, "a.t.select(id, at, happened)");
       object?[] merged = await FirstRowAsync(engine, "a.t.select(id, at, happened, name: person.name)");
-      merged[1].ShouldBe(alone[1]);
+      ((DateTime)alone[1]!).ShouldBe(DateTime.Parse(at, System.Globalization.CultureInfo.InvariantCulture));
+      ((DateTime)merged[1]!).ShouldBe(DateTime.Parse(held, System.Globalization.CultureInfo.InvariantCulture));
       // The merge engine holds the instant, in UTC, as DuckDB sources give it.
       ((DateTimeOffset)merged[2]!).ShouldBe((DateTimeOffset)alone[2]!);
       ((DateTimeOffset)merged[2]!).Offset.ShouldBe(TimeSpan.Zero);

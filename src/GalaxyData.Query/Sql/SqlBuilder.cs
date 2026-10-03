@@ -102,7 +102,8 @@ internal sealed class SqlBuilder
    {
       SqlSelect select = frame.Select;
       select.Items.Clear();
-      for (int i = 0; i < columns.Count; i++) { select.Items.Add(new SqlSelectItem(frame.Columns[columns[i]], names[i])); }
+      // Columns are read by position, so their names only need to be ones the database takes (the same name twice too).
+      for (int i = 0; i < columns.Count; i++) { select.Items.Add(new SqlSelectItem(frame.Columns[columns[i]], dialect.FitName(names[i], string.Empty))); }
       // A SELECT needs at least one item even when the rows have no columns.
       if (select.Items.Count == 0) { select.Items.Add(Placeholder(frame, "one")); }
       string text = SqlWriter.Write(select, dialect, out IReadOnlyList<SqlParameterSlot> written);
@@ -201,7 +202,7 @@ internal sealed class SqlBuilder
             {
                // A key that reads no column is the same for every row, and databases reject constants in ORDER BY.
                SqlExpr sql = Value(key.Expr, frame.Columns);
-               if (ReadsColumns(sql)) { frame.Select.OrderBy.Add(new SqlOrderItem(sql, key.Descending, key.Expr.Type.Nullable)); }
+               if (ReadsColumns(sql)) { frame.Select.OrderBy.Add(new SqlOrderItem(dialect.SortKey(sql, key.Expr.Type), key.Descending, key.Expr.Type.Nullable)); }
             }
             return frame;
          }
@@ -248,7 +249,11 @@ internal sealed class SqlBuilder
          ? null
          : table.Schema;
       frame.Select.From = new SqlTable(schema, table.Table, alias) { Catalog = table.Source.Catalog };
-      foreach (ScanColumn column in scan.Columns) { frame.Columns[column.Output] = new SqlColumn(alias, column.Column.Name); }
+      foreach (ScanColumn column in scan.Columns)
+      {
+         SqlColumn read = new(alias, column.Column.Name) { NativeType = column.Column.NativeType };
+         frame.Columns[column.Output] = column.Column.ReadAs is { } type ? new SqlCast(read, type) : read;
+      }
       return frame;
    }
 
@@ -360,10 +365,12 @@ internal sealed class SqlBuilder
       if (frame.HasPaging || frame.DistinctColumns != null || frame.Aggregated) { frame = Wrap(frame, aggregate.Input.Output, below); }
       bool computed = aggregate.Keys.Any(k => k.Expr is not PlanColumnRef reference || !(frame.Columns.TryGetValue(reference.Column, out SqlExpr? sql) && sql is SqlColumn));
       // Some databases (SQL Server) take no subquery inside an aggregate; such arguments are computed first too. The
-      // SQL tells: a column of the frame may be a subquery (a projected first().total).
+      // SQL tells: a column of the frame may be a subquery (a projected first().total). So are arguments that read the
+      // query around this one: SQL counts an aggregate of outer columns alone as the outer query's, and SQL Server
+      // rejects one that mixes them with this query's columns.
       Dictionary<AggregateItem, SqlExpr> translated = aggregates.Where(a => a.Argument != null).ToDictionary(a => a, a => Value(a.Argument!, frame.Columns));
       Dictionary<AggregateItem, PlanColumn> arguments = translated
-         .Where(a => HasSubquery(a.Value))
+         .Where(a => HasSubquery(a.Value) || PlanAnalysis.Columns(a.Key.Argument!).Any(c => !frame.Columns.ContainsKey(c)))
          .ToDictionary(a => a.Key, a => new PlanColumn(0, a.Key.Column.Name + "_value", a.Key.Argument!.Type, Results.ColumnLineage.Unknown));
       if (computed || arguments.Count > 0)
       {
@@ -445,7 +452,8 @@ internal sealed class SqlBuilder
       {
          string name = Unique(names, column.Name);
          select.Items.Add(new SqlSelectItem(inner.Columns[column], name));
-         outer.Columns[column] = new SqlColumn(alias, name);
+         // A table's column read through the derived table is still compared as its type.
+         outer.Columns[column] = new SqlColumn(alias, name) { NativeType = (inner.Columns[column] as SqlColumn)?.NativeType };
       }
       foreach ((PlanColumn column, SqlExpr sql) in computed ?? [])
       {
@@ -469,17 +477,18 @@ internal sealed class SqlBuilder
       return outer;
    }
 
-   private static void SetItems(SqlSelect select, IEnumerable<PlanColumn> columns, Dictionary<PlanColumn, SqlExpr> sql)
+   private void SetItems(SqlSelect select, IEnumerable<PlanColumn> columns, Dictionary<PlanColumn, SqlExpr> sql)
    {
       HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
       select.Items.Clear();
       foreach (PlanColumn column in columns) { select.Items.Add(new SqlSelectItem(sql[column], Unique(names, column.Name))); }
    }
 
-   private static string Unique(HashSet<string> names, string name)
+   /// <summary>A name for a column of a SELECT, unique among <paramref name="names"/> and short enough for the database.</summary>
+   private string Unique(HashSet<string> names, string name)
    {
-      string candidate = name;
-      for (int n = 2; !names.Add(candidate); n++) { candidate = $"{name}_{n}"; }
+      string candidate = dialect.FitName(name, string.Empty);
+      for (int n = 2; !names.Add(candidate); n++) { candidate = dialect.FitName(name, "_" + n.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
       return candidate;
    }
 

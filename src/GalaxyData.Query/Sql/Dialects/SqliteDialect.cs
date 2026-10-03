@@ -56,13 +56,28 @@ internal sealed class SqliteDialect : SqlDialect
    internal override SqlExpr Modulo(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       leftType.IsInteger && rightType.IsInteger ? new SqlBinary(SqlBinaryOp.Modulo, left, right) : Call("mod", left, right);
 
-   /// <summary>Dates are 'yyyy-MM-dd' text and date-times 'yyyy-MM-dd HH:mm:ss', so a date meeting a date-time becomes one first.</summary>
+   /// <summary>
+   /// Dates are 'yyyy-MM-dd' text and date-times 'yyyy-MM-dd HH:mm:ss', so a date meeting a date-time becomes one
+   /// first. A date-time with an offset is text in its own time, so both sides of a comparison with one are written
+   /// in UTC first.
+   /// </summary>
    internal override SqlExpr Compare(SqlBinaryOp op, SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType)
    {
+      if (leftType.Kind == ScalarKind.DateTimeOffset || rightType.Kind == ScalarKind.DateTimeOffset)
+      {
+         return new SqlBinary(op, Instant(left, leftType), Instant(right, rightType));
+      }
       if (leftType.Kind == ScalarKind.Date && rightType.Kind == ScalarKind.DateTime) { left = Call("datetime", left); }
       if (rightType.Kind == ScalarKind.Date && leftType.Kind == ScalarKind.DateTime) { right = Call("datetime", right); }
       return new SqlBinary(op, left, right);
    }
+
+   /// <summary>Date-times with an offset sort in UTC.</summary>
+   internal override SqlExpr SortKey(SqlExpr key, ScalarType type) => type.Kind == ScalarKind.DateTimeOffset ? Instant(key, type) : key;
+
+   /// <summary>A date or date-time, with or without an offset, as UTC text to the millisecond, which compares as the instants do.</summary>
+   private static SqlExpr Instant(SqlExpr value, ScalarType type) =>
+      type.Kind is ScalarKind.Date or ScalarKind.DateTime or ScalarKind.DateTimeOffset ? Call("strftime", Text("%Y-%m-%d %H:%M:%f"), value) : value;
 
    internal override SqlExpr? Function(SqlCall c) => c.Id switch
    {
@@ -89,7 +104,9 @@ internal sealed class SqliteDialect : SqlDialect
       FunctionId.IContains => c.IsFixedText(1)
          ? Like(c.Arg(0), c.Pattern(1, PatternStyle.Like, PatternShape.Contains))
          : Binary(SqlBinaryOp.Greater, Call("instr", Call("lower", c.Arg(0)), Call("lower", c.Arg(1))), Integer(0)),
-      FunctionId.Like or FunctionId.ILike => Like(c.Arg(0), c.Arg(1)),
+      // LIKE ignores ASCII case; a pattern that is a value is matched as GLOB, which doesn't.
+      FunctionId.Like => c.IsFixedText(1) ? Binary(SqlBinaryOp.Glob, c.Arg(0), c.Pattern(1, PatternStyle.Glob, PatternShape.AsWritten)) : Like(c.Arg(0), c.Arg(1)),
+      FunctionId.ILike => Like(c.Arg(0), c.Arg(1)),
       FunctionId.Concat => Call("concat", c.Args()),
       FunctionId.Abs => Call("abs", c.Arg(0)),
       FunctionId.Round => IsInteger(c.Type(0)) ? c.Arg(0) : Call("round", c.Args()),
@@ -129,8 +146,10 @@ internal sealed class SqliteDialect : SqlDialect
    private SqlExpr Part(string format, SqlCall c) => Cast(Call("strftime", Text(format), c.Arg(0)), ScalarType.Int64);
 
    /// <summary><c>date(x, n || ' days')</c>; date-times keep their time of day.</summary>
-   private static SqlExpr Shift(SqlCall c, string unit) =>
-      Call(c.Type(0).Kind == ScalarKind.Date ? "date" : "datetime", c.Arg(0), Binary(SqlBinaryOp.Concat, c.Arg(1), Text(unit)));
+   /// <summary>A date or date-time moved by days or months; a month's day past its end is its last ('floor', SQLite 3.46), not the next month's.</summary>
+   private static SqlExpr Shift(SqlCall c, string unit) => unit == " months"
+      ? Call(c.Type(0).Kind == ScalarKind.Date ? "date" : "datetime", c.Arg(0), Binary(SqlBinaryOp.Concat, c.Arg(1), Text(unit)), Text("floor"))
+      : Call(c.Type(0).Kind == ScalarKind.Date ? "date" : "datetime", c.Arg(0), Binary(SqlBinaryOp.Concat, c.Arg(1), Text(unit)));
 
    private SqlExpr ToText(SqlCall c)
    {

@@ -16,7 +16,8 @@ namespace GalaxyData.Query.Execution;
 /// The CLR types: bool, short, int, long, decimal, float, double, string, byte[], Guid, DateOnly, TimeOnly,
 /// DateTime, DateTimeOffset and TimeSpan (intervals). Decimals with a scale get exactly that many digits, so
 /// <c>250</c> from SQLite and <c>250.00</c> from DuckDB are the same value and print the same way; decimals with
-/// no scale lose their trailing zeros.
+/// no scale lose their trailing zeros. Date-times with an offset are instants, in UTC, as PostgreSQL and DuckDB
+/// keep them: SQL Server's and SQLite's own offsets are left behind.
 /// </remarks>
 public static class ValueConverter
 {
@@ -247,10 +248,10 @@ public static class ValueConverter
 
    private static DateTimeOffset ToDateTimeOffset(object value) => value switch
    {
-      DateTimeOffset offset => offset,
+      DateTimeOffset offset => offset.ToUniversalTime(),
       DateTime dateTime => new DateTimeOffset(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)),
       DateOnly date => new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
-      string text => DateTimeOffset.Parse(text.Trim(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal),
+      string text => DateTimeOffset.Parse(text.Trim(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal).ToUniversalTime(),
       _ => throw new InvalidCastException($"A {value.GetType().Name} is not a date-time with offset"),
    };
 

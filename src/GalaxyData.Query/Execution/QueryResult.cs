@@ -161,7 +161,7 @@ public sealed class QueryResult : IAsyncDisposable, IAsyncEnumerable<object?[]>
             row[i] = raw is string text && Unknowns.TryGetValue(text, out object? original) ? original : raw;
             continue;
          }
-         if (!TryConvert(provider.ReadValue(reader, i), columns[i].Type, out row[i], out Exception? error) && !lenient)
+         if (!TryRead(provider, reader, i, columns[i].Type, out row[i], out Exception? error) && !lenient)
          {
             throw Unconverted($"Row {Stats.Rows + 1}, column '{columns[i].Name}': {source.Name}", columns[i].Type, error);
          }
@@ -204,13 +204,35 @@ public sealed class QueryResult : IAsyncDisposable, IAsyncEnumerable<object?[]>
          error = null;
          return true;
       }
-      catch (Exception e) when (e is FormatException or InvalidCastException or OverflowException)
+      catch (Exception e) when (IsConversion(e))
       {
          value = null;
          error = e;
          return false;
       }
    }
+
+   /// <summary>
+   /// A column's value, read and converted; false, with null and the reason, when the provider can't read it (a
+   /// PostgreSQL NaN has no decimal) or it doesn't convert.
+   /// </summary>
+   internal static bool TryRead(SourceProvider provider, DbDataReader reader, int ordinal, ScalarType type, out object? value, out Exception? error)
+   {
+      object? raw;
+      try
+      {
+         raw = provider.ReadValue(reader, ordinal);
+      }
+      catch (Exception e) when (IsConversion(e))
+      {
+         value = null;
+         error = e;
+         return false;
+      }
+      return TryConvert(raw, type, out value, out error);
+   }
+
+   private static bool IsConversion(Exception e) => e is FormatException or InvalidCastException or OverflowException or ArgumentException;
 
    /// <summary>The error for a value that didn't convert; <paramref name="where"/> says whose (<c>Row 2, column 'happened': shop</c>).</summary>
    internal static QueryExecutionException Unconverted(string where, ScalarType type, Exception? error) =>

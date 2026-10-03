@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using GalaxyData.Query.Catalog;
@@ -14,52 +13,15 @@ using Xunit;
 namespace GalaxyData.Query.IntegrationTests.Execution;
 
 /// <summary>Queries that combine sources: fragments fetched from each, combined in the merge engine.</summary>
-public sealed partial class FederationTests
+public sealed class FederationTests
 {
-   /// <summary>
-   /// The shop split in two: orders and their lines in SQLite (<c>sales</c>), customers and addresses in DuckDB
-   /// (<c>crm</c>), linked by relations named as the foreign keys name them in one database.
-   /// </summary>
-   internal static async Task<TestSources> SplitShopAsync()
-   {
-      TestSources sources = new();
-      await sources.AddSqliteAsync("sales", Fixtures.Sql("shop.sqlite.sql") + "\nPRAGMA foreign_keys = OFF; DROP TABLE customers; DROP TABLE addresses; DROP TABLE employees;");
-      await sources.AddDuckDbAsync("crm", Fixtures.Sql("shop.duckdb.sql") + "\nDROP VIEW open_orders; DROP TABLE order_lines; DROP TABLE orders; DROP TABLE audit_log;");
-      return sources;
-   }
-
-   internal static readonly CatalogOverlay SplitOverlay = new()
-   {
-      Relations =
-      [
-         new OverlayRelation("sales.orders", ["customer_id"], "crm.customers", ["id"]) { Name = "customer", InverseName = "orders" },
-         new OverlayRelation("sales.orders", ["ship_address_id"], "crm.addresses", ["id"]) { Name = "ship_address", InverseName = "orders_by_ship_address" },
-         new OverlayRelation("sales.orders", ["bill_address_id"], "crm.addresses", ["id"]) { Name = "bill_address", InverseName = "orders_by_bill_address" },
-         new OverlayRelation("sales.orders", ["ship_address_id"], "reports.addr_x", ["id"]) { Name = "shipx" },
-      ],
-      VirtualEntities =
-      [
-         new OverlayVirtualEntity("reports.addr_x", "crm.addresses.select(id, line1, tag: coalesce(city, 'none'), known: city != null, label: 'addr')") { Key = ["id"] },
-      ],
-   };
-
-   /// <summary>A query of the one-database shop, for the split shop: each table under the alias of the source that has it.</summary>
-   internal static string Split(string query) => ShopTable().Replace(query, m => m.Groups[1].Value switch
-   {
-      "customers" or "addresses" or "employees" => "crm." + m.Groups[1].Value,
-      _ => "sales." + m.Groups[1].Value,
-   });
-
-   [GeneratedRegex(@"\bshop\.(\w+)")]
-   private static partial Regex ShopTable();
-
    [Fact]
    public async Task SplitSourcesReturnTheSameRowsAsOneDatabase()
    {
       await using TestSources whole = await TestSources.SqliteShopAsync();
-      await using TestSources split = await SplitShopAsync();
-      string expected = await ExecutionTests.RunAllAsync(whole);
-      string actual = await ExecutionTests.RunAllAsync(split, SplitOverlay, rewrite: Split);
+      await using TestSources split = await Conformance.SplitShopAsync();
+      string expected = await Conformance.RunAllAsync(whole);
+      string actual = await Conformance.RunAllAsync(split, Conformance.SplitOverlay, rewrite: Conformance.Split);
       actual.ShouldBe(expected);
       split.Merge.ActiveSessions.ShouldBe(0);
    }
@@ -70,10 +32,10 @@ public sealed partial class FederationTests
    public async Task SplitSourcesReturnTheSameRowsHoweverFragmentsAreFetched(BindJoinMode mode)
    {
       await using TestSources whole = await TestSources.SqliteShopAsync();
-      await using TestSources split = await SplitShopAsync();
-      string expected = await ExecutionTests.RunAllAsync(whole);
+      await using TestSources split = await Conformance.SplitShopAsync();
+      string expected = await Conformance.RunAllAsync(whole);
       // Batches of two keys, so fragments fetched by keys take several statements.
-      string actual = await ExecutionTests.RunAllAsync(split, SplitOverlay, new QueryEngineOptions { BindJoins = mode, MaxBindBatch = 2 }, Split);
+      string actual = await Conformance.RunAllAsync(split, Conformance.SplitOverlay, new QueryEngineOptions { BindJoins = mode, MaxBindBatch = 2 }, Conformance.Split);
       actual.ShouldBe(expected);
       split.Merge.ActiveSessions.ShouldBe(0);
    }
@@ -84,8 +46,8 @@ public sealed partial class FederationTests
    public async Task EverythingInTheMergeEngineReturnsTheSameRows(string provider)
    {
       await using TestSources sources = provider == "sqlite" ? await TestSources.SqliteShopAsync() : await TestSources.DuckDbShopAsync();
-      string expected = await ExecutionTests.RunAllAsync(sources);
-      string actual = await ExecutionTests.RunAllAsync(sources, options: new QueryEngineOptions { PushDown = false });
+      string expected = await Conformance.RunAllAsync(sources);
+      string actual = await Conformance.RunAllAsync(sources, options: new QueryEngineOptions { PushDown = false });
       actual.ShouldBe(expected);
       sources.Merge.ActiveSessions.ShouldBe(0);
    }
@@ -93,8 +55,8 @@ public sealed partial class FederationTests
    [Fact]
    public async Task EachSourceRunsItsPartAndTheMergeEngineTheRest()
    {
-      await using TestSources sources = await SplitShopAsync();
-      PreparedQuery prepared = sources.Engine(SplitOverlay).Prepare(
+      await using TestSources sources = await Conformance.SplitShopAsync();
+      PreparedQuery prepared = sources.Engine(Conformance.SplitOverlay).Prepare(
          "sales.orders.where(status == 'open' and total > 10).select(id, total, who: customer.name, city: customer.city).orderBy(id)");
       prepared.Success.ShouldBeTrue();
       prepared.Fragments.Select(f => $"{f.Source.Alias} {f.Table}").ShouldBe(["sales f1", "crm f2"]);
@@ -121,19 +83,19 @@ public sealed partial class FederationTests
    public async Task SortedSemiAndAntiJoinsKeepTheirOrderAcrossSources(string query)
    {
       await using TestSources whole = await TestSources.SqliteShopAsync();
-      await using TestSources split = await SplitShopAsync();
+      await using TestSources split = await Conformance.SplitShopAsync();
       CancellationToken token = TestContext.Current.CancellationToken;
-      await using QueryResult expected = await whole.Engine(ExecutionTests.Overlay).ExecuteAsync(new QueryRequest(query), token);
-      await using QueryResult actual = await split.Engine(SplitOverlay).ExecuteAsync(new QueryRequest(Split(query)), token);
+      await using QueryResult expected = await whole.Engine(Conformance.Overlay).ExecuteAsync(new QueryRequest(query), token);
+      await using QueryResult actual = await split.Engine(Conformance.SplitOverlay).ExecuteAsync(new QueryRequest(Conformance.Split(query)), token);
       (await TestSources.RowsAsync(actual)).ShouldBe(await TestSources.RowsAsync(expected));
    }
 
    [Fact]
    public async Task PagesOfSortedSemiJoinsKeepTheirOrderAcrossSources()
    {
-      await using TestSources split = await SplitShopAsync();
+      await using TestSources split = await Conformance.SplitShopAsync();
       CancellationToken token = TestContext.Current.CancellationToken;
-      await using QueryResult page = await split.Engine(SplitOverlay).ExecuteAsync(
+      await using QueryResult page = await split.Engine(Conformance.SplitOverlay).ExecuteAsync(
          new QueryRequest("sales.orders.orderBy(desc(total)).where(order_lines.any()).select(id, who: customer.name)") { Paging = new PageRequest(0, 1) }, token);
       // 1001 has the highest total of the orders with lines.
       (await page.ToListAsync(token)).ShouldHaveSingleItem()[0].ShouldBe(1001L);
@@ -142,8 +104,8 @@ public sealed partial class FederationTests
    [Fact]
    public async Task PagesCountsAndFirstRowsWorkAcrossSources()
    {
-      await using TestSources sources = await SplitShopAsync();
-      QueryEngine engine = sources.Engine(SplitOverlay);
+      await using TestSources sources = await Conformance.SplitShopAsync();
+      QueryEngine engine = sources.Engine(Conformance.SplitOverlay);
       CancellationToken token = TestContext.Current.CancellationToken;
       const string query = "sales.orders.where(customer.city != null)";
 
@@ -178,8 +140,8 @@ public sealed partial class FederationTests
    [Fact]
    public async Task QueriesOfOneSourceDontUseTheMergeEngine()
    {
-      await using TestSources sources = await SplitShopAsync();
-      PreparedQuery prepared = sources.Engine(SplitOverlay).Prepare("sales.orders.where(status == 'open').select(id, lines: order_lines.count())");
+      await using TestSources sources = await Conformance.SplitShopAsync();
+      PreparedQuery prepared = sources.Engine(Conformance.SplitOverlay).Prepare("sales.orders.where(status == 'open').select(id, lines: order_lines.count())");
       prepared.Merge.ShouldBeNull();
       prepared.Fragments.ShouldHaveSingleItem().Table.ShouldBeNull();
       prepared.Explain().Summary.ShouldStartWith("Runs as one SQLite query in sales");
@@ -188,8 +150,8 @@ public sealed partial class FederationTests
    [Fact]
    public async Task AFailingFragmentNamesItsSource()
    {
-      await using TestSources sources = await SplitShopAsync();
-      QueryEngine engine = sources.Engine(SplitOverlay);
+      await using TestSources sources = await Conformance.SplitShopAsync();
+      QueryEngine engine = sources.Engine(Conformance.SplitOverlay);
       await sources.RunAsync("sales", "DROP VIEW open_orders");
       QueryExecutionException error = await Should.ThrowAsync<QueryExecutionException>(() =>
          engine.ExecuteAsync(new QueryRequest("sales.open_orders.join(crm.customers, outer.customer_id == inner.id, o: outer, c: inner).select(o.id, c.name)"),
@@ -219,8 +181,8 @@ public sealed partial class FederationTests
    [Fact]
    public async Task LargeFetchesAreWarnedAbout()
    {
-      await using TestSources sources = await SplitShopAsync();
-      QueryEngine engine = sources.Engine(SplitOverlay, new QueryEngineOptions { LargeFetchRows = 2, BindJoins = BindJoinMode.Never });
+      await using TestSources sources = await Conformance.SplitShopAsync();
+      QueryEngine engine = sources.Engine(Conformance.SplitOverlay, new QueryEngineOptions { LargeFetchRows = 2, BindJoins = BindJoinMode.Never });
       PreparedQuery prepared = engine.Prepare("sales.orders.select(id, who: customer.name)");
       prepared.Success.ShouldBeTrue();
       QueryDiagnostic warning = prepared.Diagnostics.ShouldHaveSingleItem();

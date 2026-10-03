@@ -5,10 +5,13 @@
     <Project Path="src/GalaxyData.Query.Cli/GalaxyData.Query.Cli.csproj" />
     <Project Path="src/GalaxyData.Query.DuckDb/GalaxyData.Query.DuckDb.csproj" />
     <Project Path="src/GalaxyData.Query.Excel/GalaxyData.Query.Excel.csproj" />
+    <Project Path="src/GalaxyData.Query.PostgreSql/GalaxyData.Query.PostgreSql.csproj" />
     <Project Path="src/GalaxyData.Query.Sqlite/GalaxyData.Query.Sqlite.csproj" />
+    <Project Path="src/GalaxyData.Query.SqlServer/GalaxyData.Query.SqlServer.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/GalaxyData.Common.Tests/GalaxyData.Common.Tests.csproj" />
+    <Project Path="tests/GalaxyData.Query.ContainerTests/GalaxyData.Query.ContainerTests.csproj" />
     <Project Path="tests/GalaxyData.Query.IntegrationTests/GalaxyData.Query.IntegrationTests.csproj" />
     <Project Path="tests/GalaxyData.Query.Tests/GalaxyData.Query.Tests.csproj" />
   </Folder>

@@ -127,7 +127,7 @@ public sealed class PreparedQuery
       {
          DbParameter parameter = command.CreateParameter();
          parameter.ParameterName = dialect.ParameterName(slot.Name);
-         provider.BindParameter(parameter, Resolve(slot, started, values), slot.Type);
+         provider.BindParameter(parameter, Resolve(slot, started, values), slot);
          command.Parameters.Add(parameter);
       }
    }

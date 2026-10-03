@@ -24,11 +24,13 @@ namespace GalaxyData.Query.IntegrationTests.Execution;
 /// In-memory databases the engine can open connections to: a shared-cache SQLite database, or a DuckDB database
 /// reached through duplicates of one connection. The first connection keeps the database alive. Folders of
 /// workbooks are registered with an Excel provider over <see cref="Merge"/>, which opens their connections itself.
+/// Databases on servers are added with their provider (<see cref="AddAsync"/>).
 /// </summary>
 internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
 {
    private readonly Dictionary<string, (DbConnection Keeper, Func<DbConnection> Open)> sources = new(StringComparer.Ordinal);
    private readonly CatalogBuilder builder = new();
+   private readonly List<SourceProvider> providers = [SqliteSourceProvider.Instance, DuckDbSourceProvider.Instance];
    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> openedBySource = new(StringComparer.Ordinal);
    private DuckDbMergeEngine? merge;
    private ExcelSourceProvider? excel;
@@ -77,17 +79,26 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
       return this;
    }
 
+   /// <summary>Adds a database the engine opens connections to with <paramref name="open"/>; one is kept open until the sources are disposed.</summary>
+   public async Task<TestSources> AddAsync(string alias, Func<DbConnection> open, SourceProvider provider)
+   {
+      DbConnection keeper = open();
+      await keeper.OpenAsync();
+      await AddAsync(alias, keeper, open, provider, trustForeignKeys: false);
+      return this;
+   }
+
    private async Task AddAsync(string alias, DbConnection keeper, Func<DbConnection> open, SourceProvider provider, bool trustForeignKeys)
    {
       SourceSchema schema = await provider.Introspector.IntrospectAsync(keeper, IntrospectionOptions.Default, CancellationToken.None);
       builder.AddSource(new SourceInfo(alias, provider.ProviderKind, schema.DefaultSchema) { TrustForeignKeys = trustForeignKeys }, schema);
       sources.Add(alias, (keeper, open));
+      if (!providers.Contains(provider)) { providers.Add(provider); }
    }
 
    /// <summary>An engine over the sources; queries that combine them run in <see cref="Merge"/>, or <paramref name="merge"/>, unless <paramref name="noMerge"/>.</summary>
    public QueryEngine Engine(CatalogOverlay? overlay = null, QueryEngineOptions? options = null, IMergeEngine? merge = null, bool noMerge = false) =>
-      new(Catalog(overlay), this, excel == null ? [SqliteSourceProvider.Instance, DuckDbSourceProvider.Instance] : [SqliteSourceProvider.Instance, DuckDbSourceProvider.Instance, excel],
-          noMerge ? null : merge ?? Merge, options);
+      new(Catalog(overlay), this, excel == null ? providers : [.. providers, excel], noMerge ? null : merge ?? Merge, options);
 
    public QueryCatalog Catalog(CatalogOverlay? overlay = null) => builder.WithOverlay(overlay ?? CatalogOverlay.Empty).Build();
 
@@ -150,6 +161,7 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
       double d => d.ToString("R", CultureInfo.InvariantCulture),
       DateOnly date => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
       DateTime dateTime => dateTime.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", CultureInfo.InvariantCulture),
+      DateTimeOffset offset => offset.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFFzzz", CultureInfo.InvariantCulture),
       _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? "?",
    };
 }

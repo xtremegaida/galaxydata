@@ -76,6 +76,13 @@ public sealed record ColumnSchema(string Name, int Ordinal, string NativeType, S
 
    public string? Collation { get; init; }
 
+   /// <summary>
+   /// The type the source's SQL reads the column as, when the language can't work with it as it is: PostgreSQL enums,
+   /// which text functions and text don't take, and types the language has no values for (arrays, composites) are
+   /// read as <c>text</c>. Null reads the column as it is.
+   /// </summary>
+   public string? ReadAs { get; init; }
+
    public string? Comment { get; init; }
 
    [JsonIgnore]

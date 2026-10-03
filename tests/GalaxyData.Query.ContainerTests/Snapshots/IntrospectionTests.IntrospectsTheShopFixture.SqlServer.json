@@ -1,0 +1,506 @@
+{
+  "providerKind": "sqlserver",
+  "serverVersion": "(version)",
+  "defaultSchema": "dbo",
+  "tables": [
+    {
+      "schema": "crm",
+      "name": "contacts",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "uniqueidentifier",
+          "type": "guid"
+        },
+        {
+          "name": "customer_ref",
+          "ordinal": 1,
+          "nativeType": "int",
+          "type": "int32?"
+        },
+        {
+          "name": "email",
+          "ordinal": 2,
+          "nativeType": "varchar(200)",
+          "type": "string(200,ansi)"
+        },
+        {
+          "name": "Display Name",
+          "ordinal": 3,
+          "nativeType": "nvarchar(100)",
+          "type": "string(100)?"
+        }
+      ],
+      "primaryKey": {
+        "name": "pk_contacts",
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [
+        {
+          "name": "uq_contacts_email",
+          "columns": [
+            "email"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "pk_contacts",
+          "columns": [
+            "id"
+          ],
+          "isUnique": true,
+          "isPrimaryKey": true
+        },
+        {
+          "name": "uq_contacts_email",
+          "columns": [
+            "email"
+          ],
+          "isUnique": true
+        }
+      ],
+      "foreignKeys": [],
+      "rowCountEstimate": 1
+    },
+    {
+      "schema": "dbo",
+      "name": "addresses",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "int",
+          "type": "int32"
+        },
+        {
+          "name": "customer_id",
+          "ordinal": 1,
+          "nativeType": "int",
+          "type": "int32"
+        },
+        {
+          "name": "line1",
+          "ordinal": 2,
+          "nativeType": "nvarchar(100)",
+          "type": "string(100)"
+        },
+        {
+          "name": "city",
+          "ordinal": 3,
+          "nativeType": "nvarchar(40)",
+          "type": "string(40)?"
+        }
+      ],
+      "primaryKey": {
+        "name": "pk_addresses",
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "pk_addresses",
+          "columns": [
+            "id"
+          ],
+          "isUnique": true,
+          "isPrimaryKey": true
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_addresses_customer",
+          "columns": [
+            "customer_id"
+          ],
+          "refSchema": "dbo",
+          "refTable": "customers",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": true
+        }
+      ],
+      "rowCountEstimate": 2
+    },
+    {
+      "schema": "dbo",
+      "name": "audit_log",
+      "columns": [
+        {
+          "name": "at",
+          "nativeType": "datetime2(7)",
+          "type": "datetime?"
+        },
+        {
+          "name": "message",
+          "ordinal": 1,
+          "nativeType": "nvarchar(max)",
+          "type": "string?"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [],
+      "rowCountEstimate": 0
+    },
+    {
+      "schema": "dbo",
+      "name": "customers",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "int",
+          "type": "int32",
+          "isIdentity": true
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "nativeType": "nvarchar(100)",
+          "type": "string(100)"
+        },
+        {
+          "name": "city",
+          "ordinal": 2,
+          "nativeType": "nvarchar(40)",
+          "type": "string(40)?"
+        },
+        {
+          "name": "credit_limit",
+          "ordinal": 3,
+          "nativeType": "decimal(10,2)",
+          "type": "decimal(10,2)?",
+          "comment": "In rand"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 4,
+          "nativeType": "datetime2(7)",
+          "type": "datetime?",
+          "defaultSql": "(sysutcdatetime())"
+        }
+      ],
+      "primaryKey": {
+        "name": "pk_customers",
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "pk_customers",
+          "columns": [
+            "id"
+          ],
+          "isUnique": true,
+          "isPrimaryKey": true
+        },
+        {
+          "name": "ux_customers_name",
+          "columns": [
+            "name"
+          ],
+          "isUnique": true
+        }
+      ],
+      "foreignKeys": [],
+      "rowCountEstimate": 3,
+      "comment": "People and companies who order"
+    },
+    {
+      "schema": "dbo",
+      "name": "employees",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "int",
+          "type": "int32"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "nativeType": "nvarchar(100)",
+          "type": "string(100)"
+        },
+        {
+          "name": "manager_id",
+          "ordinal": 2,
+          "nativeType": "int",
+          "type": "int32?"
+        }
+      ],
+      "primaryKey": {
+        "name": "pk_employees",
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "pk_employees",
+          "columns": [
+            "id"
+          ],
+          "isUnique": true,
+          "isPrimaryKey": true
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_employees_manager",
+          "columns": [
+            "manager_id"
+          ],
+          "refSchema": "dbo",
+          "refTable": "employees",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": false
+        }
+      ],
+      "rowCountEstimate": 3
+    },
+    {
+      "schema": "dbo",
+      "name": "open_orders",
+      "kind": "View",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "bigint",
+          "type": "int64"
+        },
+        {
+          "name": "customer_id",
+          "ordinal": 1,
+          "nativeType": "int",
+          "type": "int32"
+        },
+        {
+          "name": "total",
+          "ordinal": 2,
+          "nativeType": "decimal(10,2)",
+          "type": "decimal(10,2)"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    {
+      "schema": "dbo",
+      "name": "order_lines",
+      "columns": [
+        {
+          "name": "order_id",
+          "nativeType": "bigint",
+          "type": "int64"
+        },
+        {
+          "name": "line_no",
+          "ordinal": 1,
+          "nativeType": "int",
+          "type": "int32"
+        },
+        {
+          "name": "product_code",
+          "ordinal": 2,
+          "nativeType": "varchar(20)",
+          "type": "string(20,ansi)"
+        },
+        {
+          "name": "qty",
+          "ordinal": 3,
+          "nativeType": "int",
+          "type": "int32"
+        },
+        {
+          "name": "price",
+          "ordinal": 4,
+          "nativeType": "decimal(10,2)",
+          "type": "decimal(10,2)"
+        },
+        {
+          "name": "amount",
+          "ordinal": 5,
+          "nativeType": "decimal(21,2)",
+          "type": "decimal(21,2)?",
+          "isComputed": true
+        }
+      ],
+      "primaryKey": {
+        "name": "pk_order_lines",
+        "columns": [
+          "order_id",
+          "line_no"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "pk_order_lines",
+          "columns": [
+            "order_id",
+            "line_no"
+          ],
+          "isUnique": true,
+          "isPrimaryKey": true
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_order_lines_order",
+          "columns": [
+            "order_id"
+          ],
+          "refSchema": "dbo",
+          "refTable": "orders",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": true,
+          "onDelete": "CASCADE"
+        }
+      ],
+      "rowCountEstimate": 4
+    },
+    {
+      "schema": "dbo",
+      "name": "orders",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "bigint",
+          "type": "int64"
+        },
+        {
+          "name": "customer_id",
+          "ordinal": 1,
+          "nativeType": "int",
+          "type": "int32"
+        },
+        {
+          "name": "ship_address_id",
+          "ordinal": 2,
+          "nativeType": "int",
+          "type": "int32?"
+        },
+        {
+          "name": "bill_address_id",
+          "ordinal": 3,
+          "nativeType": "int",
+          "type": "int32?"
+        },
+        {
+          "name": "status",
+          "ordinal": 4,
+          "nativeType": "varchar(20)",
+          "type": "string(20,ansi)",
+          "defaultSql": "('open')"
+        },
+        {
+          "name": "total",
+          "ordinal": 5,
+          "nativeType": "decimal(10,2)",
+          "type": "decimal(10,2)"
+        },
+        {
+          "name": "order_date",
+          "ordinal": 6,
+          "nativeType": "date",
+          "type": "date"
+        },
+        {
+          "name": "placed_at",
+          "ordinal": 7,
+          "nativeType": "datetimeoffset(7)",
+          "type": "datetimeoffset?"
+        },
+        {
+          "name": "version",
+          "ordinal": 8,
+          "nativeType": "rowversion",
+          "type": "binary(8)",
+          "isRowVersion": true
+        }
+      ],
+      "primaryKey": {
+        "name": "pk_orders",
+        "columns": [
+          "id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "ix_orders_open",
+          "columns": [
+            "order_date"
+          ],
+          "filter": "([status]='open')"
+        },
+        {
+          "name": "ix_orders_status",
+          "columns": [
+            "status"
+          ]
+        },
+        {
+          "name": "pk_orders",
+          "columns": [
+            "id"
+          ],
+          "isUnique": true,
+          "isPrimaryKey": true
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_orders_bill",
+          "columns": [
+            "bill_address_id"
+          ],
+          "refSchema": "dbo",
+          "refTable": "addresses",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": true
+        },
+        {
+          "name": "fk_orders_customer",
+          "columns": [
+            "customer_id"
+          ],
+          "refSchema": "dbo",
+          "refTable": "customers",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": true
+        },
+        {
+          "name": "fk_orders_ship",
+          "columns": [
+            "ship_address_id"
+          ],
+          "refSchema": "dbo",
+          "refTable": "addresses",
+          "refColumns": [
+            "id"
+          ],
+          "isEnforced": true
+        }
+      ],
+      "rowCountEstimate": 4,
+      "hasTriggers": true
+    }
+  ]
+}

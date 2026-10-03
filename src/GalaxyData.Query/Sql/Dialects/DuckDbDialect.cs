@@ -42,7 +42,7 @@ internal sealed class DuckDbDialect : SqlDialect
 
    /// <summary>
    /// A date-time compared with a date-time with an offset is taken as UTC: DuckDB compares TIMESTAMP with
-   /// TIMESTAMPTZ, but not the merge engine's TIMESTAMP_NS, without a cast.
+   /// TIMESTAMPTZ, but not TIMESTAMP_NS (which DuckDB sources may have), without a cast.
    /// </summary>
    internal override SqlExpr Compare(SqlBinaryOp op, SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType)
    {

@@ -310,6 +310,12 @@
           "ordinal": 6,
           "nativeType": "DATE",
           "type": "date"
+        },
+        {
+          "name": "placed_at",
+          "ordinal": 7,
+          "nativeType": "DATETIMEOFFSET",
+          "type": "datetimeoffset?"
         }
       ],
       "primaryKey": {

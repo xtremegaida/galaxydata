@@ -122,12 +122,12 @@ FROM customers AS c
 WHERE c.credit_limit BETWEEN @p0 AND @p1 AND c.name LIKE @p2 ESCAPE '\'
 -- p0 decimal(10,2) = 100
 -- p1 decimal(10,2) = 5000.5
--- p2 string = 'A%'
+-- p2 string = like pattern of 'A%'
 
 ### sales.customers.where(startsWith(name, 'A_c') and endsWith(name, $suffix) and contains(name, city) and icontains(name, 'ME'))
 SELECT c.id, c.name, c.city, c.credit_limit, c.created, c.region_code, c.uid, c.notes
 FROM customers AS c
-WHERE c.name LIKE @p0 ESCAPE '\' AND c.name LIKE @p1 ESCAPE '\' AND CHARINDEX(c.city, c.name) > 0 AND LOWER(c.name) LIKE LOWER(@p2) ESCAPE '\'
+WHERE c.name LIKE @p0 ESCAPE '\' AND c.name LIKE @p1 ESCAPE '\' AND CHARINDEX(c.city, c.name) + CASE WHEN DATALENGTH(c.city) = 0 THEN 1 ELSE 0 END > 0 AND LOWER(c.name) LIKE LOWER(@p2) ESCAPE '\'
 -- p0 string = prefix like pattern of 'A_c'
 -- p1 string = suffix like pattern of $suffix
 -- p2 string = contains like pattern of 'ME'
@@ -150,7 +150,7 @@ FROM orders AS o
 -- p1 date = today()
 
 ### sales.order_lines.select(a: toInt(price), b: toDecimal(qty, 10, 2), c: toString(price), d: toDouble(qty), e: substring(product_code, 2, 3), f: indexOf(product_code, '-'), g: left(product_code, 2), h: right(product_code, 3))
-SELECT CAST(o.price AS int) AS a, CAST(o.qty AS decimal(10,2)) AS b, CAST(o.price AS nvarchar(max)) AS c, CAST(o.qty AS float) AS d, SUBSTRING(o.product_code, 2, 3) AS e, CHARINDEX(@p0, o.product_code) AS f, LEFT(o.product_code, 2) AS g, RIGHT(o.product_code, 3) AS h
+SELECT CAST(o.price AS int) AS a, CAST(o.qty AS decimal(10,2)) AS b, CAST(CAST(o.price AS decimal(10,2)) AS nvarchar(max)) AS c, CAST(o.qty AS float) AS d, SUBSTRING(o.product_code, 2, 3) AS e, CHARINDEX(@p0, o.product_code) + CASE WHEN DATALENGTH(@p0) = 0 THEN 1 ELSE 0 END AS f, LEFT(o.product_code, 2) AS g, RIGHT(o.product_code, 3) AS h
 FROM order_lines AS o
 -- p0 string = '-'
 
@@ -230,17 +230,17 @@ FROM orders AS o
 WHERE o.order_date <= o.shipped_at
 
 ### sales.customers.select(d: addDays(created, $n), l: left(name, $n), n: length(name))
-SELECT DATEADD(day, @p0, c.created) AS d, LEFT(c.name, @p0) AS l, LEN(c.name + N'.') - 1 AS n
+SELECT DATEADD(day, @p0, c.created) AS d, LEFT(c.name, @p0) AS l, CAST(DATALENGTH(CAST(c.name AS nvarchar(max))) / 2 AS int) AS n
 FROM customers AS c
 -- p0 int32 = $n
 
 ### sales.orders.groupBy(customer_id).select(customer_id: key, spend: sum(total), orders: count())
-SELECT o.customer_id, COALESCE(SUM(o.total), 0) AS spend, COUNT(*) AS orders
+SELECT o.customer_id, COALESCE(SUM(o.total), 0) AS spend, COUNT_BIG(*) AS orders
 FROM orders AS o
 GROUP BY o.customer_id
 
 ### sales.orders.join(sales.customers, outer.customer_id == inner.id, orders: outer, cust: inner).groupBy(cust.name).select(name: cust.name, count: orders.count(), total: orders.sum(total))
-SELECT c.name, COUNT(*) AS count, COALESCE(SUM(o.total), 0) AS total
+SELECT c.name, COUNT_BIG(*) AS count, COALESCE(SUM(o.total), 0) AS total
 FROM orders AS o
 INNER JOIN customers AS c ON o.customer_id = c.id
 GROUP BY c.name
@@ -256,46 +256,46 @@ WHERE EXISTS (
 -- p0 decimal(10,2) = 3
 
 ### sales.orders.groupBy(y: year(order_date), status).where(count() > 1).orderBy(desc(sum(total))).select(y, status, n: count(), big: any(total > 100), mean: avg(total))
-SELECT d.y, d.status, COUNT(*) AS n, CASE WHEN MAX(CASE WHEN d.total > @p0 THEN 1 ELSE 0 END) = 1 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS big, AVG(d.total) AS mean
+SELECT d.y, d.status, COUNT_BIG(*) AS n, CASE WHEN MAX(CASE WHEN d.total > @p0 THEN 1 ELSE 0 END) = 1 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS big, AVG(d.total) AS mean
 FROM (
    SELECT o.status, o.total, DATEPART(year, o.order_date) AS y
    FROM orders AS o
 ) AS d
 GROUP BY d.y, d.status
-HAVING COUNT(*) > 1
+HAVING COUNT_BIG(*) > 1
 ORDER BY COALESCE(SUM(d.total), 0) DESC
 -- p0 decimal(10,2) = 100
 
 ### sales.orders.groupBy(customer).select(customer.name, customer.city, n: count())
-SELECT c.name, c.city, COUNT(*) AS n, o.customer_id AS id
+SELECT c.name, c.city, COUNT_BIG(*) AS n, o.customer_id AS id
 FROM orders AS o
 INNER JOIN customers AS c ON o.customer_id = c.id
 GROUP BY o.customer_id, c.name, c.city
 
 ### sales.orders.groupBy(customer).select(customer.id, n: count())
-SELECT o.customer_id AS id, COUNT(*) AS n
+SELECT o.customer_id AS id, COUNT_BIG(*) AS n
 FROM orders AS o
 GROUP BY o.customer_id
 
 ### sales.orders.groupBy(customer_id).extend(n: count()).where(n > 1 and sum(total) > 10).select(customer_id, n)
-SELECT o.customer_id, COUNT(*) AS n
+SELECT o.customer_id, COUNT_BIG(*) AS n
 FROM orders AS o
 GROUP BY o.customer_id
-HAVING COUNT(*) > 1 AND COALESCE(SUM(o.total), 0) > @p0
+HAVING COUNT_BIG(*) > 1 AND COALESCE(SUM(o.total), 0) > @p0
 -- p0 decimal(38,2) = 10
 
 ### sales.order_lines.groupBy(order).select(order.status, n: count(), qty: qty.sum(), priced: price.countDistinct(), all: all(qty > 0))
-SELECT o2.status, COUNT(*) AS n, COALESCE(SUM(CAST(o.qty AS bigint)), 0) AS qty, COUNT(DISTINCT o.price) AS priced, CASE WHEN MIN(CASE WHEN o.qty > 0 THEN 1 ELSE 0 END) = 1 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS [all], o.order_id AS id
+SELECT o2.status, COUNT_BIG(*) AS n, COALESCE(SUM(CAST(o.qty AS bigint)), 0) AS qty, COUNT_BIG(DISTINCT o.price) AS priced, CASE WHEN MIN(CASE WHEN o.qty > 0 THEN 1 ELSE 0 END) = 1 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS [all], o.order_id AS id
 FROM order_lines AS o
 INNER JOIN orders AS o2 ON o.order_id = o2.id
 GROUP BY o.order_id, o2.status
 
 ### sales.orders.groupBy().select(n: count(), total: sum(total))
-SELECT COUNT(*) AS n, COALESCE(SUM(o.total), 0) AS total
+SELECT COUNT_BIG(*) AS n, COALESCE(SUM(o.total), 0) AS total
 FROM orders AS o
 
 ### sales.orders.groupBy(big: total > 100).select(big, n: count())
-SELECT d.big, COUNT(*) AS n
+SELECT d.big, COUNT_BIG(*) AS n
 FROM (
    SELECT CASE WHEN o.total > @p0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS big
    FROM orders AS o
@@ -307,7 +307,7 @@ GROUP BY d.big
 SELECT c.name, COALESCE(d.count, 0) AS n, COALESCE(d.sum, 0) AS spend, d.max AS [last], c.id
 FROM customers AS c
 LEFT JOIN (
-   SELECT o.customer_id, COUNT(*) AS count, COALESCE(SUM(o.total), 0) AS sum, MAX(o.order_date) AS max
+   SELECT o.customer_id, COUNT_BIG(*) AS count, COALESCE(SUM(o.total), 0) AS sum, MAX(o.order_date) AS max
    FROM orders AS o
    GROUP BY o.customer_id
 ) AS d ON c.id = d.customer_id
@@ -361,7 +361,7 @@ WHERE o.total > (
 
 ### sales.orders.count()
 SELECT (
-   SELECT COUNT(*) AS count
+   SELECT COUNT_BIG(*) AS count
    FROM orders AS o
 ) AS [value]
 
@@ -449,7 +449,7 @@ FROM (
 SELECT d.city, COALESCE(SUM(CAST(d.sum_value AS bigint)), 0) AS s, CASE WHEN MAX(d.any_value) = 1 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS big
 FROM (
    SELECT c.city, (
-      SELECT COUNT(*) AS count
+      SELECT COUNT_BIG(*) AS count
       FROM orders AS o
       WHERE o.customer_id = c.id
    ) AS sum_value, CASE WHEN EXISTS (
@@ -464,7 +464,7 @@ GROUP BY d.city
 
 ### sales.orders.take(2).count()
 SELECT (
-   SELECT COUNT(*) AS count
+   SELECT COUNT_BIG(*) AS count
    FROM (
       SELECT TOP (2) 1 AS one
       FROM orders AS o
@@ -579,7 +579,7 @@ WHERE NOT EXISTS (
 
 ### sales.customers.select(name, lines: orders_by_customer.orderBy(id).first().order_lines.count())
 SELECT c.name, (
-   SELECT COUNT(*) AS count
+   SELECT COUNT_BIG(*) AS count
    FROM order_lines AS o
    WHERE o.order_id = (
       SELECT TOP (1) o2.id
@@ -596,14 +596,14 @@ FROM orders AS o
 INNER JOIN customers AS c ON o.customer_id = c.id
 
 ### g := sales.orders.where(total > 3); g.groupBy(o => o.customer_id).select(k: key, n: count())
-SELECT o.customer_id AS k, COUNT(*) AS n
+SELECT o.customer_id AS k, COUNT_BIG(*) AS n
 FROM orders AS o
 WHERE o.total > @p0
 GROUP BY o.customer_id
 -- p0 decimal(10,2) = 3
 
 ### sales.orders.groupBy(customer, big: total > 100).select(customer, big, n: count(), s: sum(total))
-SELECT d.name AS customer, d.big, COUNT(*) AS n, COALESCE(SUM(d.total), 0) AS s, d.id
+SELECT d.name AS customer, d.big, COUNT_BIG(*) AS n, COALESCE(SUM(d.total), 0) AS s, d.id
 FROM (
    SELECT o.total, c.name, o.customer_id AS id, CASE WHEN o.total > @p0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS big
    FROM orders AS o
@@ -636,14 +636,14 @@ GROUP BY d.name
 
 ### sales.orders.selectMany(o => sales.regions).count()
 SELECT (
-   SELECT COUNT(*) AS count
+   SELECT COUNT_BIG(*) AS count
    FROM orders AS o
    CROSS JOIN regions AS r
 ) AS [value]
 
 ### sales.orders.selectMany(o => sales.regions.select(name)).leftJoin(sales.regions, true, n: outer.name, m: inner.code).count()
 SELECT (
-   SELECT COUNT(*) AS count
+   SELECT COUNT_BIG(*) AS count
    FROM orders AS o
    CROSS JOIN regions AS r
    LEFT JOIN regions AS r2 ON 1 = 1

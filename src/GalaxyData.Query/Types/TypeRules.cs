@@ -135,6 +135,12 @@ public static class TypeRules
          type = target.AsNullable();
          return true;
       }
+      // Whole numbers of every width convert as a long does (a parameter given as an int, for a bigint column).
+      if (value is sbyte or byte or short or ushort or int or uint)
+      {
+         value = Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture);
+         converted = value;
+      }
       switch (value)
       {
          case long integer:

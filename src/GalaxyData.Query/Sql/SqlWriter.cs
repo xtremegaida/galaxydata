@@ -14,6 +14,12 @@ internal sealed class SqlWriter
    private readonly StringBuilder text = new();
    private readonly List<SqlParameterSlot> written = [];
    private readonly Dictionary<SqlParameterSlot, SqlParameterSlot> named = new(ReferenceEqualityComparer.Instance);
+
+   /// <summary>The column a parameter being written is compared with.</summary>
+   private SqlColumn? comparedWith;
+
+   /// <summary>Set when the query has more values than the database takes parameters: its constants are written into the SQL.</summary>
+   private bool inlineConstants;
    private int indent;
 
    private SqlWriter(SqlDialect dialect) { this.dialect = dialect; }
@@ -26,6 +32,11 @@ internal sealed class SqlWriter
    {
       SqlWriter writer = new(dialect);
       writer.Query(query);
+      if (writer.written.Count > dialect.MaxParameters)
+      {
+         writer = new SqlWriter(dialect) { inlineConstants = true };
+         writer.Query(query);
+      }
       parameters = writer.written;
       return writer.text.ToString();
    }
@@ -258,8 +269,18 @@ internal sealed class SqlWriter
             if (column.Table != null) { text.Append(dialect.Identifier(column.Table)).Append('.'); }
             text.Append(dialect.Identifier(column.Column));
             break;
+         case SqlParameterRef { Slot.Source: null } constant when inlineConstants:
+            SqlParameterSlot value = constant.Slot;
+            dialect.WriteLiteral(text, value.Pattern != null && value.Constant is string pattern ? value.Pattern.Apply(pattern) : value.Constant, value.Type);
+            break;
          case SqlParameterRef parameter:
-            text.Append(dialect.Placeholder(Named(parameter.Slot).Name));
+            SqlParameterSlot slot = Named(parameter.Slot);
+            if (comparedWith != null)
+            {
+               slot.ComparedWithColumn = true;
+               slot.ColumnType = comparedWith.NativeType;
+            }
+            text.Append(dialect.Placeholder(slot.Name));
             break;
          case SqlLiteral literal:
             dialect.WriteLiteral(text, literal.Value, literal.Type);
@@ -281,15 +302,19 @@ internal sealed class SqlWriter
          case SqlIn inList:
             Operand(inList.Operand);
             text.Append(inList.Negated ? " NOT IN (" : " IN (");
-            List(inList.Items);
+            for (int i = 0; i < inList.Items.Count; i++)
+            {
+               if (i > 0) { text.Append(", "); }
+               Compared(inList.Items[i], inList.Operand, parentheses: false);
+            }
             text.Append(')');
             break;
          case SqlBetween between:
             Operand(between.Operand);
             text.Append(" BETWEEN ");
-            Operand(between.Low);
+            Compared(between.Low, between.Operand, between.Low.Precedence <= SqlPrecedence.Comparison);
             text.Append(" AND ");
-            Operand(between.High);
+            Compared(between.High, between.Operand, between.High.Precedence <= SqlPrecedence.Comparison);
             break;
          case SqlLike like:
             Operand(like.Operand);
@@ -381,9 +406,21 @@ internal sealed class SqlWriter
                          : binary.Left.Precedence < precedence || (binary.Left.Precedence == precedence && comparison);
       bool right = concat ? binary.Right.Precedence < SqlPrecedence.Atom
                           : binary.Right.Precedence < precedence || (binary.Right.Precedence == precedence && !IsAssociative(binary, binary.Right));
-      Wrapped(binary.Left, left);
+      bool compares = binary.Op is SqlBinaryOp.Equal or SqlBinaryOp.NotEqual or SqlBinaryOp.Less or SqlBinaryOp.LessOrEqual
+                                 or SqlBinaryOp.Greater or SqlBinaryOp.GreaterOrEqual;
+      if (compares) { Compared(binary.Left, binary.Right, left); }
+      else { Wrapped(binary.Left, left); }
       text.Append(' ').Append(Symbol(binary.Op)).Append(' ');
-      Wrapped(binary.Right, right);
+      if (compares) { Compared(binary.Right, binary.Left, right); }
+      else { Wrapped(binary.Right, right); }
+   }
+
+   /// <summary>Writes a value compared with <paramref name="other"/>: a parameter compared with a column is marked so.</summary>
+   private void Compared(SqlExpr value, SqlExpr other, bool parentheses)
+   {
+      comparedWith = value is SqlParameterRef ? other as SqlColumn : null;
+      Wrapped(value, parentheses);
+      comparedWith = null;
    }
 
    private static bool IsSame(SqlExpr expr, SqlBinaryOp op) => expr is SqlBinary binary && binary.Op == op;

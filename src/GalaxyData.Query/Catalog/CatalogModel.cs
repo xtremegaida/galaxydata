@@ -242,6 +242,7 @@ public sealed class ColumnDef
       IsComputed = column.IsComputed;
       HasDefault = column.HasDefault;
       IsRowVersion = column.IsRowVersion;
+      ReadAs = column.ReadAs;
       Comment = column.Comment;
    }
 
@@ -254,6 +255,9 @@ public sealed class ColumnDef
    public ScalarType Type { get; internal set; }
 
    public string? NativeType { get; }
+
+   /// <summary>The type the source's SQL reads the column as (<see cref="ColumnSchema.ReadAs"/>); null reads it as it is.</summary>
+   public string? ReadAs { get; }
 
    public bool IsIdentity { get; }
 
