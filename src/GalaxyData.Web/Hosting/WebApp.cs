@@ -1,0 +1,127 @@
+using System;
+using System.Collections.Generic;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
+using GalaxyData.Query.DuckDb;
+using GalaxyData.Query.Execution;
+using GalaxyData.Web.Features.Health;
+using GalaxyData.Web.Problems;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
+
+namespace GalaxyData.Web.Hosting;
+
+/// <summary>
+/// How the application is put together: <see cref="AddGalaxyData"/> registers its services,
+/// <see cref="UseGalaxyData"/> sets up how requests are handled, and <see cref="MapGalaxyData"/> maps the API under
+/// <c>/api</c> (each feature's endpoints), its OpenAPI document, and the client for every other path.
+/// </summary>
+public static class WebApp
+{
+   /// <summary>The OpenAPI document's path; <c>{documentName}</c> is <c>v1</c>.</summary>
+   public const string OpenApiPattern = "/api/openapi/{documentName}.json";
+
+   private static readonly TimeSpan HealthCheckTimeout = TimeSpan.FromSeconds(5);
+
+   public static WebApplicationBuilder AddGalaxyData(this WebApplicationBuilder builder)
+   {
+      ArgumentNullException.ThrowIfNull(builder);
+      IServiceCollection services = builder.Services;
+
+      services.AddOptions<GalaxyDataOptions>().BindConfiguration(GalaxyDataOptions.Section).ValidateDataAnnotations().ValidateOnStart();
+      services.AddSingleton(sp => new DataDirectory(sp.GetRequiredService<IOptions<GalaxyDataOptions>>().Value, sp.GetRequiredService<IHostEnvironment>()));
+      services.AddSingleton(sp => new DuckDbMergeEngine(MergeOptions(sp.GetRequiredService<IOptions<GalaxyDataOptions>>().Value.Merge,
+         sp.GetRequiredService<DataDirectory>())));
+      services.AddSingleton<IMergeEngine>(sp => sp.GetRequiredService<DuckDbMergeEngine>());
+
+      services.ConfigureHttpJsonOptions(o =>
+      {
+         o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+         // Numbers are numbers (the web defaults read them from strings too, and describe them as either).
+         o.SerializerOptions.NumberHandling = JsonNumberHandling.Strict;
+      });
+      services.AddProblemDetails(o => o.CustomizeProblemDetails = context => ApiProblems.Complete(context.ProblemDetails));
+      services.AddExceptionHandler<ApiExceptionHandler>();
+      services.Configure<RouteOptions>(o => o.SetParameterPolicy<ClientPathConstraint>(ClientPathConstraint.Name));
+
+      services.AddHealthChecks()
+         .AddCheck<DataDirectoryHealthCheck>(DataDirectoryHealthCheck.Name, timeout: HealthCheckTimeout)
+         .AddCheck<MergeEngineHealthCheck>(MergeEngineHealthCheck.Name, timeout: HealthCheckTimeout);
+
+      services.AddOpenApi("v1", o =>
+      {
+         o.AddDocumentTransformer((document, _, _) =>
+         {
+            document.Info = new OpenApiInfo
+            {
+               Title = "GalaxyData",
+               Version = "v1",
+               Description = "Browse, query and change data across databases and folders of workbooks. Errors are problem details (RFC 9457) with a code.",
+            };
+            // Clients call the API where they found it.
+            document.Servers?.Clear();
+            return Task.CompletedTask;
+         });
+         o.AddSchemaTransformer((schema, context, _) =>
+         {
+            if (context.JsonTypeInfo.Type == typeof(ProblemDetails)) { DescribeProblem(schema); }
+            return Task.CompletedTask;
+         });
+      });
+      return builder;
+   }
+
+   /// <summary>Every problem has a code (<see cref="ProblemCodes"/>) and the request's trace id; the schema says so.</summary>
+   private static void DescribeProblem(OpenApiSchema schema)
+   {
+      schema.Properties ??= new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+      schema.Properties["code"] = new OpenApiSchema { Type = JsonSchemaType.String, Description = "What the problem is, for clients to tell problems apart by" };
+      schema.Properties["traceId"] = new OpenApiSchema { Type = JsonSchemaType.String, Description = "The request's trace, to find it in the logs" };
+      schema.Required ??= new HashSet<string>(StringComparer.Ordinal);
+      schema.Required.Add("code");
+   }
+
+   public static WebApplication UseGalaxyData(this WebApplication app)
+   {
+      ArgumentNullException.ThrowIfNull(app);
+      app.Services.GetRequiredService<DataDirectory>().Open();
+      app.UseExceptionHandler();
+      app.UseStatusCodePages();
+      app.UseStaticFiles();
+      return app;
+   }
+
+   public static WebApplication MapGalaxyData(this WebApplication app)
+   {
+      ArgumentNullException.ThrowIfNull(app);
+      RouteGroupBuilder api = app.MapGroup("/api").ProducesProblem(StatusCodes.Status500InternalServerError);
+      api.MapHealth();
+
+      app.MapOpenApi(OpenApiPattern);
+
+      // The client routes in the browser: every path but the API's and its files' is its page.
+      app.MapFallbackToFile($"{{*path:{ClientPathConstraint.Name}}}", "index.html", new StaticFileOptions
+      {
+         OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-cache",
+      });
+      return app;
+   }
+
+   private static DuckDbMergeOptions MergeOptions(MergeSettings settings, DataDirectory data) => new()
+   {
+      MemoryLimit = settings.MemoryLimit,
+      Threads = settings.Threads,
+      TempDirectory = settings.TempDirectory is { } temp ? data.Resolve(temp) : null,
+      ExtensionDirectory = settings.ExtensionDirectory is { } extensions ? data.Resolve(extensions) : null,
+      DownloadExtensions = settings.DownloadExtensions,
+   };
+}

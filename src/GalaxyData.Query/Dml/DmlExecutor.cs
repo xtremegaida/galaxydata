@@ -116,7 +116,8 @@ internal sealed class DmlExecutor(QueryEngine engine)
          catch (Exception e) when (e is not OperationCanceledException)
          {
             cancellationToken.ThrowIfCancellationRequested();
-            return new DmlFailure(DmlFailureKind.Connection, source, $"{connection.Name} couldn't be opened to write the changes: {e.Message}", null, e);
+            string reason = e is SourceUnavailableException unavailable ? unavailable.Reason : e.Message;
+            return new DmlFailure(DmlFailureKind.Connection, source, $"{connection.Name} couldn't be opened to write the changes: {reason}", null, e);
          }
       }
       foreach (Connection connection in connections)

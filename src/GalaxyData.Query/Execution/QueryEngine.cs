@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using GalaxyData.Query.Binding;
@@ -413,15 +415,31 @@ public sealed class QueryEngine
    internal ValueTask<IDisposable?> PrepareReadAsync(QueryFragment fragment, CancellationToken cancellationToken) =>
       Provider(fragment.Source).PrepareReadAsync(fragment.Source, fragment.Tables, Options, cancellationToken);
 
-   /// <summary>A connection to a source, readied for queries; the caller disposes it.</summary>
+   /// <summary>
+   /// A connection to a source, readied for queries; the caller disposes it. A source that can't be connected to, or
+   /// whose connection can't be readied, is <see cref="SourceUnavailableException"/>.
+   /// </summary>
    internal async ValueTask<DbConnection> OpenAsync(SourceInfo source, CancellationToken cancellationToken)
    {
       SourceProvider provider = Provider(source);
-      DbConnection connection = await provider.OpenConnectionAsync(source, Connections, cancellationToken).ConfigureAwait(false);
+      DbConnection connection;
+      try
+      {
+         connection = await provider.OpenConnectionAsync(source, Connections, cancellationToken).ConfigureAwait(false);
+      }
+      catch (Exception e) when (Unreachable(e) && !cancellationToken.IsCancellationRequested)
+      {
+         throw new SourceUnavailableException(source, e.Message, e);
+      }
       try
       {
          await provider.PrepareConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
          return connection;
+      }
+      catch (Exception e) when (Unreachable(e) && !cancellationToken.IsCancellationRequested)
+      {
+         await connection.DisposeAsync().ConfigureAwait(false);
+         throw new SourceUnavailableException(source, e.Message, e);
       }
       catch
       {
@@ -429,6 +447,9 @@ public sealed class QueryEngine
          throw;
       }
    }
+
+   /// <summary>What a database, or the network to it, fails with when it can't be connected to.</summary>
+   private static bool Unreachable(Exception e) => e is DbException or IOException or SocketException or TimeoutException;
 
    private static string List(IEnumerable<string> items)
    {
@@ -512,3 +533,17 @@ public sealed class QueryException(IReadOnlyList<QueryDiagnostic> diagnostics)
 
 /// <summary>A query that failed while it ran: a database error, or a value that didn't convert.</summary>
 public class QueryExecutionException(string message, Exception? inner = null) : Exception(message, inner);
+
+/// <summary>
+/// A source that couldn't be connected to, or whose connection couldn't be readied: the database is down, or out of
+/// reach, or refused the login. <see cref="Reason"/> is the database's own words, which may name its server; an
+/// application's <see cref="IConnectionFactory"/> may throw this too, for connections it can't make.
+/// </summary>
+public sealed class SourceUnavailableException(SourceInfo source, string reason, Exception? inner = null)
+   : QueryExecutionException($"Couldn't connect to {source.Alias}: {reason}", inner)
+{
+   /// <summary>The source that couldn't be connected to.</summary>
+   public SourceInfo Target { get; } = source;
+
+   public string Reason { get; } = reason;
+}

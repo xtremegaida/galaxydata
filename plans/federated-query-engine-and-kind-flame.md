@@ -376,7 +376,44 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
 | Source unreachable | 502, with no secrets |
 | Timeout | 504 |
 
-- Single instance only; document this.
+- Single instance only: enforced (a lock file in the data directory) and documented (`docs/server.md`).
+
+**Built in B0**
+- **Host:** `Program` calls `AddGalaxyData()` (services), `UseGalaxyData()` (the pipeline) and `MapGalaxyData()` (the API group, OpenAPI, the client). Tests host the same three with endpoints of their own.
+- **Settings:** `GalaxyData:DataDirectory` (`data`, relative to the content root) and `GalaxyData:Merge:*`, which configure the process's one `DuckDbMergeEngine` (memory, threads, temp and extension directories; downloads off).
+- **Data directory:** made at startup and held through `galaxydata.lock` (`FileShare.None`) until the application stops. A second instance on the same directory doesn't start, and says why; so does one that can't make it.
+- **Problems:** an `IExceptionHandler` maps the engine's exceptions to problem details. Every problem has a `code` (`ProblemCodes`, or its status's) and a `traceId`.
+
+| Exception | Status | Code |
+|---|---|---|
+| `QueryException`, parse errors (GDQ1xxx) | 400 | `query-syntax`, with `diagnostics` (code, severity, message, start, end) |
+| `QueryException`, other errors | 422 | `query-invalid`, with `diagnostics` |
+| `QueryExecutionException` | 422 | `query-failed` |
+| `DmlScriptException` | 422 | `script-invalid`, with `problems` (message, line, start, length) |
+| `SourceUnavailableException` (new in the engine) | 502 | `source-unavailable`; names the source, never the database's words, which are logged |
+| `QueryTimeoutException` | 504 | `query-timeout` |
+| `ApiException(status, code, title, detail)` | its own | its own |
+| anything else | 500 | `internal-error`; details only in development |
+
+  - A client that went away gets 499, logged at debug level.
+  - `ApiProblems.Diagnostics(...)` answers with the same problem without throwing.
+- **Engine:** `SourceUnavailableException` (a `QueryExecutionException`, with `Target` and `Reason`) is thrown when a source's connection can't be opened or readied; before, the provider's `DbException` escaped as it was. Changes still report it as a failed connection, now without repeating "Couldn't connect".
+- **OpenAPI:** `/api/openapi/v1.json`. Enums are camelCase strings, and numbers are strict, so the schema doesn't say "integer or string". `ProblemDetails` lists `code` (required) and `traceId`. A golden snapshot keeps the document under review.
+  - `Microsoft.OpenApi` is pinned at 2.7.5: the 2.0.0 that `Microsoft.AspNetCore.OpenApi` 10.0.3 brings has GHSA-v5pm-xwqc-g5wc, a stack overflow when parsing a document with cyclic references. The app only writes documents, but the audit fails the build.
+- **Health:** `GET /api/health`, anonymous, gives each check's name and status only: 200, or 503 when one fails. The checks are `dataDirectory` (a file is made and removed) and `mergeEngine` (a session runs `SELECT 1`), each with a 5-second timeout.
+- **Client:** static files come from `wwwroot`. Every other path is `index.html` (no-cache), except:
+  - paths under `/api`, which give the API's 404s and 405s;
+  - files of the kinds the client is built into (`.js`, `.css`, fonts, images), which give 404s when missing.
+
+  Routing's `nonfile` would have turned away `/browse/shop.customers`. A last segment with matrix parameters is always the client's. Note for F4: a last segment that ends in such an extension without matrix parameters is taken as a file.
+- **Tests** (`tests/GalaxyData.Web.Tests`, `WebApplicationFactory` with a data directory of its own):
+  - health, and a check that fails;
+  - the data directory made and held;
+  - startup failures;
+  - API 404s and 405s;
+  - the client's paths;
+  - the OpenAPI snapshot;
+  - each exception's problem, including that a source's server and login, and an unexpected failure's message, aren't in the answer.
 
 **Metadata: EF Core 10 on SQLite, with migrations**
 - WAL mode, UTC `DateTime`, and a `Version` concurrency token on admin entities.
@@ -564,7 +601,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 
 | # | Scope |
 |---|---|
-| B0 | Host, ProblemDetails, OpenAPI, health |
+| B0 | Host, ProblemDetails, OpenAPI, health; single instance per data directory; `SourceUnavailableException` in the engine (see "Built in B0" in §5) |
 | B1 | EF metadata, migrations and backup, seeding, cookie auth, antiforgery, policies, users |
 | B2 | Connections, kinds and descriptors, secrets and masking, test-connection |
 | B3 | Snapshots, refresh worker, diff, CatalogService, tree, search, entity descriptors and capabilities |
