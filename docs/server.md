@@ -386,6 +386,88 @@ anti-forgery token.
   among the rows the crumb leads to (`found`). A crumb that can't be followed says why, and is the last. A trail has
   at most 50 crumbs.
 
+## Queries
+
+Anyone who reads data may write queries in the language (see the language reference). Each is POSTed with its
+`text` and its `parameters`, and runs within `Query:Timeout`.
+
+**Parameters.** Each is `{name, type, value}`, the name with or without its `$`.
+
+- **With a type** (`int64`, `date`, `decimal(12,2)`, as the language writes them), the value is read as rows' values
+  are sent (whole numbers past int32 and decimals as text, dates as ISO text).
+- **Without one**, a JSON value is typed as `gdq -p` types it: a boolean, a whole number (`int64`), another number
+  (`decimal`), text, or null. Text adapts to what it meets, so `"2026-03-01"` compares with a date column; null takes
+  the type it meets.
+
+**Checking a query.** `POST /api/query/validate` says what is wrong with a query as it is written: every diagnostic,
+placed in its text. It runs nothing, and answers 200 whatever is wrong with the query.
+
+- **Its parameters:** those the text uses, whether each has a value, and the `type` it takes (a parameter compared
+  with a date column is a date), to ask for a value of.
+- **Parameters without values** are taken as null to check the rest. Where a null doesn't fit (`-$n`, `$a == $b`),
+  the problem is `info`, not an error, saying the parameter wants a value: `success` says there is no error, and
+  `complete` whether the query was checked to the end.
+- **Its columns**, when it would run.
+
+**Running a query.** `POST /api/query/execute` gives a page of its rows, as a grid shows them: `grid` filters, where,
+sort and pages them as browsing does, and `includeSchema` and `includeCount` ask for the columns and the count.
+
+- **The columns** are every column of the rows, in order, with `hidden` ones too (keys added to the query, for links
+  and changes). Each has its type and lineage, and:
+  - `link`: where its values lead. `row` is one row of an entity (a foreign key, a navigation); `collection` the rows
+    of a collection (`orders.count()`); `drillDown` the rows an aggregate of a group was worked out from. `ordinals`
+    are the values (by column) it needs.
+  - `editTarget`: where a change of its value goes, the column of a table's row whose key is at `keyOrdinals`, and
+    whether the user may change it.
+- **What the rows are.** `rowIdentity` names the entity the rows are rows of, when the query only filters, sorts,
+  pages or extends one entity's rows. It gives its key's ordinals, the rows that refer to each row (`related`), and
+  what the user may do with them. Each row's `id` is then its key, as JSON.
+- **The rows.** Each row's `v` has every value, hidden ones included. A query of one value (`shop.orders.count()`)
+  or of a first row is a page of one row.
+- **And with them:** `queryText` and `parameters`, the query as it ran (the grid's composed onto it, with the
+  parameters of its filters); `stats`, its time, the rows fetched from sources, keys sent to them, and each
+  fragment's part (a query of one source has none); `warnings`, placed in the query as written (a planning warning,
+  such as a large fetch, is about all of it).
+
+**Following a link.** `POST /api/query/link` takes a page's `queryText`, `parameters` and a row's `v`. It also takes a
+`column`, whose link to follow, or a `related` (an index into `rowIdentity.related`). With `catalogVersion` (the
+page's `X-Catalog-Version`), a catalog built since is a 409, as the columns may have moved.
+
+- **The query of the rows it leads to** comes back with its parameters (none when it leads nowhere, as a null foreign
+  key). A drill-down's query is the query's own before it grouped, with the parameters it uses.
+- **For a grid.** When a grid can browse the rows, `browse` says what: an entity, with the `key` of the row to choose
+  (a row link to a key), or a navigation from a row (a collection).
+
+**Explaining a query.** `POST /api/query/explain` says how a query would run, without running it. With `grid`, it
+explains the page the grid would fetch (one row more than the page, to know whether more follow). A query that
+binds is explained even when it can't be planned; the summary and diagnostics say why.
+
+- **What it gives:** the summary, the diagnostics, the columns, and the plan. The plan is a list of `nodes` (operator,
+  detail, site, columns, estimated rows, `inputs` by id), whose root is `plan`.
+- **The SQL:** each fragment's SQL with its parameters and how its rows are fetched, and the merge engine's SQL.
+- **With `verbose`**, the plan after each phase of the optimizer.
+- **As text.** All of it is in `text` too, as `gdq explain` writes it.
+
+**Problems.** A query that doesn't parse is a 400 (`query-syntax`), and one that doesn't bind or plan is a 422
+(`query-invalid`); either way `diagnostics` places each problem in its text. A problem in a grid's where has
+`field: grid.where`, placed in the where. A query that fails as it runs is a 422 (`query-failed`), one that takes too
+long a 504, and a source that can't be reached a 502.
+
+**Saved queries.** `/api/saved-queries` keeps queries: a `name`, a `description`, the `text`, its `parameters`' values
+and whether it `isShared`.
+
+- **Whose they are.** Each is its owner's, and names are the owner's own, ignoring case (`409 query-name-taken`).
+  Shared ones everyone sees; the others only their owner.
+- **Who may change them.** The owner changes and deletes theirs. Administrators also change and delete shared ones
+  (but not rename them, which would tell the names of the owner's others), and those of deleted users: a deleted
+  user's queries stay, shared ones for everyone, the others for administrators to tidy away. They are no one's, so
+  their names don't clash.
+- **Endpoints:** `GET` (summaries, with `isMine` and `canEdit`), `GET {id}`, `POST`, `PUT {id}` (`{query, version}`),
+  `DELETE {id}?version=`. Another user's query that isn't shared is a 404; one the user may only read is a 403 to
+  change.
+- **As written.** A query is saved as written, whether it runs or not; its parameters must read as values. Numbers
+  are kept as a browser writes them back (`50.0` as `50`), so saving a query as it was read changes nothing.
+
 ## The overlay
 
 The overlay adds to what the databases declare (see the language reference, 2.8). Administrators edit it, item by
@@ -486,6 +568,7 @@ Errors are problem details (RFC 9457, `application/problem+json`). Every problem
 | 409 | `own-account` | Administrators can't demote, disable, delete or reset themselves. |
 | 409 | `last-admin` | The change would leave no enabled administrator. |
 | 409 | `alias-taken` | Another connection has the alias (aliases ignore case). |
+| 409 | `query-name-taken` | The owner has a saved query of the name (names ignore case). |
 | 409 | `overlay-item-exists` | The overlay has an item for that already: settings for the entity, an override of the navigation, a virtual entity of the name. |
 | 422 | `wrong-password` | The current password given to change it isn't right. |
 | 422 | `weak-password` | A new password doesn't meet the policy; `detail` says how. |

@@ -57,7 +57,7 @@ public sealed class PolicyTests
          HttpStatusCode status = (await lee.GetAsync(path)).StatusCode;
          status.ShouldBe(admin, path);
       }
-      foreach (string path in (string[])["/api/catalog", "/api/catalog/tree/children", "/api/catalog/tree/search?text=x"])
+      foreach (string path in (string[])["/api/catalog", "/api/catalog/tree/children", "/api/catalog/tree/search?text=x", "/api/saved-queries"])
       {
          (await lee.GetAsync(path)).StatusCode.ShouldBe(HttpStatusCode.OK, path);
       }

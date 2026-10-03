@@ -148,6 +148,7 @@ internal sealed partial class BinderRun
             bool decimals = parameter.Scalar.Kind == ScalarKind.Decimal && target.Kind == ScalarKind.Decimal;
             if (parameter.Scalar.Kind == ScalarKind.Unknown || textual || whole || decimals)
             {
+               parameterTypes[parameter.Name] = target.WithNullable(parameter.Scalar.Nullable);
                return new BoundParameter(parameter.Name, target.WithNullable(parameter.Scalar.Nullable), parameter.Syntax);
             }
             return parameter;

@@ -54,6 +54,9 @@ public static class ProblemCodes
    /// <summary>409: another user has the name.</summary>
    public const string UserNameTaken = "user-name-taken";
 
+   /// <summary>409: the owner has a saved query of the name.</summary>
+   public const string QueryNameTaken = "query-name-taken";
+
    /// <summary>409: another connection has the alias.</summary>
    public const string AliasTaken = "alias-taken";
 

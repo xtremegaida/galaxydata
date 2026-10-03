@@ -19,9 +19,11 @@ using GalaxyData.Web.Features.Catalog;
 using GalaxyData.Web.Features.Connections;
 using GalaxyData.Web.Features.Health;
 using GalaxyData.Web.Features.Overlay;
+using GalaxyData.Web.Features.Query;
 using GalaxyData.Web.Features.Users;
 using GalaxyData.Web.Overlay;
 using GalaxyData.Web.Problems;
+using GalaxyData.Web.Queries;
 using GalaxyData.Web.Schemas;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -82,6 +84,7 @@ public static class WebApp
       services.AddSingleton<QueryEngines>();
       services.AddSingleton<BrowseService>();
       services.AddScoped<OverlayEditor>();
+      services.AddSingleton<QueryService>();
       services.AddSingleton<SchemaReader>();
       services.AddSingleton<SchemaRefreshQueue>();
       services.AddSingleton<SchemaRefresher>();
@@ -173,6 +176,8 @@ public static class WebApp
       api.MapCatalog();
       api.MapBrowse();
       api.MapOverlay();
+      api.MapQuery();
+      api.MapSavedQueries();
 
       app.MapOpenApi(OpenApiPattern).RequireAuthorization(Policies.CanRead);
 

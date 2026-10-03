@@ -293,6 +293,39 @@ public sealed class EntitySettings : IOverlayItem
    public int Version { get; set; }
 }
 
+/// <summary>
+/// A query a user saved: its text and the values of its parameters, theirs alone or shared with everyone. When its
+/// owner is deleted, it stays (shared, for everyone; not, for administrators to tidy away).
+/// </summary>
+public sealed class SavedQuery : IVersioned
+{
+   public int Id { get; set; }
+
+   /// <summary>Null once the owner is deleted.</summary>
+   public int? OwnerId { get; set; }
+
+   /// <summary>The owner's name when they last saved it, which outlives them.</summary>
+   public string OwnerName { get; set; } = string.Empty;
+
+   /// <summary>Unique for its owner, ignoring case.</summary>
+   public string Name { get; set; } = string.Empty;
+
+   public string? Description { get; set; }
+
+   public string Text { get; set; } = string.Empty;
+
+   /// <summary>The parameters' values, as a JSON list of <c>{name, type, value}</c>.</summary>
+   public string ParametersJson { get; set; } = "[]";
+
+   public bool IsShared { get; set; }
+
+   public DateTime CreatedAt { get; set; }
+
+   public DateTime UpdatedAt { get; set; }
+
+   public int Version { get; set; }
+}
+
 /// <summary>A value the application keeps for itself.</summary>
 public sealed class MetadataSetting
 {

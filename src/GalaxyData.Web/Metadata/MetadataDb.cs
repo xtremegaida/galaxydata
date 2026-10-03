@@ -45,6 +45,8 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
 
    public DbSet<EntitySettings> OverlayEntitySettings => Set<EntitySettings>();
 
+   public DbSet<SavedQuery> SavedQueries => Set<SavedQuery>();
+
    /// <summary>The database's path in a data directory.</summary>
    public static string PathIn(DataDirectory data)
    {
@@ -142,6 +144,17 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
          settings.HasIndex(s => s.Entity).IsUnique();
          settings.Property(s => s.DisplayColumn).HasMaxLength(NameLength);
          settings.Property(s => s.Version).IsConcurrencyToken();
+      });
+      modelBuilder.Entity<SavedQuery>(query =>
+      {
+         query.ToTable("SavedQueries");
+         query.HasOne<AppUser>().WithMany().HasForeignKey(q => q.OwnerId).OnDelete(DeleteBehavior.SetNull);
+         query.Property(q => q.OwnerName).HasMaxLength(64);
+         query.Property(q => q.Name).HasMaxLength(NameLength).UseCollation("NOCASE");
+         query.HasIndex(q => new { q.OwnerId, q.Name }).IsUnique();
+         query.Property(q => q.Description).HasMaxLength(DescriptionLength);
+         query.HasIndex(q => q.IsShared);
+         query.Property(q => q.Version).IsConcurrencyToken();
       });
       modelBuilder.Entity<MetadataSetting>(setting =>
       {

@@ -46,6 +46,9 @@ public sealed class PreparedQuery
 
    internal BoundProgram? Program { get; }
 
+   /// <summary>The type each parameter the query uses takes (as far as it was bound): an editor's hint for a value to give.</summary>
+   public IReadOnlyDictionary<string, ScalarType> ParameterTypes => Program?.ParameterTypes ?? new Dictionary<string, ScalarType>();
+
    /// <summary>Made by <see cref="ForCount"/>: the plan counts the program's rows.</summary>
    internal bool IsCount { get; set; }
 

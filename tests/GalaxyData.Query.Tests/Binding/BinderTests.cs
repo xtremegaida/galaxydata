@@ -97,6 +97,15 @@ public sealed class BinderTests
    }
 
    [Fact]
+   public void ParametersTypesAreThoseTheyTake()
+   {
+      BoundProgram program = Bind("sales.orders.where(total > $floor and order_date >= $since and status == $status).take($n)",
+         new QueryParameters().Add("floor", null).Add("since", "2026-01-01").Add("status", null).Add("n", 5L));
+      program.ParameterTypes.OrderBy(p => p.Key).Select(p => $"{p.Key} {p.Value}")
+         .ShouldBe(["floor decimal(10,2)?", "n int64", "since date", "status string(20,ansi)?"]);
+   }
+
+   [Fact]
    public void IntegerDivisionGivesADouble()
    {
       BoundQuery query = Query("sales.order_lines.select(a: qty / 2, b: price / 2, c: qty % 2)");

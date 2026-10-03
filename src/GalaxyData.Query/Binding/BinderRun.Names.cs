@@ -90,6 +90,7 @@ internal sealed partial class BinderRun
       {
          throw Error(id, DiagnosticCodes.UnknownParameter, $"No value was given for the parameter {id.Name}");
       }
+      parameterTypes.TryAdd(parameter.Name, parameter.Type);
       return new BoundParameter(parameter.Name, parameter.Type, id);
    }
 

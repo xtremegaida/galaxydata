@@ -461,6 +461,12 @@ public sealed class BoundProgram(string text, IReadOnlyList<BoundLet> lets, Boun
 
    public IReadOnlyList<QueryDiagnostic> Diagnostics { get; } = diagnostics;
 
+   /// <summary>
+   /// The type of each parameter the query uses, as far as it was bound: the value's, or the type it took from what it
+   /// meets (a null compared with a date column is a date).
+   /// </summary>
+   public IReadOnlyDictionary<string, ScalarType> ParameterTypes { get; init; } = new Dictionary<string, ScalarType>();
+
    public bool Success => Result != null;
 
    public BoundQuery? Query => Result as BoundQuery;

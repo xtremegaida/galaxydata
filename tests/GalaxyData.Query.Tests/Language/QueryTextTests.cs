@@ -75,6 +75,24 @@ public sealed class QueryTextTests
       string.Join("|", QueryText.SplitStatements(text).Select(r => text[r])).ShouldBe(expected);
    }
 
+   [Theory]
+   [InlineData("shop.orders.where(total > $min and order_date >= $since and total < $min)", "min,since")]
+   [InlineData("x := $a; x // $b\n + 'it''s $c' + \"$d\" /* $e */ + `$f` + a$g + it[\"$h\"] + $Z1", "a,Z1")]
+   [InlineData("$", "")]
+   [InlineData("'unterminated $x", "")]
+   public void ParametersAreFoundOutsideStringsAndComments(string text, string expected) =>
+      string.Join(",", QueryText.Parameters(text)).ShouldBe(expected);
+
+   [Fact]
+   public void ParametersUsesArePlaced()
+   {
+      const string text = "where(a > $min and b < $min2 and c == $min)";
+      QueryText.ParameterUses(text).Select(u => $"{u.Name} {text[u.Range]}").ShouldBe(["min $min", "min2 $min2", "min $min"]);
+      // Many parameters are found in time proportional to the text.
+      string many = string.Join(" + ", Enumerable.Range(0, 20_000).Select(i => "$p" + i));
+      QueryText.Parameters(many).Count.ShouldBe(20_000);
+   }
+
    [Fact]
    public void ComposeWrapsTheLastStatement()
    {

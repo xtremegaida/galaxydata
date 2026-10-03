@@ -5,6 +5,7 @@ using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Diagnostics;
 using GalaxyData.Query.Functions;
 using GalaxyData.Query.Language;
+using GalaxyData.Query.Types;
 
 namespace GalaxyData.Query.Binding;
 
@@ -126,6 +127,7 @@ internal sealed partial class BinderRun
    private readonly List<QueryDiagnostic> diagnostics = [];
    private readonly RootScope root = new();
    private readonly HashSet<string> warned = new(StringComparer.OrdinalIgnoreCase);
+   private readonly Dictionary<string, ScalarType> parameterTypes = new(StringComparer.Ordinal);
 
    public BinderRun(string text, BindContext context)
    {
@@ -160,14 +162,14 @@ internal sealed partial class BinderRun
                throw Error(statement, DiagnosticCodes.StatementNotDefinition,
                   "Only the last statement is the query; the ones before it must name a subtree, as in 'x := ...;'");
             }
-            return new BoundProgram(text, lets, BindResult(statement), diagnostics);
+            return new BoundProgram(text, lets, BindResult(statement), diagnostics) { ParameterTypes = parameterTypes };
          }
       }
       catch (BindException failure)
       {
          diagnostics.Add(failure.Diagnostic);
       }
-      return new BoundProgram(text, lets, null, diagnostics);
+      return new BoundProgram(text, lets, null, diagnostics) { ParameterTypes = parameterTypes };
    }
 
    private static bool TryDefinition(SyntaxNode statement, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out IdentifierSyntax? name,

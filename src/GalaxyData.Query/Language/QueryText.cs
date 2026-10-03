@@ -163,6 +163,68 @@ public static class QueryText
    }
 
    /// <summary>
+   /// The parameters a query text uses (<c>$min</c>), by name without the <c>$</c>, each once, in the order they first
+   /// appear; outside strings and comments. The text needn't parse: an editor can ask for values as it is written.
+   /// </summary>
+   public static IReadOnlyList<string> Parameters(string text)
+   {
+      List<string> names = [];
+      HashSet<string> seen = new(StringComparer.Ordinal);
+      foreach ((string name, _) in ParameterUses(text))
+      {
+         if (seen.Add(name)) { names.Add(name); }
+      }
+      return names;
+   }
+
+   /// <summary>Each use of a parameter in a query text, outside strings and comments: its name without the <c>$</c>, and where it is (the <c>$</c> included).</summary>
+   public static IReadOnlyList<(string Name, Range Range)> ParameterUses(string text)
+   {
+      ArgumentNullException.ThrowIfNull(text);
+      List<(string, Range)> uses = [];
+      int i = 0;
+      while (i < text.Length)
+      {
+         char c = text[i];
+         if (c == '#' || (c == '/' && i + 1 < text.Length && text[i + 1] == '/'))
+         {
+            while (i < text.Length && text[i] != '\n' && text[i] != '\r') { i++; }
+            continue;
+         }
+         if (c == '/' && i + 1 < text.Length && text[i + 1] == '*')
+         {
+            int close = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
+            i = close < 0 ? text.Length : close + 2;
+            continue;
+         }
+         switch (c)
+         {
+            case '\'' or '"':
+               i++;
+               while (i < text.Length && text[i] != c) { i += text[i] == '\\' ? 2 : 1; }
+               i = Math.Min(i + 1, text.Length);
+               continue;
+            case '`':
+               int closing = text.IndexOf('`', i + 1);
+               i = closing < 0 ? text.Length : closing + 1;
+               continue;
+         }
+         if (!IsNameStart(c))
+         {
+            i++;
+            continue;
+         }
+         // A whole name, so a '$' inside one (a$b) isn't a parameter.
+         int start = i;
+         while (i < text.Length && (IsNameStart(text[i]) || char.IsDigit(text[i]))) { i++; }
+         if (c == '$' && i - start > 1) { uses.Add((text[(start + 1)..i], start..i)); }
+      }
+      return uses;
+   }
+
+   private static bool IsNameStart(char c) => char.IsLetter(c) || c == '_' || c == '$';
+
+   /// <summary>
    /// Adds filters and a sort to a query text: the last statement becomes <c>(last).where(f1).where(f2).orderBy(...)</c>,
    /// and the statements before it (named subtrees) stay as they are. A sort replaces the query's own. Filters and
    /// sort keys are expressions over the rows, such as <c>total &gt; 100</c> or <c>QuoteName("Total Spend")</c>.

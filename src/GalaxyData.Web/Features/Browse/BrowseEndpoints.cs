@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using GalaxyData.Web.Auth;
 using GalaxyData.Web.Browse;
 using GalaxyData.Web.Metadata;
+using GalaxyData.Web.Problems;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -48,7 +49,7 @@ public static class BrowseEndpoints
       {
          return TypedResults.Ok(await browse.PageAsync(request, CanEditData(me), response, cancellationToken));
       }
-      catch (BrowseProblemException problem)
+      catch (ProblemResultException problem)
       {
          return problem.Result;
       }
@@ -60,7 +61,7 @@ public static class BrowseEndpoints
       {
          return TypedResults.Ok(await browse.TrailAsync(request, response, cancellationToken));
       }
-      catch (BrowseProblemException problem)
+      catch (ProblemResultException problem)
       {
          return problem.Result;
       }

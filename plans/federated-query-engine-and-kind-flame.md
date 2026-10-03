@@ -642,7 +642,7 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
 | Connections | connection-kinds, convert; connection CRUD, test, refresh; snapshots and diff |
 | Catalog | tree/children, tree/search, entities/{name} |
 | Browse | browse/page, browse/trail |
-| Query | validate, explain, execute; saved-queries CRUD |
+| Query | validate, explain, execute, link; saved-queries CRUD |
 | Changes | GET, ops, DELETE (scoped), preview, commit |
 | Overlay | relations, nav-overrides, virtual-entities (+ validate), entity-settings, issues |
 | Audit | admin-events (B1), commits (B7) |
@@ -748,6 +748,32 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
 - **Validation keys:** the framework's validation problems named fields as the request's types do (`UserName`, `Relation.ToColumns`), and ours as the JSON does. They are all camelCase now: our handlers' problems (`ApiProblems.Invalid`) carry their code, and `ApiProblems.Complete` camel-cases the keys of those without one, the framework's. Our own keys are left alone, as some are provider keywords (`settings.Password`).
 - **Tests:** the engine's items in diagnostics and duplicates; the API: a relation across two sources and browsing along it, an item broken by a refresh (issues, `/api/catalog`, the log) and fixed, versions, no-op updates, the audit, export round-tripped through `CatalogOverlay.FromJson`; virtual entities tried (placed diagnostics), saved, browsed and in the tree; settings (labels, types, hidden columns and entities, declared keys, duplicates by another path); overrides (renamed, hidden, tried in place of themselves); deletes; requests refused by field; a source whose schema can't be read; the role matrix.
 
+**Built in B6**
+- **Engine:**
+  - `QueryText.Parameters(text)` and `ParameterUses(text)` list the `$names` a text uses (and where), outside strings and comments, without parsing it, so an editor can ask for values as the query is written.
+  - `BoundProgram.ParameterTypes` / `PreparedQuery.ParameterTypes`: the type each parameter takes as it is bound (a null compared with a date column is a date), for an editor's inputs.
+- **Parameters** (`QueryParameterInput {name, type?, value}`): typed values are read by `ValueCodec`; untyped JSON values as `gdq -p` types them (boolean, `int64`, `decimal`, text, null), so text adapts to dates as in the language. Names with or without `$`; twice is a 400.
+- **`QueryService`** (`/api/query`, `CanRead`):
+  - `validate`: every diagnostic placed in the text, the parameters it uses (missing ones taken as null to check the rest), and its columns. Always 200.
+  - `execute`: a page as a grid shows it (`GridQueryComposer` over the query's visible columns, the engine's paging), counted alongside. Every column is sent, hidden keys too, with its type, lineage, link (`row`, `collection`, `drillDown`, with the ordinals it needs) and edit target (entity, column, key ordinals, whether the user may change it, by `EntityCapabilities`). `rowIdentity` when the rows are one entity's (row ids are its key). Rows are `{id, v}` with every value. Stats (time, rows fetched, keys sent, fragments) and warnings.
+  - `explain`: of the query, or of the page a grid would fetch. The plan is a flat list of nodes with inputs by id (a nested tree would pass JSON's depth limit of 64 for long chains), with fragments, merge SQL, phases when verbose, and `ExplainTextRenderer`'s text.
+  - `link`: a page's text, parameters and row, and a column (or a `related` index): the query of the rows the link leads to (`ColumnLink.Query`; a drill-down keeps the query's parameters), null when it leads nowhere. Also a browse hint: an entity and the row to choose, for a row link to a key, or a navigation from a row, for a collection from a key.
+  - Display values of referenced rows (browse's `r`) aren't added to queries' pages: a query's rows needn't have the navigation to reach them.
+- **`PagedRows`**: fetching a page with its count alongside, lineage, parameters and query problems, shared by browsing and queries. `ProblemResultException` (was `BrowseProblemException`) carries a problem to answer with.
+- **Saved queries** (migration `SavedQueries`): `SavedQuery` (owner, owner's name, name unique for the owner ignoring case, description, text, parameters as JSON, shared, versioned). The owner's foreign key is `SET NULL`, so a deleted user's queries stay: shared ones for everyone, the others for administrators. The owner changes and deletes theirs; administrators also shared ones and orphans. Another's unshared query is a 404, one that is only readable a 403 to change. Saved as written, parameters checked. A save of nothing new changes nothing. New problem: `query-name-taken`.
+- **Found by the review**, fixed:
+  - finding a text's parameters was quadratic in their number, and done before the text's length was checked: a few MB from any reader could hold a core for hours. It is linear now, and a text too long to run isn't searched;
+  - a null in place of a parameter without a value doesn't fit everywhere (`-$n`, `abs($n)`, `$a == $b`), so valid queries failed to validate. Those problems are `info` now, the parameter wanting a value (`complete: false`);
+  - warnings of a page were placed in the text with the grid's state composed onto it; they are placed in the query as written;
+  - an administrator renaming a shared query learned the names of the owner's private ones (by 409s): only owners rename;
+  - two queries of deleted owners clashed by name (EF compares a null owner as `IS NULL`);
+  - parameter names like `$1`, which the language reads, were refused;
+  - a value given for type `unknown` failed when the query ran, with an empty reason; it is a 400;
+  - a drill-down carried the grid's filter parameters into its query;
+  - suggested and done: parameters' types in `validate`; `link` checks the page's catalog version when given (409); `explain` explains queries that bind but can't be planned; saved queries' numbers kept as browsers write them back (`50.0` as `50`), so a save of what was read changes nothing; the list leaves texts out; names are measured trimmed; the link's `row` is its `key`.
+- **Known limitations:** the parameter finder reads `it.$x` and `ns::$x` as parameters (the binder doesn't); the OpenAPI document describes a 400 as a validation problem, where a query's syntax error is a problem with `diagnostics` (as for browsing).
+- **Tests:** the parameter finder; validate (null-filled parameters, placed diagnostics, syntax, bad types); pages with hidden keys, links, edit targets by role, row identity, stats; parameters typed and untyped (decimals, dates as text, nulls); problems (syntax, missing parameter, the grid's where, page size, a parameter twice, explain); values and first rows; drill-downs run with the query's parameters; collection and related links with browse hints; a null foreign key; explain with a grid, verbose; saved queries (ownership, sharing, admins, names, versions, no-op saves, refused requests, a deleted owner).
+
 **Pending changes, preview and commit**
 - Changes are stored on the server, one changeset per user, and survive refreshes, tabs and restarts.
 - **`POST /changes/ops`** applies a batch atomically: set, insert (by tempId), delete, revert. `ChangeSetMerger` rules:
@@ -850,7 +876,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | B3 | Snapshots, refresh worker, diff, CatalogService, tree, search, entity descriptors and capabilities; queries' connections (see "Built in B3" in §5) |
 | B4 | GridQueryComposer, codecs, NavigationResolver, CountStrategy, browse endpoints and trails (see "Built in B4" in §5) |
 | B5 | Overlay CRUD and validation; overlay items named by the engine's diagnostics (see "Built in B5" in §5) |
-| B6 | Query validate, explain and execute; saved queries |
+| B6 | Query validate, explain, execute and links; saved queries (see "Built in B6" in §5) |
 | B7 | ChangeSets, merger, preview, commit, audit |
 | B8 | Security headers and CSP, rate limits, log redaction, publish target |
 
