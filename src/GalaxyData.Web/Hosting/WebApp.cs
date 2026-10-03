@@ -8,11 +8,13 @@ using GalaxyData.Query.Excel;
 using GalaxyData.Query.Execution;
 using GalaxyData.Query.Types;
 using GalaxyData.Web.Auth;
+using GalaxyData.Web.Browse;
 using GalaxyData.Web.Catalog;
 using GalaxyData.Web.Connections;
 using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Features.Audit;
 using GalaxyData.Web.Features.Auth;
+using GalaxyData.Web.Features.Browse;
 using GalaxyData.Web.Features.Catalog;
 using GalaxyData.Web.Features.Connections;
 using GalaxyData.Web.Features.Health;
@@ -75,6 +77,8 @@ public static class WebApp
       services.AddSingleton<SourceProviders>();
       services.AddSingleton<SourceConnections>();
       services.AddSingleton<CatalogService>();
+      services.AddSingleton<QueryEngines>();
+      services.AddSingleton<BrowseService>();
       services.AddSingleton<SchemaReader>();
       services.AddSingleton<SchemaRefreshQueue>();
       services.AddSingleton<SchemaRefresher>();
@@ -164,6 +168,7 @@ public static class WebApp
       api.MapAudit();
       api.MapConnections();
       api.MapCatalog();
+      api.MapBrowse();
 
       app.MapOpenApi(OpenApiPattern).RequireAuthorization(Policies.CanRead);
 

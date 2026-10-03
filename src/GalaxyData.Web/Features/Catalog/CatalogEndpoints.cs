@@ -58,18 +58,6 @@ public sealed record TreeHitDto(TreeNodeDto Node, IReadOnlyList<string> Path, IR
 
 public sealed record TreeSearchDto(string Text, IReadOnlyList<TreeHitDto> Hits, bool More);
 
-/// <summary>A logical type: its kind, and for decimals their precision and scale, for text and binary their length.</summary>
-public sealed record TypeDto(ScalarKind Kind, bool Nullable, string Text)
-{
-   public int? Precision { get; init; }
-
-   public int? Scale { get; init; }
-
-   public int? Length { get; init; }
-
-   public bool? IsAnsi { get; init; }
-}
-
 public sealed record KeyDto(string? Name, IReadOnlyList<string> Columns, bool IsDeclared);
 
 /// <summary>A column, and what the user may do with it: change it, and give it a value in a new row.</summary>
@@ -190,12 +178,8 @@ public static class CatalogEndpoints
       return TypedResults.Ok(Describe(entity, providers, CanEditData(me)));
    }
 
-   private static async Task<CatalogState> StateAsync(HttpResponse response, CatalogService catalogs, CancellationToken cancellationToken)
-   {
-      CatalogState state = await catalogs.GetAsync(cancellationToken);
-      response.Headers[CatalogService.VersionHeader] = state.Version;
-      return state;
-   }
+   private static Task<CatalogState> StateAsync(HttpResponse response, CatalogService catalogs, CancellationToken cancellationToken) =>
+      catalogs.GetAsync(response, cancellationToken);
 
    private static bool CanEditData(ClaimsPrincipal user) => user.IsInRole(nameof(UserRole.DataManager)) || user.IsInRole(nameof(UserRole.Admin));
 
@@ -236,17 +220,9 @@ public static class CatalogEndpoints
    private static EntityColumnDto Column(ColumnDef column, SqlDialect? dialect, CapabilitiesDto entity)
    {
       ColumnCapabilities can = EntityCapabilities.Of(column, dialect, entity);
-      return new EntityColumnDto(column.Name, column.Ordinal, Type(column.Type), column.NativeType, column.IsKey, column.IsIdentity, column.IsComputed,
+      return new EntityColumnDto(column.Name, column.Ordinal, TypeDto.Of(column.Type), column.NativeType, column.IsKey, column.IsIdentity, column.IsComputed,
          column.HasDefault, column.IsRowVersion, column.Hidden, column.Label, column.Comment, can.CanUpdate, can.Insert, can.Reason);
    }
-
-   private static TypeDto Type(ScalarType type) => new(type.Kind, type.Nullable, type.ToString())
-   {
-      Precision = type.Kind == ScalarKind.Decimal && type.Precision > 0 ? type.Precision : null,
-      Scale = type.Kind == ScalarKind.Decimal && type.Precision > 0 ? type.Scale : null,
-      Length = type.Kind is ScalarKind.String or ScalarKind.Binary && type.Length >= 0 ? type.Length : null,
-      IsAnsi = type.Kind == ScalarKind.String && type.IsAnsi ? true : null,
-   };
 
    private static NavigationDto Navigation(NavigationDef navigation, bool inherited) =>
       new(navigation.Name, navigation.Target.DisplayName, navigation.Multiplicity, navigation.OwnerColumns.Select(c => c.Name).ToList(),

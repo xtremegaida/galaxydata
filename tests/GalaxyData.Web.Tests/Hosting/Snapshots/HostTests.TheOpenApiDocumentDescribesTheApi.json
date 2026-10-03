@@ -2046,6 +2046,218 @@
           }
         }
       }
+    },
+    "/api/browse/page": {
+      "post": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "A page of rows to browse, with their columns and count when asked for",
+        "operationId": "BrowsePage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowsePageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowsePageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway Timeout",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/browse/trail": {
+      "post": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "The crumbs of a trail as they stand: the entities they reach, and the rows chosen in them",
+        "operationId": "BrowseTrail",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowseTrailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowseTrailDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway Timeout",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2083,6 +2295,208 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "BrowseFromDto": {
+        "required": [
+          "entity",
+          "key"
+        ],
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string"
+          },
+          "key": {
+            "type": "array"
+          }
+        }
+      },
+      "BrowsePageDto": {
+        "required": [
+          "queryText",
+          "parameters",
+          "entity",
+          "schema",
+          "rows",
+          "offset",
+          "hasMore",
+          "total"
+        ],
+        "type": "object",
+        "properties": {
+          "queryText": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueryParameterDto"
+            }
+          },
+          "entity": {
+            "type": "string"
+          },
+          "schema": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrowseSchemaDto"
+              }
+            ]
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GridRowDto"
+            }
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "total": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "BrowsePageRequest": {
+        "required": [
+          "source"
+        ],
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/BrowseSourceDto"
+          },
+          "grid": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/GridStateDto"
+              }
+            ]
+          },
+          "includeSchema": {
+            "type": "boolean",
+            "default": true
+          },
+          "includeCount": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "BrowseSchemaDto": {
+        "required": [
+          "entity",
+          "key",
+          "capabilities",
+          "columns",
+          "references",
+          "collections"
+        ],
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string"
+          },
+          "key": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CapabilitiesDto"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GridColumnDto"
+            }
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GridReferenceDto"
+            }
+          },
+          "collections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GridCollectionDto"
+            }
+          }
+        }
+      },
+      "BrowseSourceDto": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "from": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrowseFromDto"
+              }
+            ]
+          },
+          "navigation": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "BrowseTrailDto": {
+        "required": [
+          "crumbs"
+        ],
+        "type": "object",
+        "properties": {
+          "crumbs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrailStepDto"
+            }
+          }
+        }
+      },
+      "BrowseTrailRequest": {
+        "required": [
+          "crumbs"
+        ],
+        "type": "object",
+        "properties": {
+          "crumbs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrailCrumbDto"
+            }
           }
         }
       },
@@ -2972,6 +3386,243 @@
           }
         }
       },
+      "GridCollectionDto": {
+        "required": [
+          "navigation",
+          "target",
+          "multiplicity"
+        ],
+        "type": "object",
+        "properties": {
+          "navigation": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "multiplicity": {
+            "$ref": "#/components/schemas/Multiplicity"
+          }
+        }
+      },
+      "GridColumnDto": {
+        "required": [
+          "name",
+          "type",
+          "isKey",
+          "canUpdate",
+          "insert",
+          "readOnlyReason",
+          "lineage",
+          "reference"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/TypeDto"
+          },
+          "isKey": {
+            "type": "boolean"
+          },
+          "canUpdate": {
+            "type": "boolean"
+          },
+          "insert": {
+            "$ref": "#/components/schemas/InsertMode"
+          },
+          "readOnlyReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/LineageDto"
+          },
+          "reference": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "GridConditionDto": {
+        "required": [
+          "op"
+        ],
+        "type": "object",
+        "properties": {
+          "op": {
+            "$ref": "#/components/schemas/GridOp"
+          },
+          "value": { },
+          "valueTo": { }
+        }
+      },
+      "GridFilterDto": {
+        "required": [
+          "column",
+          "conditions"
+        ],
+        "type": "object",
+        "properties": {
+          "column": {
+            "type": "string"
+          },
+          "conditions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GridConditionDto"
+            }
+          },
+          "any": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "GridOp": {
+        "enum": [
+          "eq",
+          "ne",
+          "lt",
+          "le",
+          "gt",
+          "ge",
+          "between",
+          "contains",
+          "notContains",
+          "startsWith",
+          "endsWith",
+          "blank",
+          "notBlank"
+        ]
+      },
+      "GridReferenceDto": {
+        "required": [
+          "navigation",
+          "target",
+          "columns",
+          "multiplicity"
+        ],
+        "type": "object",
+        "properties": {
+          "navigation": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "multiplicity": {
+            "$ref": "#/components/schemas/Multiplicity"
+          }
+        }
+      },
+      "GridRowDto": {
+        "required": [
+          "id",
+          "k",
+          "v",
+          "r"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "k": {
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "v": {
+            "type": "array"
+          },
+          "r": {
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        }
+      },
+      "GridSortDto": {
+        "required": [
+          "column"
+        ],
+        "type": "object",
+        "properties": {
+          "column": {
+            "type": "string"
+          },
+          "desc": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "GridStateDto": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/GridFilterDto"
+            }
+          },
+          "where": {
+            "maxLength": 10000,
+            "minLength": 0,
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "sort": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/GridSortDto"
+            }
+          },
+          "offset": {
+            "maximum": 9223372036854776000,
+            "minimum": 0,
+            "type": "integer",
+            "format": "int64"
+          },
+          "limit": {
+            "maximum": 100000,
+            "minimum": 1,
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "GroupDto": {
         "required": [
           "key",
@@ -3160,6 +3811,59 @@
           }
         }
       },
+      "LineageDto": {
+        "required": [
+          "kind",
+          "sources",
+          "expression"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/LineageKind"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LineageSourceDto"
+            }
+          },
+          "expression": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LineageKind": {
+        "enum": [
+          "direct",
+          "computed",
+          "aggregated",
+          "constant",
+          "union",
+          "unknown"
+        ]
+      },
+      "LineageSourceDto": {
+        "required": [
+          "column",
+          "path"
+        ],
+        "type": "object",
+        "properties": {
+          "column": {
+            "type": "string"
+          },
+          "path": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "Multiplicity": {
         "enum": [
           "one",
@@ -3313,6 +4017,23 @@
               "string"
             ]
           }
+        }
+      },
+      "QueryParameterDto": {
+        "required": [
+          "name",
+          "type",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "value": { }
         }
       },
       "RelationOrigin": {
@@ -3736,6 +4457,63 @@
           }
         }
       },
+      "TrailCrumbDto": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "navigation": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "key": {
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        }
+      },
+      "TrailStepDto": {
+        "required": [
+          "entity",
+          "label",
+          "title",
+          "found",
+          "problem"
+        ],
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "title": { },
+          "found": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "problem": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "TreeChildrenDto": {
         "required": [
           "parent",
@@ -4092,6 +4870,9 @@
     },
     {
       "name": "Catalog"
+    },
+    {
+      "name": "Browse"
     }
   ]
 }

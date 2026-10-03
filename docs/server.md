@@ -39,6 +39,10 @@ parts (`GalaxyData__DataDirectory`).
 | `Connections:TestTimeout` | `00:00:10` | How long trying a connection may take. |
 | `Connections:RefreshTimeout` | `00:10:00` | How long reading a connection's schema may take. |
 | `Connections:ParallelRefreshes` | `2` | How many connections' schemas are read at once (1 to 16). |
+| `Query:Timeout` | `00:01:00` | How long a query may run, reading its rows included. |
+| `Query:CountTimeout` | `00:00:03` | How long counting a grid's rows may take; the grid's rows come without the count after that. |
+| `Query:MaxFetchedRows` | `10000000` | The most rows a query may fetch from its sources to combine them. |
+| `Query:MaxPageSize` | `1000` | The most rows a page of a grid may have. |
 
 Settings that don't make sense (a minimum password length of 3, a user name with spaces) stop the application at
 startup, naming the setting.
@@ -299,6 +303,87 @@ with their logical types, its keys and navigations, and what the user may do wit
   - Computed and row version columns take no value.
   - Identity columns take none on SQL Server; the other databases take a value given.
   - Columns of types the language has no values for are read-only, and so, in this version, are binary columns.
+
+## Browsing
+
+`POST /api/browse/page` gives a page of rows to browse, for any role. It is a POST, for its body, so it needs the
+anti-forgery token.
+
+```json
+{
+  "source": { "entity": "shop.orders" },
+  "grid": {
+    "filters": [ { "column": "status", "conditions": [ { "op": "eq", "value": "open" } ] } ],
+    "where": "customer.city == 'Cape Town'",
+    "sort": [ { "column": "total", "desc": true } ],
+    "offset": 0, "limit": 100
+  },
+  "includeSchema": true,
+  "includeCount": true
+}
+```
+
+**What to browse.** An entity's rows (`"entity"`), or those a navigation leads to from a row (`"from": {"entity":
+"shop.customers", "key": ["42"]}, "navigation": "orders"`).
+
+- **A query of the target's own rows.** The rows a navigation leads to are filtered rows of its target, so they can
+  be changed as its rows can: `shop.orders.where(customer_id == $key1)`.
+- **When the key isn't enough.** If the key doesn't give the values the navigation matches on (the `customer` of an
+  order), the target's rows are those the row matches: `shop.customers.where(t => shop.orders.any(o => o.id ==
+  $key1 and o.customer_id == t.id))`.
+
+**The grid.**
+
+- **Filters.** Each filter has conditions on one column, all of which (or, with `"any": true`, any of which) a row
+  must meet. Each value is a parameter of the column's type.
+
+  | `op` | Rows whose value |
+  |---|---|
+  | `eq`, `ne` | equals the value (text exactly); `ne` also takes nulls |
+  | `lt`, `le`, `gt`, `ge` | is less, at most, more, at least |
+  | `between` | is from `value` to `valueTo`, both included |
+  | `contains`, `notContains` | has the text in it, ignoring case; `notContains` also takes nulls |
+  | `startsWith`, `endsWith` | starts or ends with the text, ignoring case (`%` and `_` are themselves) |
+  | `blank`, `notBlank` | is null (for text, or empty), or isn't |
+
+- **Dates in date-time columns.** A date alone, compared with a date-time column, stands for its day: `eq` finds the
+  day's rows, `gt` those after it. With offsets, days are in UTC. Nothing is after the last day, 9999-12-31.
+- **Where.** `where` is one condition in the query language over the rows, navigations included
+  (`customer.city == 'Cape Town'`). It must parse as one expression, not a statement. A problem with it is answered
+  with its place in the expression and `"field": "grid.where"`.
+- **Sort.** `sort` replaces the query's own. Pages are always in the same order: the engine adds the entity's key
+  after the sort.
+- **Paging.** `limit` is at most `Query:MaxPageSize`; without one, a page has 100 rows (or `Query:MaxPageSize`, when
+  that is less).
+- **Problems by field.** A column the rows don't have, an operation its type doesn't take (`contains` of a number),
+  or a value that isn't one of its type, is a 400 naming the field (`grid.filters[0].conditions[0].value`).
+
+**The answer.**
+
+- **The query.** `queryText` and `parameters` are the query that gives the rows, to open as a query.
+- **Rows.** Rows are positional, since names may be any text: `v` holds the values by column, `k` the key's values,
+  `id` the key as JSON text (the same each time; null when the rows have no key), and `r` the display values of the
+  rows each refers to.
+- **Values.** Values travel as JSON holds them exactly. Whole numbers past `int32`, decimals, dates, times,
+  date-times (ISO 8601; offsets in UTC), guids, binary (base64) and doubles that aren't numbers (`NaN`) are text.
+  Values sent (keys, filter values) are read the same way; numbers may also be JSON numbers.
+  - Decimals have a point, and no thousands separators.
+  - Date-times with an offset end with it, with `Z`, or with neither (UTC).
+- **`schema`** (with `includeSchema`):
+  - the columns, with their types, whether each is part of the key, whether the user may change it and give it a
+    value in a new row, and where its values come from;
+  - the references (navigations along foreign keys, and the columns that hold them);
+  - the collections that refer to each row;
+  - what the user may do with the rows.
+- **Counting.** `hasMore` says whether more rows follow. `total` (with `includeCount`) is counted alongside the
+  page within `Query:CountTimeout`. When counting takes longer, it is null, unless the page is the last.
+
+**Trails.** `POST /api/browse/trail` takes the crumbs of a path through the data and says where each leads:
+
+- **The crumbs.** The first names an entity, and each after it a navigation from the row chosen in the one before.
+- **What it says of each.** The entity it reaches, and the display value of the row chosen in it, if that row is
+  among the rows the crumb leads to (`found`). A crumb that can't be followed says why, and is the last. A trail has
+  at most 50 crumbs.
 
 ## Health
 

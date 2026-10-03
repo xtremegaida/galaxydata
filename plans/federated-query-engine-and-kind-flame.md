@@ -663,6 +663,52 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
   - the total count.
 - **Value encoding:** int64 and decimal travel as strings, and dates as ISO strings.
 
+**Built in B4**
+- **`ValueCodec`** (`Browse/`): values out as JSON holds them exactly.
+  - Text: int64, decimal (with its scale), guid (`D`), binary (base64), date `yyyy-MM-dd`, time, date-time (ISO, no offset), date-time with offset (ISO with its offset; the engine gives them in UTC), interval (`c`), `NaN`/`Infinity`, and unknown types (`ValueConverter.UnknownText`).
+  - JSON's own: booleans, int16/int32, finite doubles.
+  - `Decode` reads the same back (numbers may be JSON numbers; date-times also `yyyy-MM-dd[ HH:mm]`), else `ValueFormatException`.
+- **Raw JSON values are declared `object`** in request DTOs (filter values, keys). .NET 10's `AddValidation` source generator walks into a declared `JsonElement` and fails on its indexer. `[SkipValidation]` would avoid that, but it is experimental (ASP0029).
+- **`GridQueryComposer`** builds on `QueryText.Compose`:
+  - Columns are checked against the base query's visible columns, exact name first, then ignoring case, and quoted with `QuoteName`.
+  - Each value is a parameter `$fN` of the column's type, named apart from the where expression's `$` names.
+  - **Ops:** `eq`; `ne` (nulls too); `lt`/`le`/`gt`/`ge`; `between` (inclusive); `contains`/`notContains` (`icontains`, nulls too for `not`); `startsWith`/`endsWith` (`ilike` with `% _ \` escaped); `blank`/`notBlank` (text: or `''`).
+  - **Which ops each type takes:** comparisons for numbers, dates and times, text and intervals; equality also for booleans and guids; null tests for everything.
+  - **Days of date-times:** a date alone against a date-time (with offset: UTC) column is that day's range.
+  - **Where:** one statement (`SplitStatements`), it must parse, and its root mustn't be a statement or assignment. It is wrapped as `(<where>\n)` so a trailing comment can't swallow the closing bracket, and its start is kept so diagnostics come back relative to it (`field: grid.where`).
+  - **Sort** replaces the query's own. Paging is the engine's (`QueryRequest.Paging`), which already appends the row identity's key to the sort, so the composer doesn't.
+- **`NavigationResolver`:**
+  - When the navigation's owner columns are all key columns: `target.where(tc == $keyN ...)`.
+  - Otherwise a correlated `any`: `target.where(t => from.any(o => o.k == $key1 and o.fk == t.pk))`, which the engine turns into a semi join; the target's own rows, so it stays editable.
+  - Finds inherited navigations too, refuses hidden ones, and decodes keys by the key columns' types.
+- **`BrowseService`:**
+  - Prepares the base query for its columns (pure), composes, and appends `.extend(_displayN: nav.displayColumn, ...)` for each forward navigation with a `RowLink` on a visible column. The display names are kept apart from every column.
+  - Pages with `limit + 1` to know `hasMore`.
+  - Counts in parallel with `ForCount()` of the composed text without displays, within `Query:CountTimeout` (null on `QueryTimeoutException`; the last page infers it). The count is cancelled if the page fails.
+  - Rows are `{id, k, v, r}`: `id` is the JSON of `k`; `r` the display values by reference.
+  - Schema columns' editability comes from the entity's own column (direct lineage without a path) through `EntityCapabilities`, with references (indexes into `v`) and collections (inverse navigations).
+  - Trails are resolved crumb by crumb, with each chosen row's display value (`select(title: display).take(1)`).
+- **`QueryEngines`:** one `QueryEngine` per `CatalogState`, with `Query:Timeout`, `Query:MaxFetchedRows` and the app's clock. `CatalogService.GetAsync(HttpResponse)` stamps `X-Catalog-Version`. `TypeDto` moved to `Catalog/` for reuse.
+- **Settings:** `GalaxyData:Query:{Timeout 1 min, CountTimeout 3 s, MaxFetchedRows 10M, MaxPageSize 1000}`.
+- **Endpoints:** `POST /api/browse/page` and `POST /api/browse/trail`, `CanRead`, with the anti-forgery token. Problems: 400 by field, 404 for an entity, 422 with diagnostics, and the engine's 502/504.
+- **Found by the tests:** a conditional of `DateTimeOffset` and `DateTime` made a day's start a local-offset `DateTimeOffset`, so `datetime` columns compared with the machine's offset. Each branch is now boxed apart.
+- **Found by the review**, fixed:
+  - null items in `filters`, `conditions`, `sort` and `crumbs` gave 500s; they are now 400s by field;
+  - a date filter on 9999-12-31 overflowed (500); the last day now has nothing after it;
+  - a navigation from a source aliased `t` was shadowed by the correlated form's lambda (now `t_`, `t__`, ...);
+  - a count that failed (not a timeout) failed the page, and could replace the page's own error. It is now null, and the last page no longer waits for the count;
+  - diagnostics in a where with leading spaces were off by them (only its end is trimmed now);
+  - display values were added for navigations a virtual entity hasn't, and for foreign keys to non-unique columns, which repeated rows;
+  - decimals took thousands separators (`12,25` read as 1225), and offset date-times were parsed loosely (`01/05/2026`); both are strict now;
+  - a trail crumb's row was `found` even when it wasn't among the crumb's rows;
+  - minor: the default page size against a smaller `MaxPageSize`, singles' noise, display names vs navigation names, at most 50 crumbs, two columns named alike but for case, a where of comments only, the trail's 422/504 in OpenAPI.
+- **Tests:**
+  - the codec, each type both ways, and its refusals;
+  - the composer: each op's text and parameters, days, any/all, where (comments, statements, unbalanced input, parameter names), errors by field;
+  - the resolver: direct, semi-join and composite keys;
+  - the API on the shop: a page with its schema, references, collections and count; stable pages; every filter; where and its placed diagnostics; navigations (forward, inverse, self, composite, to nothing); readers; trails; a DuckDB view whose count runs out of time; an Excel sheet.
+
+
 **Pending changes, preview and commit**
 - Changes are stored on the server, one changeset per user, and survive refreshes, tabs and restarts.
 - **`POST /changes/ops`** applies a batch atomically: set, insert (by tempId), delete, revert. `ChangeSetMerger` rules:
@@ -763,7 +809,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | B1 | EF metadata, migrations and backup, seeding, cookie auth, antiforgery, policies, users; the admin audit (see "Built in B1" in §5) |
 | B2 | Connections, kinds and descriptors, secrets and masking, test-connection; allowed file roots (see "Built in B2" in §5) |
 | B3 | Snapshots, refresh worker, diff, CatalogService, tree, search, entity descriptors and capabilities; queries' connections (see "Built in B3" in §5) |
-| B4 | GridQueryComposer, codecs, NavigationResolver, CountStrategy, browse endpoints |
+| B4 | GridQueryComposer, codecs, NavigationResolver, CountStrategy, browse endpoints and trails (see "Built in B4" in §5) |
 | B5 | Overlay CRUD and validation |
 | B6 | Query validate, explain and execute; saved queries |
 | B7 | ChangeSets, merger, preview, commit, audit |

@@ -15,6 +15,7 @@ using GalaxyData.Query.Introspection;
 using GalaxyData.Web.Connections;
 using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Schemas;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -74,6 +75,15 @@ public sealed partial class CatalogService(IServiceScopeFactory scopes, Connecti
 
    /// <summary>Something the catalog is built from changed: the next to ask for it waits for it to be built again.</summary>
    public void Invalidate() => Interlocked.Increment(ref wanted);
+
+   /// <summary>The catalog, as <see cref="GetAsync(CancellationToken)"/> gives it, its version put on the answer (<see cref="VersionHeader"/>).</summary>
+   public async Task<CatalogState> GetAsync(HttpResponse response, CancellationToken cancellationToken)
+   {
+      ArgumentNullException.ThrowIfNull(response);
+      CatalogState state = await GetAsync(cancellationToken);
+      response.Headers[VersionHeader] = state.Version;
+      return state;
+   }
 
    public async Task<CatalogState> GetAsync(CancellationToken cancellationToken)
    {

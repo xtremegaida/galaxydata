@@ -33,6 +33,29 @@ public sealed class GalaxyDataOptions
    /// <summary>Connections to sources.</summary>
    [ValidateObjectMembers]
    public ConnectionSettings Connections { get; set; } = new();
+
+   /// <summary>Queries: how long they may run, how much they may fetch, and grids' pages.</summary>
+   [ValidateObjectMembers]
+   public QuerySettings Query { get; set; } = new();
+}
+
+public sealed class QuerySettings
+{
+   /// <summary>How long a query may run, reading its rows included.</summary>
+   [Range(typeof(TimeSpan), "00:00:01", "1.00:00:00")]
+   public TimeSpan Timeout { get; set; } = TimeSpan.FromMinutes(1);
+
+   /// <summary>How long counting a grid's rows may take; a grid shows its rows without the count after that.</summary>
+   [Range(typeof(TimeSpan), "00:00:00.001", "00:10:00")]
+   public TimeSpan CountTimeout { get; set; } = TimeSpan.FromSeconds(3);
+
+   /// <summary>The most rows a query may fetch from its sources to combine them.</summary>
+   [Range(1, int.MaxValue)]
+   public int MaxFetchedRows { get; set; } = 10_000_000;
+
+   /// <summary>The most rows a page of a grid may have.</summary>
+   [Range(1, 100_000)]
+   public int MaxPageSize { get; set; } = 1000;
 }
 
 public sealed class ConnectionSettings
