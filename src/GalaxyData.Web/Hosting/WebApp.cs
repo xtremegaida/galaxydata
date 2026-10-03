@@ -10,11 +10,13 @@ using GalaxyData.Query.Types;
 using GalaxyData.Web.Auth;
 using GalaxyData.Web.Browse;
 using GalaxyData.Web.Catalog;
+using GalaxyData.Web.Changes;
 using GalaxyData.Web.Connections;
 using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Features.Audit;
 using GalaxyData.Web.Features.Auth;
 using GalaxyData.Web.Features.Browse;
+using GalaxyData.Web.Features.Changes;
 using GalaxyData.Web.Features.Catalog;
 using GalaxyData.Web.Features.Connections;
 using GalaxyData.Web.Features.Health;
@@ -85,6 +87,8 @@ public static class WebApp
       services.AddSingleton<BrowseService>();
       services.AddScoped<OverlayEditor>();
       services.AddSingleton<QueryService>();
+      services.AddSingleton<ChangePlans>();
+      services.AddScoped<ChangeService>();
       services.AddSingleton<SchemaReader>();
       services.AddSingleton<SchemaRefreshQueue>();
       services.AddSingleton<SchemaRefresher>();
@@ -129,6 +133,15 @@ public static class WebApp
                // Written as the language writes types, by its own converter.
                schema.Type = JsonSchemaType.String;
                schema.Description = "A logical type as the query language writes it: int64, decimal(10,2)?, string(50,ansi); ? when it may be null";
+            }
+            // An enum used only where it may be null (a required op, checked as given) is described with null among its
+            // values; the properties say they may be null.
+            if (Nullable.GetUnderlyingType(context.JsonTypeInfo.Type) is { IsEnum: true } && schema.Enum is { } values)
+            {
+               for (int i = values.Count - 1; i >= 0; i--)
+               {
+                  if (values[i] is null || values[i]!.GetValueKind() == JsonValueKind.Null) { values.RemoveAt(i); }
+               }
             }
             return Task.CompletedTask;
          });
@@ -178,6 +191,7 @@ public static class WebApp
       api.MapOverlay();
       api.MapQuery();
       api.MapSavedQueries();
+      api.MapChanges();
 
       app.MapOpenApi(OpenApiPattern).RequireAuthorization(Policies.CanRead);
 

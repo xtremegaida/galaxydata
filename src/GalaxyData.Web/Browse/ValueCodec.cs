@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using GalaxyData.Query.Execution;
 using GalaxyData.Query.Types;
@@ -99,6 +101,23 @@ public static class ValueCodec
       {
          throw Wrong(value, type);
       }
+   }
+
+   /// <summary>
+   /// A row's id: its key's values, in key order, as JSON text, each written one way however it was given (whole
+   /// numbers as text, decimals without trailing zeros, date-times with offsets in UTC), so a row has one id.
+   /// </summary>
+   public static string RowId(IEnumerable<(object? Value, ScalarType Type)> key)
+   {
+      ArgumentNullException.ThrowIfNull(key);
+      return JsonSerializer.Serialize(key.Select(k => k.Value switch
+      {
+         short or int or long or byte or sbyte or ushort or uint or ulong => Convert.ToString(k.Value, CultureInfo.InvariantCulture),
+         // Dividing by one with 28 zeros drops a decimal's trailing zeros.
+         decimal number => (number / 1.0000000000000000000000000000m).ToString(CultureInfo.InvariantCulture),
+         DateTimeOffset offset => Encode(offset.ToUniversalTime(), k.Type),
+         _ => Encode(k.Value, k.Type),
+      }).ToList());
    }
 
    /// <summary>A value as the API read it (JSON, as a <see cref="JsonElement"/>); a CLR value is read as JSON would write it.</summary>

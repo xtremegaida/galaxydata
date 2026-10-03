@@ -326,6 +326,182 @@ public sealed class SavedQuery : IVersioned
    public int Version { get; set; }
 }
 
+/// <summary>
+/// The changes a user has made to rows and not yet committed: one set for each user, kept until they are committed
+/// or reverted, through refreshes, tabs and restarts. Its version goes up with each change to it.
+/// </summary>
+public sealed class UserChangeSet : IVersioned
+{
+   public int Id { get; set; }
+
+   /// <summary>Unique: one set for each user, deleted with them.</summary>
+   public int UserId { get; set; }
+
+   public DateTime UpdatedAt { get; set; }
+
+   public int Version { get; set; }
+
+   public List<PendingChange> Changes { get; set; } = [];
+}
+
+public enum PendingChangeKind
+{
+   Insert,
+   Update,
+   Delete,
+}
+
+/// <summary>
+/// A change to one row, not yet committed: a new row (by a <see cref="TempId"/> the client gave it), new values for
+/// columns of a row, or its deletion (by <see cref="RowKey"/>). Values are JSON objects of column names and values as
+/// the API sends them; the originals are the values the row had when the change was first made, which must still
+/// hold when it is committed. Entities are named as queries write them, and the changes are checked against the
+/// catalog again when they are previewed.
+/// </summary>
+public sealed class PendingChange : IVersioned
+{
+   public long Id { get; set; }
+
+   public int ChangeSetId { get; set; }
+
+   public PendingChangeKind Kind { get; set; }
+
+   /// <summary>The entity, as the catalog names it (<c>shop.orders</c>).</summary>
+   public string Entity { get; set; } = string.Empty;
+
+   /// <summary>The alias of the entity's source, to group and clear changes by.</summary>
+   public string Source { get; set; } = string.Empty;
+
+   /// <summary>The row's key as a JSON list of its values in key order, as browsing gives rows' ids; null for a new row.</summary>
+   public string? RowKey { get; set; }
+
+   /// <summary>The client's name for a new row, unique in the set; null for a change to a row that is there.</summary>
+   public string? TempId { get; set; }
+
+   /// <summary>The new values, by column.</summary>
+   public string ValuesJson { get; set; } = "{}";
+
+   /// <summary>The values the row had when it was first changed, by column: of the columns changed, or of a deleted row's.</summary>
+   public string OriginalJson { get; set; } = "{}";
+
+   /// <summary>What to show for the rows new values of foreign keys refer to, by navigation (<c>customer</c>).</summary>
+   public string DisplayJson { get; set; } = "{}";
+
+   public DateTime UpdatedAt { get; set; }
+
+   /// <summary>
+   /// Goes up each time the change does: a commit clears only the changes it wrote, as they were previewed. It isn't
+   /// checked as the change is saved: the set's version is.
+   /// </summary>
+   public int Version { get; set; }
+}
+
+public enum CommitStatus
+{
+   /// <summary>Being written; one still so when the application starts was stopped as it was written, and is <see cref="Unknown"/>.</summary>
+   InProgress,
+
+   Committed,
+
+   /// <summary>Nothing was written.</summary>
+   RolledBack,
+
+   /// <summary>Some connections committed before another failed to.</summary>
+   PartiallyCommitted,
+
+   /// <summary>The application stopped as the changes were written: what each connection did can't be known.</summary>
+   Unknown,
+}
+
+public enum CommitScriptStatus
+{
+   /// <summary>Not run yet.</summary>
+   Pending,
+
+   Committed,
+
+   RolledBack,
+
+   /// <summary>The commit failed: the database rolled the changes back, unless the connection was lost as it committed.</summary>
+   CommitFailed,
+
+   Unknown,
+}
+
+/// <summary>
+/// A commit of changes: who, when, and what came of it. It is written before the changes run, with the scripts that
+/// will, so a commit the application doesn't live to finish is known (<see cref="CommitStatus.Unknown"/>).
+/// </summary>
+public sealed class CommitAudit
+{
+   public long Id { get; set; }
+
+   public DateTime StartedAt { get; set; }
+
+   public DateTime? FinishedAt { get; set; }
+
+   /// <summary>Null once the user is deleted.</summary>
+   public int? UserId { get; set; }
+
+   /// <summary>The user's name when they committed, which outlives them.</summary>
+   public string UserName { get; set; } = string.Empty;
+
+   public CommitStatus Status { get; set; }
+
+   /// <summary>How many pending changes the commit carried out.</summary>
+   public int ChangeCount { get; set; }
+
+   /// <summary>Whether a script was edited, and so ran as written rather than as planned.</summary>
+   public bool IsEdited { get; set; }
+
+   /// <summary>Whether an administrator let edited scripts run statements that don't change data.</summary>
+   public bool AnyStatement { get; set; }
+
+   /// <summary>The catalog the changes were planned with.</summary>
+   public string CatalogVersion { get; set; } = string.Empty;
+
+   /// <summary>What stopped the changes (<c>connection</c>, <c>statement</c>, <c>conflict</c>, <c>commit</c>, <c>timeout</c>); null when nothing did.</summary>
+   public string? FailureKind { get; set; }
+
+   public string? Failure { get; set; }
+
+   public List<CommitAuditScript> Scripts { get; set; } = [];
+}
+
+/// <summary>The statements a commit ran on one connection, as text, and what came of them.</summary>
+public sealed class CommitAuditScript
+{
+   public long Id { get; set; }
+
+   public long CommitAuditId { get; set; }
+
+   /// <summary>Its place among the commit's scripts, which run (and commit) in turn.</summary>
+   public int Ordinal { get; set; }
+
+   /// <summary>The connection's alias.</summary>
+   public string Source { get; set; } = string.Empty;
+
+   /// <summary>The connection's kind (<c>sqlite</c>).</summary>
+   public string Kind { get; set; } = string.Empty;
+
+   public string Dialect { get; set; } = string.Empty;
+
+   public bool IsEdited { get; set; }
+
+   /// <summary>The statements, with their values written in (a planned script's) or as edited.</summary>
+   public string Text { get; set; } = string.Empty;
+
+   public int Statements { get; set; }
+
+   public CommitScriptStatus Status { get; set; }
+
+   /// <summary>The rows its statements changed, when they ran; null when none did, or the database doesn't say.</summary>
+   public long? RowsChanged { get; set; }
+
+   /// <summary>Why its commit failed.</summary>
+   public string? Error { get; set; }
+}
+
 /// <summary>A value the application keeps for itself.</summary>
 public sealed class MetadataSetting
 {

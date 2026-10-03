@@ -27,6 +27,12 @@ public static class ProblemCodes
    /// <summary>409: what was changed had been changed by someone else since it was read (its version).</summary>
    public const string ConcurrencyConflict = "concurrency-conflict";
 
+   /// <summary>409: a preview can't be committed: it expired or was replaced, or the changes or the catalog changed since; preview again.</summary>
+   public const string PlanStale = "plan-stale";
+
+   /// <summary>409: the user's changes are being committed: they can't be previewed or committed again until that has finished.</summary>
+   public const string CommitInProgress = "commit-in-progress";
+
    /// <summary>400: a request that changes anything came without a valid anti-forgery token.</summary>
    public const string XsrfTokenInvalid = "xsrf-token-invalid";
 

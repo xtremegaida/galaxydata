@@ -71,7 +71,8 @@ public sealed class BrowseService(CatalogService catalogs, QueryEngines engines,
       List<GridRowDto> dtos = rows.Select(row =>
       {
          List<object?>? k = key?.Select(c => ValueCodec.Encode(row[c.Ordinal], c.Type)).ToList();
-         return new GridRowDto(k == null ? null : JsonSerializer.Serialize(k), k, columns.Select(c => ValueCodec.Encode(row[c.Ordinal], c.Type)).ToList(),
+         return new GridRowDto(key == null ? null : ValueCodec.RowId(key.Select(c => (row[c.Ordinal], c.Type))), k,
+            columns.Select(c => ValueCodec.Encode(row[c.Ordinal], c.Type)).ToList(),
             shown.Count == 0 ? null : shown.Select(c => ValueCodec.Encode(row[c.Ordinal], c.Type)).ToList());
       }).ToList();
       return new BrowsePageDto(composed.Text, PagedRows.Parameters(composed.Parameters), source.Entity.DisplayName,

@@ -116,6 +116,7 @@ public sealed class SqlScriptTests
       { "sqlserver", "MERGE INTO t USING (SELECT 1 AS a) AS s ON t.a = s.a WHEN NOT MATCHED THEN INSERT (a) VALUES (s.a);" },
       { "sqlserver", "INSERT INTO t (a) SELECT a FROM u WHERE b = 'DROP TABLE x'" },
       { "sqlserver", "UPDATE t SET [drop] = 1 OUTPUT inserted.a INTO log (a) WHERE b = 2" },
+      { "postgres", "UPDATE t SET \"pg_read_file\" = 1" },
       { "sqlserver", "UPDATE t SET a = 1\nGO\nDELETE FROM t WHERE a = 2" },
    };
 
@@ -140,6 +141,10 @@ public sealed class SqlScriptTests
       { "postgres", "UPDATE t SET a = pg_read_file('/etc/passwd')", "pg_read_file(...) reaches outside the database: it can't be part of a statement that changes data" },
       { "postgres", "COMMIT", "COMMIT can't be run here: the changes of each connection run in a transaction of the engine's, committed when every statement has succeeded" },
       { "duckdb", "INSERT INTO t SELECT * FROM read_csv('secret.csv')", "read_csv(...) reaches outside the database: it can't be part of a statement that changes data" },
+      { "duckdb", "INSERT INTO t SELECT * FROM \"read_csv\"('secret.csv')", "read_csv(...) reaches outside the database: it can't be part of a statement that changes data" },
+      { "postgres", "UPDATE t SET a = \"pg_read_file\"('/etc/passwd')", "pg_read_file(...) reaches outside the database: it can't be part of a statement that changes data" },
+      { "postgres", "UPDATE t SET a = pg_catalog.\"PG_READ_FILE\"('/etc/passwd')", "PG_READ_FILE(...) reaches outside the database: it can't be part of a statement that changes data" },
+      { "sqlite", "UPDATE t SET a = [load_extension]('x')", "load_extension(...) reaches outside the database: it can't be part of a statement that changes data" },
       { "duckdb", "COPY t TO 'out.csv'", "COPY statements can't run here: only those that change data (INSERT, UPDATE, DELETE and MERGE)" },
       { "sqlserver", "UPDATE t SET a = 1 DROP TABLE t", "DROP can't be part of a statement that changes data" },
       { "sqlserver", "UPDATE t SET a = 1 SELECT * INTO u FROM t", "SELECT ... INTO makes a table: it can't be part of a statement that changes data" },

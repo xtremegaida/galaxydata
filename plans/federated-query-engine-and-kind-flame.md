@@ -792,6 +792,43 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
   - A CommitAudit row is written before execution starts. Any still `InProgress` at startup are marked `Unknown`.
   - Changes are cleared only on success. A stale plan returns 409.
 
+**Built in B7**
+- **Model** (migration `Changes`):
+  - `ChangeSets`: one for each user, deleted with them, versioned (a concurrency token).
+  - `PendingChanges`: the kind, the entity's path, the source's alias, the row's key as JSON (its id) or a new row's `tempId`, and values, originals and display values as JSON objects. A row has one change, and a name one new row.
+  - `CommitAudits` and `CommitAuditScripts`.
+- **Row ids** (`ValueCodec.RowId`), for browsing, queries and changes alike: a key's values as JSON, each written one way (whole numbers as text, decimals without trailing zeros, date-times with offsets in UTC), so a row has one id however its key was given.
+- **Operations** (`ChangeSetEditor`, `POST /api/changes/ops`): set, insert, delete and revert.
+  - Checked against the catalog: `EntityCapabilities` for the entity and each column, and values of their columns' types (`ValueCodec`), at most 1,000,000 characters each.
+  - Merged: a column's original is the one given at its first edit (needed only then); a value set back to its original is dropped (compared as values); deleting a changed row keeps its originals (and a delete needs some); deleting a new row drops it; display values go with their navigation's columns.
+  - A batch applies whole or not (400 by `ops[i].field`, named as given). The set's version is checked as it is saved, and a batch that loses a race is applied again to the set as it is then.
+  - At most `Changes:MaxChanges` changes. `DELETE /api/changes` clears all, or a source's or an entity's. Deleting a connection drops every user's changes to it.
+- **Preview** (`ChangeService`): every change read again against the catalog (issues for entities and columns gone, values that don't read), and planned by the engine; issues by change and column. A plan (`ChangePlans`, one for each user) when there are none, for `Changes:PlanLifetime`.
+- **Commit:**
+  - `409 plan-stale` for a plan expired or replaced, changes changed, or a catalog built since. While a user's commit runs, their changes aren't previewed or committed again (`409 commit-in-progress`).
+  - Edited scripts are parsed and guarded (`ParseScript`); any statement only for administrators, and DuckDB's scripts edited only by them.
+  - The plan is taken once, and the audit written before anything runs. It runs to its end, whoever goes away.
+  - Connections that can't be opened are named without the database's words.
+  - The changes of the connections that committed are cleared, unless changed since the preview. New rows come back with their keys and ids.
+  - Warnings for edited statements that changed no rows, and for anything that fails once the changes are written (the answer still says what was).
+- **Audit:** `GET /api/audit/commits` and `{id}`, for administrators. Commits in progress at startup are `unknown`.
+- **Engine:** `DmlGuard` also refuses functions it blocks when their names are quoted (`"pg_read_file"(...)`), and says which dialects run in the application (`RunsInTheApplication`: DuckDB).
+- **OpenAPI:** an enum used only where it may be null no longer lists null among its values.
+- **Found by the review**, fixed:
+  - a data manager's edited DuckDB script read a file of the server's (`INSERT ... SELECT * FROM 'C:/.../secret.csv'`): DuckDB reads any file or URL a statement names, with the application's rights. Edited DuckDB scripts are for administrators. Quoted names got past the guard's blocked functions (`"pg_read_file"(...)`);
+  - a preview made while a commit ran planned the same changes again (their version changes only once they are cleared), and its commit inserted the rows twice;
+  - a failure after the changes were written (saving the audit, clearing them) answered with a 500, or a 409 "changed by someone else", for changes that were written; the answer now says what was written, with warnings;
+  - one row could be named by two keys (`"1.50"` and `1.5`), so its changes were two statements, the second a conflict;
+  - a connection deleted and made again under its alias would take the old one's pending changes (inserts, and deletes without originals). Its changes go with it, and deletes need originals;
+  - an edited script that changed no rows cleared the changes without a word; it is told of;
+  - smaller: clearing by entity compared names exactly; originals were needed at every edit; errors named columns two ways; the audit counted rows of scripts rolled back; a failure saving the audit after an unexpected one hid it.
+- **Known limitations:**
+  - Any catalog built since a preview stales it, a refresh of an unrelated connection included; the client previews again.
+  - Every operation reads and writes the user's whole set: one operation on a set of 10,000 changes takes about half a second, and the answer is the whole set.
+  - A commit marked `unknown` (the application stopped as it ran) leaves its changes pending; whether they were written must be checked.
+  - The engine's: a new row can't be referred to by another in the same set when its key is generated.
+- **Tests:** operations merged (originals, values set back, decimals as values, new rows, deletes, reverts by key, id and columns, display values, versions, clearing by source); refused by field (entities, views, read-only sources, keys, key columns, nulls, values, originals, names, sizes), whole batches, readers, a deleted user's changes; limits; one id for a row; previews (order, changes, issues); commits (written, cleared, new rows, the audit); a conflict rolling everything back; one commit at a time (a preview during a commit); stale plans (changes, version, replaced, expired, the catalog, twice); edited scripts (refused, the same but for line breaks, as edited, any statement, statements that changed no rows); two connections, and a conflict on either; DuckDB's scripts; a connection deleted; commits cut short; the guard's quoted names.
+
 ---
 
 ## 6. Angular app (`src/client`)
@@ -877,7 +914,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | B4 | GridQueryComposer, codecs, NavigationResolver, CountStrategy, browse endpoints and trails (see "Built in B4" in §5) |
 | B5 | Overlay CRUD and validation; overlay items named by the engine's diagnostics (see "Built in B5" in §5) |
 | B6 | Query validate, explain, execute and links; saved queries (see "Built in B6" in §5) |
-| B7 | ChangeSets, merger, preview, commit, audit |
+| B7 | ChangeSets, merger, preview, commit, audit (see "Built in B7" in §5) |
 | B8 | Security headers and CSP, rate limits, log redaction, publish target |
 
 **Frontend**

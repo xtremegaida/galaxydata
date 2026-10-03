@@ -11,9 +11,10 @@ namespace GalaxyData.Query.Dml;
 /// needn't end with <c>;</c>, words that start other statements or run other code (<c>DROP</c>, <c>EXEC</c>,
 /// <c>DECLARE</c>, ...) and <c>SELECT ... INTO</c> are rejected anywhere in a statement. Functions that reach outside
 /// the database (DuckDB's <c>read_csv</c>, PostgreSQL's <c>pg_read_file</c>, SQLite's <c>load_extension</c>) are
-/// rejected too. The guard is not a sandbox: what the functions a statement calls do is up to the database, and the
-/// login's rights are what keep it safe. Transactions are the engine's in any case: a script can't begin, commit or
-/// roll one back, even with <c>allowAnyStatement</c>.
+/// rejected too, by their names quoted or not. The guard is not a sandbox: what the functions a statement calls do is
+/// up to the database, and the login's rights are what keep it safe. A database that runs in the application
+/// (<see cref="RunsInTheApplication"/>) has no login of its own. Transactions are the engine's in any case: a script
+/// can't begin, commit or roll one back, even with <c>allowAnyStatement</c>.
 /// </summary>
 public static class DmlGuard
 {
@@ -70,6 +71,13 @@ public static class DmlGuard
       return problems;
    }
 
+   /// <summary>
+   /// Whether a script for the dialect runs with the application's own rights, which no guard can keep to the
+   /// database: DuckDB runs in the application's process, and reads any file or URL a statement names (a quoted path
+   /// where a table goes reads the file). Edited scripts for it should come from those trusted as the application is.
+   /// </summary>
+   public static bool RunsInTheApplication(SqlDialect dialect) => dialect == SqlDialect.DuckDb;
+
    private static bool IsSqliteReplace(string keyword, SqlDialect dialect) => keyword == "REPLACE" && dialect == SqlDialect.Sqlite;
 
    /// <summary>A word or function in the statement that keeps it from running, if any.</summary>
@@ -79,10 +87,12 @@ public static class DmlGuard
       for (int i = 0; i < tokens.Count; i++)
       {
          ScriptToken token = tokens[i];
-         if (token.Kind != ScriptTokenKind.Word) { continue; }
-         string word = text[token.Start..token.End];
+         // A quoted name is a function's too when it is called ("pg_read_file"(...)), but never a reserved word.
+         bool quoted = token.Kind == ScriptTokenKind.QuotedName;
+         if (token.Kind != ScriptTokenKind.Word && !quoted) { continue; }
+         string word = quoted ? Unquoted(text[token.Start..token.End]) : text[token.Start..token.End];
          bool call = i + 1 < tokens.Count && tokens[i + 1].Kind == ScriptTokenKind.Symbol && text[tokens[i + 1].Start] == '(';
-         if (dialect == SqlDialect.SqlServer)
+         if (dialect == SqlDialect.SqlServer && !quoted)
          {
             if (TSqlStatements.Contains(word)) { return Problem(token, $"{word.ToUpperInvariant()} can't be part of a statement that changes data"); }
             if (word.Equals("SELECT", StringComparison.OrdinalIgnoreCase) && SelectsInto(tokens, i, text) is { } into)
@@ -98,6 +108,14 @@ public static class DmlGuard
          }
       }
       return null;
+   }
+
+   /// <summary>A quoted name as it names: <c>"a""b"</c> as <c>a"b</c>, <c>[a]]b]</c> as <c>a]b</c>.</summary>
+   private static string Unquoted(string quoted)
+   {
+      if (quoted.Length < 2) { return quoted; }
+      char close = quoted[^1];
+      return quoted[1..^1].Replace(new string(close, 2), close.ToString(), StringComparison.Ordinal);
    }
 
    /// <summary>The INTO of a SELECT at <paramref name="select"/>, at its depth of parentheses before its FROM, if it has one.</summary>

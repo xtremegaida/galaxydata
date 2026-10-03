@@ -236,8 +236,21 @@ public static partial class ConnectionEndpoints
       SourceConnection? connection = await db.Connections.FindAsync([id], cancellationToken);
       if (connection == null) { return NoSuchConnection(id); }
       if (version is { } read && connection.Version != read) { return Changed(connection); }
+      DateTime now = clock.GetUtcNow().UtcDateTime;
+      // Users' changes to its rows go with it: a connection given its alias later would take them.
+      List<PendingChange> pending = await db.PendingChanges.Where(c => c.Source == connection.Alias).ToListAsync(cancellationToken);
+      if (pending.Count > 0)
+      {
+         HashSet<int> sets = [.. pending.Select(c => c.ChangeSetId)];
+         db.PendingChanges.RemoveRange(pending);
+         foreach (UserChangeSet set in await db.ChangeSets.Where(s => sets.Contains(s.Id)).ToListAsync(cancellationToken))
+         {
+            set.UpdatedAt = now;
+            db.Entry(set).Property(s => s.UpdatedAt).IsModified = true;
+         }
+      }
       db.Connections.Remove(connection);
-      AdminAudit.Add(db, me, "connection.deleted", Target(connection), new { kind = connection.Kind }, clock.GetUtcNow().UtcDateTime);
+      AdminAudit.Add(db, me, "connection.deleted", Target(connection), new { kind = connection.Kind, pendingChanges = pending.Count }, now);
       await db.SaveChangesAsync(cancellationToken);
       catalog.Invalidate();
       return TypedResults.NoContent();

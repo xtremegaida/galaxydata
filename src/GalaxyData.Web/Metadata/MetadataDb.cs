@@ -47,6 +47,14 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
 
    public DbSet<SavedQuery> SavedQueries => Set<SavedQuery>();
 
+   public DbSet<UserChangeSet> ChangeSets => Set<UserChangeSet>();
+
+   public DbSet<PendingChange> PendingChanges => Set<PendingChange>();
+
+   public DbSet<CommitAudit> CommitAudits => Set<CommitAudit>();
+
+   public DbSet<CommitAuditScript> CommitAuditScripts => Set<CommitAuditScript>();
+
    /// <summary>The database's path in a data directory.</summary>
    public static string PathIn(DataDirectory data)
    {
@@ -69,6 +77,9 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
       configurationBuilder.Properties<UserRole>().HaveConversion<string>().HaveMaxLength(20);
       configurationBuilder.Properties<ConnectionMode>().HaveConversion<string>().HaveMaxLength(20);
       configurationBuilder.Properties<SchemaStatus>().HaveConversion<string>().HaveMaxLength(20);
+      configurationBuilder.Properties<PendingChangeKind>().HaveConversion<string>().HaveMaxLength(20);
+      configurationBuilder.Properties<CommitStatus>().HaveConversion<string>().HaveMaxLength(20);
+      configurationBuilder.Properties<CommitScriptStatus>().HaveConversion<string>().HaveMaxLength(20);
    }
 
    protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -155,6 +166,41 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
          query.Property(q => q.Description).HasMaxLength(DescriptionLength);
          query.HasIndex(q => q.IsShared);
          query.Property(q => q.Version).IsConcurrencyToken();
+      });
+      modelBuilder.Entity<UserChangeSet>(set =>
+      {
+         set.ToTable("ChangeSets");
+         set.HasOne<AppUser>().WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+         set.HasIndex(s => s.UserId).IsUnique();
+         set.HasMany(s => s.Changes).WithOne().HasForeignKey(c => c.ChangeSetId).OnDelete(DeleteBehavior.Cascade);
+         set.Property(s => s.Version).IsConcurrencyToken();
+      });
+      // A row has one change, and a new row one name, in a set; SQLite's unique indexes let nulls (new rows' keys) be.
+      modelBuilder.Entity<PendingChange>(change =>
+      {
+         change.ToTable("PendingChanges");
+         change.Property(c => c.Entity).HasMaxLength(PathLength);
+         change.Property(c => c.Source).HasMaxLength(64);
+         change.Property(c => c.TempId).HasMaxLength(64);
+         change.HasIndex(c => new { c.ChangeSetId, c.Entity, c.RowKey }).IsUnique();
+         change.HasIndex(c => new { c.ChangeSetId, c.TempId }).IsUnique();
+      });
+      modelBuilder.Entity<CommitAudit>(audit =>
+      {
+         audit.ToTable("CommitAudits");
+         audit.HasOne<AppUser>().WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.SetNull);
+         audit.Property(a => a.UserName).HasMaxLength(64);
+         audit.Property(a => a.CatalogVersion).HasMaxLength(64);
+         audit.Property(a => a.FailureKind).HasMaxLength(20);
+         audit.HasIndex(a => a.Status);
+         audit.HasMany(a => a.Scripts).WithOne().HasForeignKey(s => s.CommitAuditId).OnDelete(DeleteBehavior.Cascade);
+      });
+      modelBuilder.Entity<CommitAuditScript>(script =>
+      {
+         script.ToTable("CommitAuditScripts");
+         script.Property(s => s.Source).HasMaxLength(64);
+         script.Property(s => s.Kind).HasMaxLength(20);
+         script.Property(s => s.Dialect).HasMaxLength(40);
       });
       modelBuilder.Entity<MetadataSetting>(setting =>
       {

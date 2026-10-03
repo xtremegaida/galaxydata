@@ -43,6 +43,8 @@ parts (`GalaxyData__DataDirectory`).
 | `Query:CountTimeout` | `00:00:03` | How long counting a grid's rows may take; the grid's rows come without the count after that. |
 | `Query:MaxFetchedRows` | `10000000` | The most rows a query may fetch from its sources to combine them. |
 | `Query:MaxPageSize` | `1000` | The most rows a page of a grid may have. |
+| `Changes:MaxChanges` | `10000` | The most changes a user may have pending. |
+| `Changes:PlanLifetime` | `00:30:00` | How long a preview of changes may be committed. |
 
 Settings that don't make sense (a minimum password length of 3, a user name with spaces) stop the application at
 startup, naming the setting.
@@ -363,8 +365,9 @@ anti-forgery token.
 
 - **The query.** `queryText` and `parameters` are the query that gives the rows, to open as a query.
 - **Rows.** Rows are positional, since names may be any text: `v` holds the values by column, `k` the key's values,
-  `id` the key as JSON text (the same each time; null when the rows have no key), and `r` the display values of the
-  rows each refers to.
+  `id` the key as JSON text (null when the rows have no key), and `r` the display values of the rows each refers to.
+  A row's `id` is the same however its key is written: whole numbers are text, decimals have no trailing zeros
+  (`["1.5"]` for `1.50`), and date-times with offsets are in UTC.
 - **Values.** Values travel as JSON holds them exactly. Whole numbers past `int32`, decimals, dates, times,
   date-times (ISO 8601; offsets in UTC), guids, binary (base64) and doubles that aren't numbers (`NaN`) are text.
   Values sent (keys, filter values) are read the same way; numbers may also be JSON numbers.
@@ -509,6 +512,110 @@ item, under `/api/overlay`:
   the first gets it.
 - **Audited**, each change with what changed, and in the catalog's version, so clients see it.
 
+## Changes
+
+Data managers and administrators change rows. Each user's changes are kept on the server, under `/api/changes`,
+until they are committed or reverted, so they outlast refreshes, tabs and restarts.
+
+**Pending changes.** `GET /api/changes` gives the user's changes, in the order they were first made, and the
+`version` of the set, which goes up with each change to it. Each change is to one row:
+
+- `update`: new `values` for columns of a row, named by its `entity` and `key` (its key's values, in key order).
+  `rowId` is the key as JSON, as browsing gives rows' `id`s.
+- `insert`: a new row, named by the client's `tempId`, with its `values`.
+- `delete`: a row to delete.
+- `original`: the values the row had when it was first changed (of the columns changed, or those given for a row to
+  delete). They must still hold when the change is committed.
+- `display`: what to show for the rows that new foreign key values refer to, by navigation (`customer`), as the
+  client gave it.
+
+Values are as rows' values are sent (see [Browsing](#browsing)).
+
+**Operations.** `POST /api/changes/ops` applies its `ops` together, or none of them:
+
+| Op | Takes | Does |
+|---|---|---|
+| `set` | `entity`; `key` and `original` (for each column set), or `tempId`; `values`; `display` | Sets values of a row, or of a new row. |
+| `insert` | `entity`, `tempId`, `values`, `display` | Adds a new row. |
+| `delete` | `entity`; `key` and `original` (at least one column), or `tempId` | Deletes a row; a new row is just dropped. |
+| `revert` | `entity` and `key` or `tempId`, or `change` (its id); `columns` | Drops the row's change, or only its values for `columns`. |
+
+- **They merge.**
+  - A row has one change, and a column's original is the value it had when it was first changed, however often it
+    changes again: `original` is needed only then.
+  - A value set back to its original is no change (compared as values of the column's type: `5000` is the `5000.00`
+    it had). A row with no change left is dropped.
+  - Deleting a changed row drops its new values and keeps its originals, and a row to delete must be reverted
+    before it is changed again. Deleting a new row drops it.
+  - What to show for a navigation's row goes when none of the navigation's columns has a new value.
+- **They are checked** against the catalog as it stands. The entity must be a table the user may change: in a
+  writable source, with a primary key of its own for changes to rows that are there. Each column must be one they
+  may give a value: not part of the key (in an update), computed, a row version, an identity column the database
+  numbers, binary, or of an unknown type. Each value must be of its column's type, and a column that can't be null
+  takes no null. A value has at most 1,000,000 characters as it is sent. What is wrong is a 400 by the operation's
+  field, named as it was given (`ops[1].values.total`), and nothing is applied.
+- **Versions.** With a `version`, the operations apply only to the changes at that version (`409
+  concurrency-conflict`). Without one, they apply to the changes as they are, so two tabs' operations both do.
+- **At most** `Changes:MaxChanges` changes are kept for a user.
+- `DELETE /api/changes` drops every change, or those of a `source` (an alias) or an `entity`, with `version` as
+  for operations.
+- **Deleting a connection** drops every user's changes to its rows, as a connection given its alias later would be
+  another database.
+
+**Preview.** `POST /api/changes/preview` checks every change against the catalog again (an entity or a column may
+have gone, a value may not be of its column's type any more), and plans them as the engine does (see the language
+reference, 11). It gives:
+
+- `scripts`: one for each connection, in the order their changes first appear. Each has its `source`, `kind` and
+  `dialect`; its `text`, with the values written in, which may be edited; and its `statements`, each with the
+  `change` it carries out. Inserts run first, the tables they refer to first, then updates, then deletes.
+- `issues`: why changes can't be made (a new row without a value a column needs, a value that doesn't fit its
+  column), each with its `change` and `column`. The other changes' statements are shown all the same.
+- `multiConnection`: whether the changes write to more than one connection. Each connection then commits on its
+  own, one after another: should a commit fail after another succeeded, the changes are left partly written.
+- `planId`: a plan to commit, when there are no issues, until `expiresAt` (`Changes:PlanLifetime` after the preview).
+  A preview replaces the user's plan before. `version` and `catalogVersion` say which changes and catalog it is of.
+
+**Commit.** `POST /api/changes/commit` takes the `planId` and `version` of a preview, and the `scripts` the user
+edited, each `{source, text}`.
+
+- **Stale plans.** A plan that expired or was replaced, changes changed since the preview, or a catalog built since
+  (a schema read, the overlay changed) is `409 plan-stale`: preview again. A plan is committed once.
+- **One at a time.** While a user's commit runs, their changes can't be previewed or committed again (`409
+  commit-in-progress`): until those it writes are cleared, a plan of them would write them twice.
+- **As planned.** A script as the preview gave it runs as planned. Each statement must change one row, and changes it
+  only if the row's originals still hold; a row changed since it was read is a conflict.
+- **As edited.** A script whose text differs (line breaks and white space at its end aside) runs as edited. It is
+  split into statements, which may only insert, update, delete or merge, unless an administrator allows any
+  (`allowAnyStatement`; another user gets a 403). Transactions are the engine's in any case. How many rows edited
+  statements change isn't checked, but those that changed none are told of. A script that can't run is a 422
+  (`script-invalid`, with its problems), and the plan may still be committed.
+- **DuckDB's scripts** are edited by administrators only (a 403 for others). DuckDB runs in the application, with
+  its rights, and reads any file or URL a statement names, which no guard can keep it from; other databases have
+  logins of their own, whose rights keep a statement to what the login may do.
+- **Together.** Each connection's statements run in a transaction of its own. The connections commit only when every
+  statement has run, and a failure rolls every one of them back (see the language reference, 11). The commit runs
+  to its end even if the client goes away, within `Query:Timeout`.
+- **What came of it.** The answer has:
+  - the `outcome`: `committed`, `rolledBack` or `partiallyCommitted`;
+  - each script's `status`, and its statements with the rows they changed;
+  - the `failure`: its kind (`connection`, `statement`, `conflict`, `commit` or `timeout`), its source, the change
+    whose statement failed, and why. A connection that couldn't be opened is named, without the database's words,
+    which are logged;
+  - the new rows as the database made them (`inserted`): the `tempId`, the `key` and `rowId`, and the values,
+    generated keys and defaults included;
+  - `warnings`: edited statements that changed no rows, and what couldn't be done once the changes were written
+    (the audit, clearing them). The answer tells what was written whatever fails after it.
+- **Cleared.** The changes each connection that committed wrote are cleared (for an edited script, all of its
+  connection's), unless they were changed again since the preview. `changes` gives those left: all of them, when
+  nothing was committed.
+
+**The commit audit.** Every commit is recorded before it runs: its user, its scripts as they run (with the values
+written in, or as edited), and then what came of each. A commit the application didn't live to finish is `unknown`
+when it starts again, as each connection may have committed or not. Administrators read it: `GET
+/api/audit/commits` (newest first, paged with `before` and `take` as the admin audit is), and `GET
+/api/audit/commits/{id}`, with its scripts.
+
 ## Health
 
 `GET /api/health` reports whether the application can do its work:
@@ -570,6 +677,8 @@ Errors are problem details (RFC 9457, `application/problem+json`). Every problem
 | 409 | `alias-taken` | Another connection has the alias (aliases ignore case). |
 | 409 | `query-name-taken` | The owner has a saved query of the name (names ignore case). |
 | 409 | `overlay-item-exists` | The overlay has an item for that already: settings for the entity, an override of the navigation, a virtual entity of the name. |
+| 409 | `plan-stale` | A preview of changes can't be committed: it expired or was replaced, or the changes or the catalog changed since. Preview again. |
+| 409 | `commit-in-progress` | The user's changes are being committed: they can't be previewed or committed again until that has finished. |
 | 422 | `wrong-password` | The current password given to change it isn't right. |
 | 422 | `weak-password` | A new password doesn't meet the policy; `detail` says how. |
 | 429 | `too-many-requests` | Too many sign-ins from the address; `Retry-After` says when to try again. |

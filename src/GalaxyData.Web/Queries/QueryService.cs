@@ -82,7 +82,7 @@ public sealed class QueryService(CatalogService catalogs, QueryEngines engines, 
       IReadOnlyList<ResultColumn>? key = schema.RowIdentity?.KeyOrdinals.Select(o => schema.Columns[o]).ToList();
       List<ResultRowDto> dtos = rows.Select(row =>
       {
-         string? id = key == null ? null : JsonSerializer.Serialize(key.Select(c => ValueCodec.Encode(row[c.Ordinal], c.Type)));
+         string? id = key == null ? null : ValueCodec.RowId(key.Select(c => (row[c.Ordinal], c.Type)));
          return new ResultRowDto(id, [.. schema.Columns.Select(c => ValueCodec.Encode(row[c.Ordinal], c.Type))]);
       }).ToList();
       return new QueryPageDto(composed.Text, PagedRows.Parameters(composed.Parameters), request.IncludeSchema ? Schema(schema, canEdit) : null, dtos, grid.Offset,

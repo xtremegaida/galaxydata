@@ -37,6 +37,21 @@ public sealed class GalaxyDataOptions
    /// <summary>Queries: how long they may run, how much they may fetch, and grids' pages.</summary>
    [ValidateObjectMembers]
    public QuerySettings Query { get; set; } = new();
+
+   /// <summary>Changes to rows: how many a user may have pending, and how long a preview may be committed.</summary>
+   [ValidateObjectMembers]
+   public ChangeSettings Changes { get; set; } = new();
+}
+
+public sealed class ChangeSettings
+{
+   /// <summary>The most changes a user may have pending: each is a statement when they are committed.</summary>
+   [Range(1, 1_000_000)]
+   public int MaxChanges { get; set; } = 10_000;
+
+   /// <summary>How long after a preview its plan may be committed; a commit after that previews again.</summary>
+   [Range(typeof(TimeSpan), "00:00:01", "1.00:00:00")]
+   public TimeSpan PlanLifetime { get; set; } = TimeSpan.FromMinutes(30);
 }
 
 public sealed class QuerySettings

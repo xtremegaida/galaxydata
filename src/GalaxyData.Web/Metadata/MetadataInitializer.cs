@@ -32,7 +32,22 @@ internal sealed partial class MetadataInitializer(IServiceScopeFactory scopes, D
       await using AsyncServiceScope scope = scopes.CreateAsyncScope();
       MetadataDb db = scope.ServiceProvider.GetRequiredService<MetadataDb>();
       await MigrateAsync(db, cancellationToken);
+      await SettleCommitsAsync(db, cancellationToken);
       await BootstrapAsync(db, cancellationToken);
+   }
+
+   /// <summary>
+   /// Commits the application didn't live to finish (still in progress as it starts) are of unknown outcome: each
+   /// connection may have committed, or not.
+   /// </summary>
+   private async Task SettleCommitsAsync(MetadataDb db, CancellationToken cancellationToken)
+   {
+      await db.CommitAuditScripts
+         .Where(s => s.Status == CommitScriptStatus.Pending && db.CommitAudits.Any(a => a.Id == s.CommitAuditId && a.Status == CommitStatus.InProgress))
+         .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, CommitScriptStatus.Unknown), cancellationToken);
+      int unknown = await db.CommitAudits.Where(a => a.Status == CommitStatus.InProgress)
+         .ExecuteUpdateAsync(s => s.SetProperty(a => a.Status, CommitStatus.Unknown).SetProperty(a => a.Failure, "The application stopped as the changes were written: check what each connection has"), cancellationToken);
+      if (unknown > 0) { LogUnknownCommits(logger, unknown); }
    }
 
    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -130,6 +145,9 @@ internal sealed partial class MetadataInitializer(IServiceScopeFactory scopes, D
       if (split < 0 || !string.Equals(record[..split], bootstrap.AdminUserName, StringComparison.OrdinalIgnoreCase)) { return false; }
       return hasher.VerifyHashedPassword(new AppUser(), record[(split + 1)..], bootstrap.AdminPassword!) != PasswordVerificationResult.Failed;
    }
+
+   [LoggerMessage(Level = LogLevel.Warning, Message = "{Count} commits of changes were being written when the application stopped: what they wrote is unknown, as the commit audit says")]
+   private static partial void LogUnknownCommits(ILogger logger, int count);
 
    [LoggerMessage(Level = LogLevel.Information, Message = "Backed up the metadata database to {Path} before migrating it")]
    private static partial void LogBackedUp(ILogger logger, string path);
