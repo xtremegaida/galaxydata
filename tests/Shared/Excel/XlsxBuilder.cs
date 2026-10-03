@@ -6,7 +6,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 
-namespace GalaxyData.Query.IntegrationTests.Excel;
+namespace GalaxyData.Testing;
 
 /// <summary>
 /// Writes .xlsx workbooks for tests with the Open XML SDK, as Excel does: text as shared strings (or inline),

@@ -9,10 +9,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using GalaxyData.Query.Language;
 using GalaxyData.Web.Auth;
+using GalaxyData.Web.Catalog;
 using GalaxyData.Web.Connections;
 using GalaxyData.Web.Features.Audit;
 using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Problems;
+using GalaxyData.Web.Schemas;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -24,11 +26,13 @@ namespace GalaxyData.Web.Features.Connections;
 /// <summary>
 /// A connection as administrators see it: its settings without secrets, which secrets have values (never the
 /// values), and, for kinds that have one, its connection string with secrets masked. <see cref="SecretsUnreadable"/>
-/// when the keys that protected its secrets are gone, and they must be entered again.
+/// when the keys that protected its secrets are gone, and they must be entered again. How reading its schema stands:
+/// <see cref="SchemaStatus"/>, and why the last read failed (<see cref="SchemaError"/>).
 /// </summary>
 public sealed record ConnectionDto(int Id, string Alias, string Kind, string? DisplayName, ConnectionMode Mode, Dictionary<string, string> Settings,
                                    Dictionary<string, SecretStateDto> Secrets, string? ConnectionString, Dictionary<string, string> Options, bool IsReadOnly,
-                                   bool SecretsUnreadable, SchemaStatus SchemaStatus, DateTime CreatedAt, DateTime UpdatedAt, int Version);
+                                   bool SecretsUnreadable, SchemaStatus SchemaStatus, string? SchemaError, DateTime? SchemaRefreshedAt, DateTime CreatedAt,
+                                   DateTime UpdatedAt, int Version);
 
 public sealed record CreateConnectionRequest([Required] string Alias, [Required] string Kind, [Required] ConnectionInput Connection,
                                              [StringLength(200)] string? DisplayName = null);
@@ -43,7 +47,8 @@ public sealed record ConvertConnectionRequest([Required] ConnectionInput Connect
 /// <summary>
 /// Connections, for administrators: the kinds and their forms, converting between a form and a connection string,
 /// and the connections, made, changed, deleted and tried. An alias is a plain name, unique ignoring case, and never
-/// changes. Every change is in the admin audit, secrets by name only.
+/// changes. Every change is in the admin audit, secrets by name only. A connection's schema is read when it is made,
+/// when its settings, secrets or options change, and when asked (<c>refresh</c>); its snapshots say what changed.
 /// </summary>
 public static partial class ConnectionEndpoints
 {
@@ -91,6 +96,15 @@ public static partial class ConnectionEndpoints
       connections.MapPost("/test", TestAsync).WithName("TestConnectionSettings")
          .WithSummary("Tries settings before they are saved")
          .ProducesValidationProblem();
+      connections.MapPost("/{id:int}/refresh", RefreshAsync).WithName("RefreshConnectionSchema")
+         .WithSummary("Reads the connection's schema again, in the background; its schemaStatus says how it goes")
+         .ProducesProblem(StatusCodes.Status404NotFound);
+      connections.MapGet("/{id:int}/snapshots", SnapshotsAsync).WithName("ListSchemaSnapshots")
+         .WithSummary("The schemas kept of the connection, newest first, and how much changed in each")
+         .ProducesProblem(StatusCodes.Status404NotFound);
+      connections.MapGet("/{id:int}/snapshots/{snapshotId:long}", SnapshotAsync).WithName("GetSchemaSnapshot")
+         .WithSummary("A schema kept of the connection, and what changed since the one before it")
+         .ProducesProblem(StatusCodes.Status404NotFound);
       return api;
    }
 
@@ -122,7 +136,8 @@ public static partial class ConnectionEndpoints
          : NoSuchConnection(id);
 
    private static async Task<Results<Created<ConnectionDto>, ValidationProblem, ProblemHttpResult>> CreateAsync(CreateConnectionRequest request, ClaimsPrincipal me,
-      MetadataDb db, ConnectionKinds kinds, FileRoots roots, ConnectionSecrets secrets, TimeProvider clock, CancellationToken cancellationToken)
+      MetadataDb db, ConnectionKinds kinds, FileRoots roots, ConnectionSecrets secrets, SchemaRefreshQueue refreshes, CatalogService catalog, TimeProvider clock,
+      CancellationToken cancellationToken)
    {
       Dictionary<string, string[]> errors = [];
       ConnectionKind? kind = kinds.Find(request.Kind);
@@ -147,6 +162,7 @@ public static partial class ConnectionEndpoints
          ProtectedSecrets = secrets.Protect(request.Alias, resolved.Secrets),
          OptionsJson = JsonSerializer.Serialize(resolved.Options),
          IsReadOnly = resolved.IsReadOnly,
+         SchemaStatus = SchemaStatus.Loading,
          CreatedAt = now,
          UpdatedAt = now,
       };
@@ -167,11 +183,14 @@ public static partial class ConnectionEndpoints
       {
          return AliasTaken(request.Alias);
       }
+      catalog.Invalidate();
+      refreshes.Enqueue(connection.Id);
       return TypedResults.Created($"/api/connections/{connection.Id}", Dto(connection, kind, resolved.Secrets));
    }
 
    private static async Task<Results<Ok<ConnectionDto>, ValidationProblem, ProblemHttpResult>> UpdateAsync(int id, UpdateConnectionRequest request, ClaimsPrincipal me,
-      MetadataDb db, ConnectionKinds kinds, FileRoots roots, ConnectionSecrets secrets, TimeProvider clock, CancellationToken cancellationToken)
+      MetadataDb db, ConnectionKinds kinds, FileRoots roots, ConnectionSecrets secrets, SchemaRefreshQueue refreshes, CatalogService catalog, TimeProvider clock,
+      CancellationToken cancellationToken)
    {
       SourceConnection? connection = await db.Connections.FindAsync([id], cancellationToken);
       if (connection == null) { return NoSuchConnection(id); }
@@ -182,13 +201,13 @@ public static partial class ConnectionEndpoints
       if (stored == null) { Unreadable(request.Connection, resolved); }
       if (!resolved.IsValid) { return TypedResults.ValidationProblem(resolved.Errors); }
 
-      Dictionary<string, string> settings = Read(connection.SettingsJson);
-      Dictionary<string, string> options = Read(connection.OptionsJson);
       Dictionary<string, object?> changes = [];
-      Changes("settings", settings, resolved.Settings, changes);
-      Changes("options", options, resolved.Options, changes);
+      Changes("settings", connection.Settings(), resolved.Settings, changes);
+      Changes("options", connection.Options(), resolved.Options, changes);
       Dictionary<string, string> secretChanges = SecretChanges(stored, resolved.Secrets);
       if (secretChanges.Count > 0) { changes["secrets"] = secretChanges; }
+      // What it reads changed, or how it reads (a folder's sheets): its schema is read again.
+      bool reread = changes.Count > 0;
       string? displayName = Blank(request.DisplayName);
       if (!string.Equals(displayName, connection.DisplayName, StringComparison.Ordinal)) { changes["displayName"] = new { from = connection.DisplayName, to = displayName }; }
       if (resolved.IsReadOnly != connection.IsReadOnly) { changes["isReadOnly"] = new { from = connection.IsReadOnly, to = resolved.IsReadOnly }; }
@@ -203,13 +222,16 @@ public static partial class ConnectionEndpoints
       connection.OptionsJson = JsonSerializer.Serialize(resolved.Options);
       connection.IsReadOnly = resolved.IsReadOnly;
       connection.UpdatedAt = now;
+      if (reread) { connection.SchemaStatus = SchemaStatus.Loading; }
       if (changes.Count > 0) { AdminAudit.Add(db, me, "connection.updated", Target(connection), changes, now); }
       await db.SaveChangesAsync(cancellationToken);
+      catalog.Invalidate();
+      if (reread) { refreshes.Enqueue(connection.Id); }
       return TypedResults.Ok(Dto(connection, kind, resolved.Secrets));
    }
 
-   private static async Task<Results<NoContent, ProblemHttpResult>> DeleteAsync(int id, int? version, ClaimsPrincipal me, MetadataDb db, TimeProvider clock,
-                                                                              CancellationToken cancellationToken)
+   private static async Task<Results<NoContent, ProblemHttpResult>> DeleteAsync(int id, int? version, ClaimsPrincipal me, MetadataDb db, CatalogService catalog,
+                                                                              TimeProvider clock, CancellationToken cancellationToken)
    {
       SourceConnection? connection = await db.Connections.FindAsync([id], cancellationToken);
       if (connection == null) { return NoSuchConnection(id); }
@@ -217,7 +239,43 @@ public static partial class ConnectionEndpoints
       db.Connections.Remove(connection);
       AdminAudit.Add(db, me, "connection.deleted", Target(connection), new { kind = connection.Kind }, clock.GetUtcNow().UtcDateTime);
       await db.SaveChangesAsync(cancellationToken);
+      catalog.Invalidate();
       return TypedResults.NoContent();
+   }
+
+   private static async Task<Results<Accepted<ConnectionDto>, ProblemHttpResult>> RefreshAsync(int id, MetadataDb db, ConnectionKinds kinds, ConnectionSecrets secrets,
+      SchemaRefreshQueue refreshes, CatalogService catalog, CancellationToken cancellationToken)
+   {
+      if (await SchemaRefresher.MarkLoadingAsync(db, id, cancellationToken) == 0) { return NoSuchConnection(id); }
+      // Read before it is queued, which may be read at once; it may have been deleted since.
+      SourceConnection? connection = await db.Connections.AsNoTracking().SingleOrDefaultAsync(c => c.Id == id, cancellationToken);
+      if (connection == null) { return NoSuchConnection(id); }
+      catalog.Invalidate();
+      refreshes.Enqueue(id);
+      return TypedResults.Accepted($"/api/connections/{id}", Dto(connection, kinds, secrets));
+   }
+
+   private static async Task<Results<Ok<List<SchemaSnapshotDto>>, ProblemHttpResult>> SnapshotsAsync(int id, MetadataDb db, CancellationToken cancellationToken)
+   {
+      if (!await db.Connections.AnyAsync(c => c.Id == id, cancellationToken)) { return NoSuchConnection(id); }
+      var snapshots = await db.SchemaSnapshots.AsNoTracking().Where(s => s.ConnectionId == id).OrderByDescending(s => s.Id)
+         .Select(s => new { s.Id, s.Hash, s.TableCount, s.TakenAt, s.CheckedAt, s.Changes })
+         .ToListAsync(cancellationToken);
+      return TypedResults.Ok(snapshots.Select(s => SchemaSnapshots.Dto(s.Id, s.Hash, s.TableCount, s.TakenAt, s.CheckedAt, s.Changes)).ToList());
+   }
+
+   private static async Task<Results<Ok<SchemaSnapshotDetailDto>, ProblemHttpResult>> SnapshotAsync(int id, long snapshotId, MetadataDb db,
+                                                                                                   CancellationToken cancellationToken)
+   {
+      SchemaSnapshot? snapshot = await db.SchemaSnapshots.AsNoTracking().SingleOrDefaultAsync(s => s.Id == snapshotId && s.ConnectionId == id, cancellationToken);
+      if (snapshot == null)
+      {
+         return ApiProblems.Result(StatusCodes.Status404NotFound, ProblemCodes.NotFound, "There is no such snapshot",
+            $"Connection {id} has no schema snapshot {snapshotId} (the newest {SchemaSnapshots.Kept} are kept)");
+      }
+      return TypedResults.Ok(new SchemaSnapshotDetailDto(
+         SchemaSnapshots.Dto(snapshot.Id, snapshot.Hash, snapshot.TableCount, snapshot.TakenAt, snapshot.CheckedAt, snapshot.Changes),
+         SchemaSnapshots.Read(snapshot.Data), SchemaSnapshots.Changes(snapshot.Changes)));
    }
 
    private static async Task<Results<Ok<ConnectionTestDto>, ProblemHttpResult>> TestStoredAsync(int id, MetadataDb db, ConnectionKinds kinds,
@@ -226,9 +284,9 @@ public static partial class ConnectionEndpoints
       SourceConnection? connection = await db.Connections.AsNoTracking().SingleOrDefaultAsync(c => c.Id == id, cancellationToken);
       if (connection == null) { return NoSuchConnection(id); }
       Dictionary<string, string>? stored = secrets.Unprotect(connection.Alias, connection.ProtectedSecrets);
-      if (stored == null) { return TypedResults.Ok(new ConnectionTestDto(false, UnreadableMessage, 0)); }
+      if (stored == null) { return TypedResults.Ok(new ConnectionTestDto(false, StoredConnections.UnreadableSecrets, 0)); }
       ConnectionResolution resolved = new() { IsReadOnly = connection.IsReadOnly };
-      foreach ((string key, string value) in Read(connection.SettingsJson)) { resolved.Settings[key] = value; }
+      foreach ((string key, string value) in connection.Settings()) { resolved.Settings[key] = value; }
       foreach ((string key, string value) in stored) { resolved.Secrets[key] = value; }
       return TypedResults.Ok(await tester.TestAsync(connection.Alias, KindOf(connection, kinds), resolved, cancellationToken));
    }
@@ -253,15 +311,13 @@ public static partial class ConnectionEndpoints
       return TypedResults.Ok(await tester.TestAsync(alias, kind, resolved, cancellationToken));
    }
 
-   private const string UnreadableMessage = "The stored secrets can't be read: the keys that protected them are gone. Enter them again.";
-
    /// <summary>Secrets kept when the stored ones can't be read are problems: they must be entered again.</summary>
    private static void Unreadable(ConnectionInput input, ConnectionResolution resolved)
    {
       bool keeps = input.Mode == ConnectionMode.Raw
          ? input.ConnectionString?.Contains(ConnectionStrings.Mask, StringComparison.Ordinal) == true
          : input.Secrets?.Values.Any(s => s.Action == SecretAction.Keep) == true;
-      if (keeps) { resolved.Error(input.Mode == ConnectionMode.Raw ? "connectionString" : "secrets", UnreadableMessage); }
+      if (keeps) { resolved.Error(input.Mode == ConnectionMode.Raw ? "connectionString" : "secrets", StoredConnections.UnreadableSecrets); }
    }
 
    internal static ConnectionDto Dto(SourceConnection connection, ConnectionKinds kinds, ConnectionSecrets secrets) =>
@@ -269,21 +325,18 @@ public static partial class ConnectionEndpoints
 
    private static ConnectionDto Dto(SourceConnection connection, ConnectionKind kind, IReadOnlyDictionary<string, string>? secrets)
    {
-      Dictionary<string, string> settings = Read(connection.SettingsJson);
+      Dictionary<string, string> settings = connection.Settings();
       Dictionary<string, SecretStateDto> states = new(StringComparer.OrdinalIgnoreCase);
       foreach (FieldDto field in kind.Fields.Where(f => f.Type == FieldType.Password)) { states[field.Key] = new SecretStateDto(false); }
       foreach (string key in secrets?.Keys ?? []) { states[key] = new SecretStateDto(true); }
       string? text = kind.SupportsRaw ? kind.Display(settings, secrets?.Keys ?? []) : null;
       return new ConnectionDto(connection.Id, connection.Alias, connection.Kind, connection.DisplayName, connection.Mode, settings, states, text,
-         Read(connection.OptionsJson), connection.IsReadOnly, secrets == null, connection.SchemaStatus, connection.CreatedAt, connection.UpdatedAt,
-         connection.Version);
+         connection.Options(), connection.IsReadOnly, secrets == null, connection.SchemaStatus, connection.SchemaError, connection.SchemaRefreshedAt,
+         connection.CreatedAt, connection.UpdatedAt, connection.Version);
    }
 
    private static ConnectionKind KindOf(SourceConnection connection, ConnectionKinds kinds) =>
       kinds.Find(connection.Kind) ?? throw new InvalidOperationException($"The connection {connection.Alias} is of a kind the application hasn't: {connection.Kind}");
-
-   private static Dictionary<string, string> Read(string json) =>
-      new(JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? [], StringComparer.OrdinalIgnoreCase);
 
    private static void Changes(string what, Dictionary<string, string> before, Dictionary<string, string> after, Dictionary<string, object?> changes)
    {

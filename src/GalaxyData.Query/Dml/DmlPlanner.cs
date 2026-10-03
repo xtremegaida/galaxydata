@@ -70,16 +70,9 @@ public static class DmlPlanner
       void Issue(string message, ColumnDef? column = null) => issues.Add(new DmlIssue(index, change, message) { Column = column?.Name });
 
       EntityDef entity = change.Entity ?? throw new ArgumentException($"Change {index} has no entity", nameof(change));
-      string name = entity.DisplayName;
-      if (entity is not TableEntity table)
-      {
-         Issue($"{name} is defined by a query: only tables can be changed");
-         return null;
-      }
+      if (DmlRules.WhyNoInserts(entity) is { } why) { Issue(why); }
+      if (entity is not TableEntity table) { return null; }
       SourceInfo source = table.Source;
-      if (table.Kind != EntityKind.Table) { Issue($"{name} is a view: only tables can be changed"); }
-      else if (!source.SupportsDml) { Issue($"{name} can't be changed: {source.Alias} is a {source.ProviderKind} source, which takes no changes"); }
-      else if (source.IsReadOnly) { Issue($"{name} can't be changed: {source.Alias} is read-only"); }
       SqlDialect? dialect = dialects(source);
       if (dialect == null) { Issue($"{source.Alias} is a {source.ProviderKind} source, and no provider for those is registered"); }
       if (issues.Count > before) { return null; }
@@ -91,13 +84,13 @@ public static class DmlPlanner
             List<(ColumnDef Column, object? Value)> values = Values(table, dialect!, insert.Values ?? None, original: false, Issue);
             foreach ((ColumnDef column, _) in values)
             {
-               if (Generated(column, identityToo: !dialect!.AcceptsIdentityValues) is { } why) { Issue($"'{column.Name}' {why}", column); }
+               if (DmlRules.WhyNotInserted(column, dialect!) is { } generated) { Issue(generated, column); }
             }
             // A column named, whether or not its value converts, isn't missing.
             HashSet<ColumnDef> named = (insert.Values ?? None).Keys.Select(k => table.FindColumn(k).Item).OfType<ColumnDef>().ToHashSet();
             foreach (ColumnDef column in table.Columns)
             {
-               if (!named.Contains(column) && !column.Type.Nullable && !column.HasDefault && !column.IsIdentity && !column.IsComputed && !column.IsRowVersion)
+               if (!named.Contains(column) && DmlRules.NeedsValue(column))
                {
                   Issue($"'{column.Name}' needs a value: it can't be null, and has no default", column);
                }
@@ -110,8 +103,7 @@ public static class DmlPlanner
             if ((update.Values ?? None).Count == 0) { Issue("The update changes no column"); }
             foreach ((ColumnDef column, _) in changed)
             {
-               if (column.IsKey) { Issue($"'{column.Name}' is part of the key, which can't change: delete the row and insert it again", column); }
-               else if (Generated(column, identityToo: true) is { } why) { Issue($"'{column.Name}' {why}", column); }
+               if (DmlRules.WhyNotUpdated(column) is { } fixedValue) { Issue(fixedValue, column); }
             }
             planned = planned with { Key = key, Values = changed, Original = Values(table, dialect!, update.Original ?? None, original: true, Issue) };
             break;
@@ -128,14 +120,6 @@ public static class DmlPlanner
       return issues.Count > before ? null : planned;
    }
 
-   /// <summary>Why the database gives the column its value, so a change can't; null when a change may.</summary>
-   private static string? Generated(ColumnDef column, bool identityToo) =>
-      column.IsComputed ? "is computed: the database works out its value"
-      : column.IsRowVersion ? "is a row version: the database sets it"
-      : column.IsIdentity && identityToo ? "is an identity column: the database gives its value"
-      : column.Type.Kind == ScalarKind.Unknown ? $"is of a type the language has no values for ({column.NativeType})"
-      : null;
-
    /// <summary>
    /// The key values of the row a change is for. Only a table's own primary key tells its rows apart: a key the
    /// overlay declares serves navigation, and needn't be unique.
@@ -143,23 +127,24 @@ public static class DmlPlanner
    private static IReadOnlyList<(ColumnDef Column, object? Value)> Key(TableEntity table, SqlDialect dialect, IReadOnlyDictionary<string, object?>? given,
                                                                        Action<string, ColumnDef?> issue)
    {
-      if (table.Key is not { IsDeclared: false })
+      if (DmlRules.KeyProblem(table) is { } problem)
       {
-         issue($"{table.DisplayName} has no primary key{(table.Key != null ? " (the key the overlay declares serves navigation only)" : string.Empty)}, " +
-               "so its rows can't be told apart: they can be inserted, but not changed or deleted", null);
+         issue(problem, null);
          return [];
       }
+      // There is no problem only with a key of its own.
+      KeyDef own = table.Key!;
       List<(ColumnDef Column, object? Value)> key = Values(table, dialect, given ?? None, original: true, issue);
       foreach ((ColumnDef column, object? value) in key)
       {
          if (!column.IsKey) { issue($"'{column.Name}' isn't part of the key of {table.DisplayName}", column); }
          else if (value == null) { issue($"The key value of '{column.Name}' is null: no row has it", column); }
       }
-      foreach (ColumnDef column in table.Key.Columns)
+      foreach (ColumnDef column in own.Columns)
       {
          if (!key.Any(k => k.Column == column)) { issue($"The key needs a value for '{column.Name}'", column); }
       }
-      return key.OrderBy(k => table.Key.Columns.ToList().IndexOf(k.Column)).ToList();
+      return key.OrderBy(k => own.Columns.ToList().IndexOf(k.Column)).ToList();
    }
 
    /// <summary>The values by column, converted to the columns' types, in column order; what doesn't resolve or convert is an issue.</summary>

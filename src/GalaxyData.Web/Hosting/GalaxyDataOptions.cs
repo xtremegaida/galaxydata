@@ -50,6 +50,14 @@ public sealed class ConnectionSettings
    /// <summary>How long testing a connection may take.</summary>
    [Range(typeof(TimeSpan), "00:00:01", "00:10:00")]
    public TimeSpan TestTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+   /// <summary>How long reading a connection's schema may take.</summary>
+   [Range(typeof(TimeSpan), "00:00:01", "1.00:00:00")]
+   public TimeSpan RefreshTimeout { get; set; } = TimeSpan.FromMinutes(10);
+
+   /// <summary>How many schemas are read at once.</summary>
+   [Range(1, 16)]
+   public int ParallelRefreshes { get; set; } = 2;
 }
 
 /// <summary>The merge engine's settings; see <c>DuckDbMergeOptions</c>. Directories are relative to the data directory unless absolute.</summary>

@@ -3,6 +3,7 @@ using System;
 using GalaxyData.Web.Metadata;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GalaxyData.Web.Metadata.Migrations
 {
     [DbContext(typeof(MetadataDb))]
-    partial class MetadataDbModelSnapshot : ModelSnapshot
+    [Migration("20261003131033_Schemas")]
+    partial class Schemas
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.11");

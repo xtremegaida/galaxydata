@@ -202,8 +202,38 @@ public abstract class ConnectionKind
       return null;
    }
 
+   /// <summary>Opens connections with a connection string the kind wrote, as queries open them.</summary>
+   public virtual SourceConnector Connector(string connectionString) =>
+      throw new NotSupportedException($"{DisplayName} sources are opened by their provider, not with a connection string");
+
+   /// <summary>
+   /// Opens a connection or two outside the pool queries use (to try a connection, or read its schema): letting it go
+   /// leaves queries' pooled connections as they are, and nothing holding the source.
+   /// </summary>
+   public SourceConnector OneOffConnector(string connectionString) => Connector(Unpooled(connectionString));
+
+   /// <summary>The connection string, with pooling off where the provider pools.</summary>
+   protected virtual string Unpooled(string connectionString) => connectionString;
+
    /// <summary>Connects with <paramref name="connectionString"/> and runs a statement; what was found, or the failure thrown.</summary>
-   public abstract Task<string> ProbeAsync(string connectionString, CancellationToken cancellationToken);
+   public virtual async Task<string> ProbeAsync(string connectionString, CancellationToken cancellationToken)
+   {
+      await using SourceConnector connector = OneOffConnector(connectionString);
+      await using DbConnection connection = await connector.OpenAsync(cancellationToken);
+      return await FoundAsync(connection, cancellationToken);
+   }
+
+   /// <summary>What an open connection finds: the server's version and the database, or how many tables it has.</summary>
+   protected virtual Task<string> FoundAsync(DbConnection connection, CancellationToken cancellationToken) =>
+      throw new NotSupportedException($"{DisplayName} sources aren't tried through a connection");
+
+   protected static async Task<object?> ScalarAsync(DbConnection connection, string sql, CancellationToken cancellationToken)
+   {
+      ArgumentNullException.ThrowIfNull(connection);
+      await using DbCommand command = connection.CreateCommand();
+      command.CommandText = sql;
+      return await command.ExecuteScalarAsync(cancellationToken);
+   }
 }
 
 /// <summary>The kinds of connection the application has.</summary>

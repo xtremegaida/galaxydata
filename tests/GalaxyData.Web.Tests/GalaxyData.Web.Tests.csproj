@@ -14,6 +14,7 @@
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="Shouldly" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="DocumentFormat.OpenXml" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,6 +24,8 @@
   <ItemGroup>
     <Compile Include="..\Shared\Golden.cs" LinkBase="Shared" />
     <Compile Include="..\Shared\TestServers.cs" LinkBase="Shared" />
+    <Compile Include="..\Shared\Excel\XlsxBuilder.cs" LinkBase="Shared" />
+    <None Include="..\fixtures\**\*.sql" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

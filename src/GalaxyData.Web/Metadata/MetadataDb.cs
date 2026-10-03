@@ -27,6 +27,8 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
 
    public DbSet<SourceConnection> Connections => Set<SourceConnection>();
 
+   public DbSet<SchemaSnapshot> SchemaSnapshots => Set<SchemaSnapshot>();
+
    /// <summary>The database's path in a data directory.</summary>
    public static string PathIn(DataDirectory data)
    {
@@ -78,7 +80,15 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
          connection.HasIndex(c => c.Alias).IsUnique();
          connection.Property(c => c.Kind).HasMaxLength(20);
          connection.Property(c => c.DisplayName).HasMaxLength(200);
+         connection.Property(c => c.SchemaError).HasMaxLength(2000);
          connection.Property(c => c.Version).IsConcurrencyToken();
+      });
+      modelBuilder.Entity<SchemaSnapshot>(snapshot =>
+      {
+         snapshot.ToTable("SchemaSnapshots");
+         snapshot.Property(s => s.Hash).HasMaxLength(64);
+         snapshot.HasOne<SourceConnection>().WithMany().HasForeignKey(s => s.ConnectionId).OnDelete(DeleteBehavior.Cascade);
+         snapshot.HasIndex(s => new { s.ConnectionId, s.Id });
       });
       modelBuilder.Entity<MetadataSetting>(setting =>
       {

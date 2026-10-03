@@ -566,6 +566,73 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
 | identity, computed, rowversion | never |
 | binary, xml, unknown | read-only in v1 |
 
+**Built in B3**
+- **Model** (migration `Schemas`):
+  - `SchemaSnapshots`: `Hash` (SHA-256 of the schema without row counts), `Data` (gzip of `IntrospectionJson`), `TableCount`, `TakenAt`, `CheckedAt`, `Changes` (JSON, from the snapshot before), `ReadWith` (the settings and options it was read with). Cascade-deleted with the connection.
+  - `Connections` gains `SchemaError` and `SchemaRefreshedAt`.
+- **Snapshots** (`Schemas/SchemaSnapshots`): a read with the same structural hash rewrites the newest snapshot's data (its row counts) and `CheckedAt`; a different one adds a snapshot with its diff. The newest 5 are kept.
+- **Diff** (`SchemaDiff`): a flat list of `SchemaChange(change: added|removed|changed, object: source|table|column|primaryKey|uniqueKey|index|foreignKey, schema, table, name, properties[{property, from, to}])`.
+  - Names are compared exactly.
+  - Moved columns are those outside the longest common order of the columns both schemas have, so one column moved is one change.
+  - Unique keys are matched by their columns (a rename is a change), indexes by name, foreign keys by name (unnamed ones by what they link).
+- **Reading** (`SchemaReader`): connects as queries will. The connection's own read-only setting is used, because DuckDB opens a file one way at a time in a process.
+  - `ConnectionKind.Connector(connectionString)` gives a `SourceConnector`: PostgreSQL's data source, or the provider's pool, cleared when it is let go.
+  - Reads and tries use `OneOffConnector` (pooling off), so they leave the pools queries use alone, and nothing holds a SQLite file.
+  - Excel folders are read under a name of their own (`schema-n`, which no alias can be), so the sheets loaded for queries stay as they are.
+  - Failures are `SchemaReadException`s, their messages scrubbed of secrets.
+- **Refresh** (`SchemaRefreshQueue`, `SchemaRefresher`, `SchemaRefreshWorker`):
+  - The queue deduplicates waiting connections. One asked for while it is read is marked, and queued again once the read ends, so it never holds a second slot waiting.
+  - The worker reads `Connections:ParallelRefreshes` (2) at once, each connection one at a time, within `Connections:RefreshTimeout` (10 min, with `WaitAsync`).
+  - Statuses are written with `ExecuteUpdate`, so reads never bump a connection's version (no 409s for admins).
+  - At startup, `NotLoaded` and `Loading` connections are queued.
+  - Reads happen when a connection is made, when its settings, secrets or options change, and on `POST /api/connections/{id}/refresh` (202, `Loading` in the answer).
+  - A failed read keeps the last snapshot in the catalog.
+- **Catalog** (`CatalogService`, `CatalogState`):
+  - Built lazily under a semaphore. `Invalidate()` bumps a wanted generation, read before the build reads the database. A caller after a change waits; the build itself isn't cancelled by one caller.
+  - Snapshots are cached by (id, `CheckedAt`), damaged ones too (so they are logged once). The overlay is empty until B5, and re-validating it moves there.
+  - An Excel folder is registered with the options its snapshot was read with (`ReadWith`), so its sheets load as the catalog's columns say until it is read again.
+  - The version is the first 16 hex characters of a SHA-256 over the engine's version and each connection's id, alias, kind, version, status, refresh time and newest snapshot (id, `CheckedAt`). It is the same after a restart.
+  - `CatalogVersionFilter` puts `X-Catalog-Version` on `/api` answers that didn't read the catalog, while it is fresh.
+- **Queries' connections** (`SourceConnections : IConnectionFactory`): each build publishes the sources' runtimes, made from their connection strings with secrets.
+  - Connectors are shared by connection string, and let go (pools cleared, data sources disposed) when no source uses the string. A connector let go opens nothing (`ObjectDisposedException`, also when it was let go while opening), and the open retries once with the source as it is now.
+  - `SourceRuntime.ToString()` gives the alias and kind, never the connection string.
+  - A deleted alias is `SourceUnavailableException("There is no such connection any more")`.
+  - Excel folders are registered with the provider only when their options change, and removed when their connection is (aliases compared exactly, as the provider does).
+  - `SourceProviders` holds the five providers; the Excel one is on the app's merge engine.
+- **Tree** (`CatalogTree`): sources, then entity display paths. The default schema's entities sit under the source, other schemas and virtual namespaces are nodes, ids are `QueryText.FormatPath`, and namespaces sort before entities (`OrdinalIgnoreCase`).
+  - Search ranks names (equal, prefix, contains) and, for text with `.` or `[`, paths (equal, prefix, then contains), then columns, with ancestor ids.
+  - Children aren't paged.
+- **Capabilities** (`EntityCapabilities`) follow the engine's rules, now public as `Dml/DmlRules` (`WhyNoInserts`, `WhyNoChanges`, `WhyNotInserted`, `WhyNotUpdated`, `NeedsValue`), which `DmlPlanner` uses too.
+  - Changes need the table's own primary key, as the planner does, rather than "PK or non-null unique key".
+  - Binary columns are read-only in the app; a table that needs a binary value takes no inserts.
+  - The role check is `DataManager` or `Admin`.
+- **Endpoints:**
+  - `GET /api/catalog`, `GET /api/catalog/tree/children?parent=`, `GET /api/catalog/tree/search?text=&take=` and `GET /api/catalog/entity?name=` are `CanRead`. The entity is a query parameter because names have dots, quotes and brackets.
+  - `POST /api/connections/{id}/refresh`, `GET /api/connections/{id}/snapshots` and `GET .../snapshots/{snapshotId}` are `CanAdmin`.
+  - `ScalarType` is described in OpenAPI as a string.
+- **Engine:** the `DmlRules` above; the message for sources that take no changes reads "`xl (excel) takes no changes`".
+- **Found by the review**, fixed:
+  - a connection asked for again while read held a second refresh slot for the whole read;
+  - an exact path didn't rank first in search;
+  - SQLite, SQL Server and DuckDB connectors opened with a retired string after a settings change;
+  - an Excel folder registration leaked when its alias came back in another case;
+  - an Excel folder loaded with new options while the catalog had the old snapshot's columns;
+  - reads and tries cleared the pools queries used;
+  - moving one column moved them all in the diff;
+  - a damaged snapshot was logged at every build;
+  - a startup requeue failure stopped the host;
+  - the refresh endpoint failed (500) for a connection deleted as it answered.
+  - **Engine:** a table whose key has a column of unknown type (`hierarchyid`) was offered for updates and deletes that couldn't find the row; `DmlRules.WhyNoChanges` and the planner now refuse them.
+- **Tests:**
+  - the diff (moves, renames) and the structural hash;
+  - reads on creation and refresh, kept changes, retention, row counts in place (DuckDB), failures that keep the old schema, timeouts, unreadable secrets, requeueing at startup, reads after edits, deletes;
+  - the tree over SQLite, DuckDB (a second schema, a hidden shortcut), Excel and a failed server;
+  - search; entities with capabilities by role, read-only connections, views, keyless tables and binary columns;
+  - the version across changes and a restart; a damaged snapshot; a folder loaded as its snapshot was read; a connector let go;
+  - queries through the catalog and `SourceConnections` (one source, across sources, Excel, a deleted source);
+  - PostgreSQL and SQL Server read from databases of their own on the container servers.
+  - `XlsxBuilder` moved to `tests/Shared/Excel`, and the fixtures are linked into the web tests.
+
 **API surface** (all under `/api`)
 
 | Area | Endpoints |
@@ -695,7 +762,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | B0 | Host, ProblemDetails, OpenAPI, health; single instance per data directory; `SourceUnavailableException` in the engine (see "Built in B0" in §5) |
 | B1 | EF metadata, migrations and backup, seeding, cookie auth, antiforgery, policies, users; the admin audit (see "Built in B1" in §5) |
 | B2 | Connections, kinds and descriptors, secrets and masking, test-connection; allowed file roots (see "Built in B2" in §5) |
-| B3 | Snapshots, refresh worker, diff, CatalogService, tree, search, entity descriptors and capabilities |
+| B3 | Snapshots, refresh worker, diff, CatalogService, tree, search, entity descriptors and capabilities; queries' connections (see "Built in B3" in §5) |
 | B4 | GridQueryComposer, codecs, NavigationResolver, CountStrategy, browse endpoints |
 | B5 | Overlay CRUD and validation |
 | B6 | Query validate, explain and execute; saved queries |

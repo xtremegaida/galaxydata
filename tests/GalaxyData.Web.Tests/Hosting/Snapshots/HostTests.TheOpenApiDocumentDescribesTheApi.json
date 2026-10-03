@@ -1539,6 +1539,513 @@
           }
         }
       }
+    },
+    "/api/connections/{id}/refresh": {
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Reads the connection's schema again, in the background; its schemaStatus says how it goes",
+        "operationId": "RefreshConnectionSchema",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connections/{id}/snapshots": {
+      "get": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "The schemas kept of the connection, newest first, and how much changed in each",
+        "operationId": "ListSchemaSnapshots",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SchemaSnapshotDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connections/{id}/snapshots/{snapshotId}": {
+      "get": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "A schema kept of the connection, and what changed since the one before it",
+        "operationId": "GetSchemaSnapshot",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "snapshotId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaSnapshotDetailDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/catalog": {
+      "get": {
+        "tags": [
+          "Catalog"
+        ],
+        "summary": "The catalog's version and sources",
+        "operationId": "GetCatalog",
+        "responses": {
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/catalog/tree/children": {
+      "get": {
+        "tags": [
+          "Catalog"
+        ],
+        "summary": "The children of a node of the tree, or its top nodes (the sources)",
+        "operationId": "GetTreeChildren",
+        "parameters": [
+          {
+            "name": "parent",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreeChildrenDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/catalog/tree/search": {
+      "get": {
+        "tags": [
+          "Catalog"
+        ],
+        "summary": "Nodes whose names (or paths, or columns) have the text in them",
+        "operationId": "SearchTree",
+        "parameters": [
+          {
+            "name": "text",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreeSearchDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/catalog/entity": {
+      "get": {
+        "tags": [
+          "Catalog"
+        ],
+        "summary": "An entity, by its name as queries write it",
+        "operationId": "GetEntity",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1579,6 +2086,164 @@
           }
         }
       },
+      "CapabilitiesDto": {
+        "required": [
+          "canInsert",
+          "canUpdate",
+          "canDelete"
+        ],
+        "type": "object",
+        "properties": {
+          "canInsert": {
+            "type": "boolean"
+          },
+          "canUpdate": {
+            "type": "boolean"
+          },
+          "canDelete": {
+            "type": "boolean"
+          },
+          "insertReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "changeReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "CatalogDiagnosticDto": {
+        "required": [
+          "code",
+          "severity",
+          "message",
+          "subject"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/DiagnosticSeverity"
+          },
+          "message": {
+            "type": "string"
+          },
+          "subject": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "CatalogDto": {
+        "required": [
+          "version",
+          "sources",
+          "diagnostics"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogSourceDto"
+            }
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogDiagnosticDto"
+            }
+          }
+        }
+      },
+      "CatalogSourceDto": {
+        "required": [
+          "alias",
+          "kind",
+          "displayName",
+          "status",
+          "refreshedAt",
+          "isReadOnly",
+          "hasSchema",
+          "entities",
+          "problem"
+        ],
+        "type": "object",
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/SchemaStatus"
+          },
+          "refreshedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "isReadOnly": {
+            "type": "boolean"
+          },
+          "hasSchema": {
+            "type": "boolean"
+          },
+          "entities": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "problem": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ChangeCountsDto": {
+        "required": [
+          "added",
+          "removed",
+          "changed"
+        ],
+        "type": "object",
+        "properties": {
+          "added": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "removed": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "changed": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "ChangePasswordRequest": {
         "required": [
           "currentPassword",
@@ -1609,6 +2274,63 @@
           }
         }
       },
+      "ColumnSchema": {
+        "required": [
+          "name",
+          "ordinal",
+          "nativeType",
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "ordinal": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nativeType": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ScalarType"
+          },
+          "isIdentity": {
+            "type": "boolean"
+          },
+          "isComputed": {
+            "type": "boolean"
+          },
+          "defaultSql": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isRowVersion": {
+            "type": "boolean"
+          },
+          "collation": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "readAs": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "comment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "ConnectionDto": {
         "required": [
           "id",
@@ -1623,6 +2345,8 @@
           "isReadOnly",
           "secretsUnreadable",
           "schemaStatus",
+          "schemaError",
+          "schemaRefreshedAt",
           "createdAt",
           "updatedAt",
           "version"
@@ -1680,6 +2404,19 @@
           },
           "schemaStatus": {
             "$ref": "#/components/schemas/SchemaStatus"
+          },
+          "schemaError": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "schemaRefreshedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           },
           "createdAt": {
             "type": "string",
@@ -1883,6 +2620,216 @@
           }
         }
       },
+      "DiagnosticSeverity": {
+        "enum": [
+          "info",
+          "warning",
+          "error"
+        ]
+      },
+      "EntityColumnDto": {
+        "required": [
+          "name",
+          "ordinal",
+          "type",
+          "nativeType",
+          "isKey",
+          "isIdentity",
+          "isComputed",
+          "hasDefault",
+          "isRowVersion",
+          "hidden",
+          "label",
+          "comment",
+          "canUpdate",
+          "insert",
+          "readOnlyReason"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "ordinal": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "type": {
+            "$ref": "#/components/schemas/TypeDto"
+          },
+          "nativeType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isKey": {
+            "type": "boolean"
+          },
+          "isIdentity": {
+            "type": "boolean"
+          },
+          "isComputed": {
+            "type": "boolean"
+          },
+          "hasDefault": {
+            "type": "boolean"
+          },
+          "isRowVersion": {
+            "type": "boolean"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "comment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "canUpdate": {
+            "type": "boolean"
+          },
+          "insert": {
+            "$ref": "#/components/schemas/InsertMode"
+          },
+          "readOnlyReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "EntityDto": {
+        "required": [
+          "name",
+          "qualifiedName",
+          "kind",
+          "source",
+          "schema",
+          "table",
+          "comment",
+          "rowCountEstimate",
+          "hasTriggers",
+          "key",
+          "uniqueKeys",
+          "displayColumn",
+          "columns",
+          "navigations",
+          "capabilities",
+          "query",
+          "problem"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "qualifiedName": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EntityKind"
+          },
+          "source": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "schema": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "table": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "comment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rowCountEstimate": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "hasTriggers": {
+            "type": "boolean"
+          },
+          "key": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/KeyDto"
+              }
+            ]
+          },
+          "uniqueKeys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeyDto"
+            }
+          },
+          "displayColumn": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntityColumnDto"
+            }
+          },
+          "navigations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NavigationDto"
+            }
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CapabilitiesDto"
+          },
+          "query": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "problem": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "EntityKind": {
+        "enum": [
+          "table",
+          "view",
+          "virtual"
+        ]
+      },
       "FieldDto": {
         "required": [
           "key",
@@ -1973,6 +2920,57 @@
           "folderPath",
           "keyValues"
         ]
+      },
+      "ForeignKeySchema": {
+        "required": [
+          "name",
+          "columns",
+          "refSchema",
+          "refTable",
+          "refColumns"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "refSchema": {
+            "type": "string"
+          },
+          "refTable": {
+            "type": "string"
+          },
+          "refColumns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isEnforced": {
+            "type": "boolean"
+          },
+          "onDelete": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "onUpdate": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
       },
       "GroupDto": {
         "required": [
@@ -2078,6 +3076,154 @@
           }
         }
       },
+      "IndexSchema": {
+        "required": [
+          "name",
+          "columns",
+          "isUnique"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isUnique": {
+            "type": "boolean"
+          },
+          "isPrimaryKey": {
+            "type": "boolean"
+          },
+          "filter": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "InsertMode": {
+        "enum": [
+          "required",
+          "optional",
+          "never"
+        ]
+      },
+      "KeyDto": {
+        "required": [
+          "name",
+          "columns",
+          "isDeclared"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isDeclared": {
+            "type": "boolean"
+          }
+        }
+      },
+      "KeySchema": {
+        "required": [
+          "name",
+          "columns"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Multiplicity": {
+        "enum": [
+          "one",
+          "zeroOrOne",
+          "many"
+        ]
+      },
+      "NavigationDto": {
+        "required": [
+          "name",
+          "target",
+          "multiplicity",
+          "columns",
+          "targetColumns",
+          "isInverse",
+          "origin",
+          "isEnforced",
+          "isCrossSource",
+          "hidden",
+          "inherited"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "multiplicity": {
+            "$ref": "#/components/schemas/Multiplicity"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "targetColumns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isInverse": {
+            "type": "boolean"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/RelationOrigin"
+          },
+          "isEnforced": {
+            "type": "boolean"
+          },
+          "isCrossSource": {
+            "type": "boolean"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "inherited": {
+            "type": "boolean"
+          }
+        }
+      },
       "PermissionsDto": {
         "required": [
           "canRead",
@@ -2144,6 +3290,37 @@
           }
         }
       },
+      "PropertyChange": {
+        "required": [
+          "property",
+          "from",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "property": {
+            "type": "string"
+          },
+          "from": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "to": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "RelationOrigin": {
+        "enum": [
+          "foreignKey",
+          "overlay"
+        ]
+      },
       "ResetPasswordRequest": {
         "required": [
           "password"
@@ -2152,6 +3329,158 @@
         "properties": {
           "password": {
             "type": "string"
+          }
+        }
+      },
+      "ScalarKind": {
+        "enum": [
+          "unknown",
+          "boolean",
+          "int16",
+          "int32",
+          "int64",
+          "decimal",
+          "single",
+          "double",
+          "string",
+          "binary",
+          "guid",
+          "date",
+          "time",
+          "dateTime",
+          "dateTimeOffset",
+          "interval",
+          "json"
+        ]
+      },
+      "ScalarType": {
+        "type": "string",
+        "description": "A logical type as the query language writes it: int64, decimal(10,2)?, string(50,ansi); ? when it may be null"
+      },
+      "SchemaChange": {
+        "required": [
+          "change",
+          "object"
+        ],
+        "type": "object",
+        "properties": {
+          "change": {
+            "$ref": "#/components/schemas/SchemaChangeKind"
+          },
+          "object": {
+            "$ref": "#/components/schemas/SchemaObject"
+          },
+          "schema": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "table": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "properties": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PropertyChange"
+            }
+          }
+        }
+      },
+      "SchemaChangeKind": {
+        "enum": [
+          "added",
+          "removed",
+          "changed"
+        ]
+      },
+      "SchemaObject": {
+        "enum": [
+          "source",
+          "table",
+          "column",
+          "primaryKey",
+          "uniqueKey",
+          "index",
+          "foreignKey"
+        ]
+      },
+      "SchemaSnapshotDetailDto": {
+        "required": [
+          "snapshot",
+          "schema",
+          "changes"
+        ],
+        "type": "object",
+        "properties": {
+          "snapshot": {
+            "$ref": "#/components/schemas/SchemaSnapshotDto"
+          },
+          "schema": {
+            "$ref": "#/components/schemas/SourceSchema"
+          },
+          "changes": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SchemaChange"
+            }
+          }
+        }
+      },
+      "SchemaSnapshotDto": {
+        "required": [
+          "id",
+          "hash",
+          "tableCount",
+          "takenAt",
+          "checkedAt",
+          "changes"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "tableCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "takenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "changes": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ChangeCountsDto"
+              }
+            ]
           }
         }
       },
@@ -2270,6 +3599,121 @@
           }
         }
       },
+      "SourceSchema": {
+        "required": [
+          "providerKind",
+          "serverVersion",
+          "defaultSchema",
+          "tables"
+        ],
+        "type": "object",
+        "properties": {
+          "providerKind": {
+            "type": "string"
+          },
+          "serverVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "defaultSchema": {
+            "type": "string"
+          },
+          "tables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TableSchema"
+            }
+          },
+          "warnings": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TableKind": {
+        "enum": [
+          "table",
+          "view",
+          "materializedView"
+        ]
+      },
+      "TableSchema": {
+        "required": [
+          "schema",
+          "name",
+          "kind",
+          "columns"
+        ],
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TableKind"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ColumnSchema"
+            }
+          },
+          "primaryKey": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/KeySchema"
+              }
+            ]
+          },
+          "uniqueKeys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeySchema"
+            }
+          },
+          "indexes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexSchema"
+            }
+          },
+          "foreignKeys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ForeignKeySchema"
+            }
+          },
+          "rowCountEstimate": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "hasTriggers": {
+            "type": "boolean"
+          },
+          "comment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "TestConnectionRequest": {
         "required": [
           "kind",
@@ -2289,6 +3733,203 @@
               "integer"
             ],
             "format": "int32"
+          }
+        }
+      },
+      "TreeChildrenDto": {
+        "required": [
+          "parent",
+          "nodes"
+        ],
+        "type": "object",
+        "properties": {
+          "parent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TreeNodeDto"
+            }
+          }
+        }
+      },
+      "TreeHitDto": {
+        "required": [
+          "node",
+          "path",
+          "columns"
+        ],
+        "type": "object",
+        "properties": {
+          "node": {
+            "$ref": "#/components/schemas/TreeNodeDto"
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "columns": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TreeNodeDto": {
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "hasChildren"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TreeNodeKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "hasChildren": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "sourceKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SchemaStatus"
+              }
+            ]
+          },
+          "isReadOnly": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "rows": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "editable": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "comment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "TreeNodeKind": {
+        "enum": [
+          "source",
+          "schema",
+          "folder",
+          "table",
+          "view",
+          "virtual"
+        ]
+      },
+      "TreeSearchDto": {
+        "required": [
+          "text",
+          "hits",
+          "more"
+        ],
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "hits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TreeHitDto"
+            }
+          },
+          "more": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TypeDto": {
+        "required": [
+          "kind",
+          "nullable",
+          "text"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ScalarKind"
+          },
+          "nullable": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          },
+          "precision": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "scale": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "length": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "isAnsi": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },
@@ -2448,6 +4089,9 @@
     },
     {
       "name": "Connections"
+    },
+    {
+      "name": "Catalog"
     }
   ]
 }

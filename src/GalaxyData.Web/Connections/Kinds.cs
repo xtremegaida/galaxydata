@@ -64,13 +64,16 @@ public sealed class PostgreSqlKind : ConnectionKind
       npgsql.Options = string.IsNullOrWhiteSpace(npgsql.Options) ? ReadOnlyOption : npgsql.Options + " " + ReadOnlyOption;
    }
 
-   public override async Task<string> ProbeAsync(string connectionString, CancellationToken cancellationToken)
+   /// <summary>From a data source of the provider's making, which reads enums and other types queries read.</summary>
+   public override SourceConnector Connector(string connectionString) => new DataSourceConnector(PostgreSqlSourceProvider.CreateDataSource(connectionString));
+
+   protected override string Unpooled(string connectionString) => new NpgsqlConnectionStringBuilder(connectionString) { Pooling = false }.ToString();
+
+   protected override async Task<string> FoundAsync(DbConnection connection, CancellationToken cancellationToken)
    {
-      await using NpgsqlDataSource source = PostgreSqlSourceProvider.CreateDataSource(connectionString);
-      await using NpgsqlConnection connection = await source.OpenConnectionAsync(cancellationToken);
+      ArgumentNullException.ThrowIfNull(connection);
       await PostgreSqlSourceProvider.Instance.PrepareConnectionAsync(connection, cancellationToken);
-      await using NpgsqlCommand command = new("SELECT current_database()", connection);
-      object? database = await command.ExecuteScalarAsync(cancellationToken);
+      object? database = await ScalarAsync(connection, "SELECT current_database()", cancellationToken);
       return $"Connected to PostgreSQL {connection.ServerVersion}, database {database}";
    }
 }
@@ -120,12 +123,18 @@ public sealed class SqlServerKind : ConnectionKind
 
    protected override DbConnectionStringBuilder NewBuilder() => new SqlConnectionStringBuilder();
 
-   public override async Task<string> ProbeAsync(string connectionString, CancellationToken cancellationToken)
+   public override SourceConnector Connector(string connectionString) => new ProviderConnector(() => new SqlConnection(connectionString), () =>
    {
-      await using SqlConnection connection = new(connectionString);
-      await connection.OpenAsync(cancellationToken);
-      await using SqlCommand command = new("SELECT DB_NAME()", connection);
-      object? database = await command.ExecuteScalarAsync(cancellationToken);
+      using SqlConnection pooled = new(connectionString);
+      SqlConnection.ClearPool(pooled);
+   });
+
+   protected override string Unpooled(string connectionString) => new SqlConnectionStringBuilder(connectionString) { Pooling = false }.ToString();
+
+   protected override async Task<string> FoundAsync(DbConnection connection, CancellationToken cancellationToken)
+   {
+      ArgumentNullException.ThrowIfNull(connection);
+      object? database = await ScalarAsync(connection, "SELECT DB_NAME()", cancellationToken);
       return $"Connected to SQL Server {connection.ServerVersion}, database {database}";
    }
 }
@@ -172,21 +181,21 @@ public sealed class SqliteKind : ConnectionKind
    protected override void Restrict(DbConnectionStringBuilder builder, bool readOnly) =>
       ((SqliteConnectionStringBuilder)builder).Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWrite;
 
-   public override async Task<string> ProbeAsync(string connectionString, CancellationToken cancellationToken)
+   /// <summary>Pooled; letting the pool go closes the file.</summary>
+   public override SourceConnector Connector(string connectionString) => new ProviderConnector(() => new SqliteConnection(connectionString), () =>
    {
-      await using SqliteConnection connection = new(connectionString);
-      try
-      {
-         await connection.OpenAsync(cancellationToken);
-         await using SqliteCommand command = new("SELECT count(*) FROM sqlite_schema WHERE type IN ('table', 'view')", connection);
-         long count = (long)(await command.ExecuteScalarAsync(cancellationToken))!;
-         return $"Opened the SQLite {connection.ServerVersion} database: {Things(count, "table or view", "tables and views")}";
-      }
-      finally
-      {
-         // A try leaves no pooled connection holding the file.
-         SqliteConnection.ClearPool(connection);
-      }
+      using SqliteConnection pooled = new(connectionString);
+      SqliteConnection.ClearPool(pooled);
+   });
+
+   /// <summary>Unpooled, so a try leaves nothing holding the file.</summary>
+   protected override string Unpooled(string connectionString) => new SqliteConnectionStringBuilder(connectionString) { Pooling = false }.ToString();
+
+   protected override async Task<string> FoundAsync(DbConnection connection, CancellationToken cancellationToken)
+   {
+      ArgumentNullException.ThrowIfNull(connection);
+      long count = (long)(await ScalarAsync(connection, "SELECT count(*) FROM sqlite_schema WHERE type IN ('table', 'view')", cancellationToken))!;
+      return $"Opened the SQLite {connection.ServerVersion} database: {Things(count, "table or view", "tables and views")}";
    }
 
    internal static string Things(long count, string one, string many) =>
@@ -229,13 +238,15 @@ public sealed class DuckDbKind : ConnectionKind
       if (readOnly) { builder[AccessMode] = "READ_ONLY"; }
    }
 
-   public override async Task<string> ProbeAsync(string connectionString, CancellationToken cancellationToken)
+   /// <summary>DuckDB keeps one database for each file in the process, closed with its last connection.</summary>
+   public override SourceConnector Connector(string connectionString) => new ProviderConnector(() => new DuckDBConnection(connectionString));
+
+   protected override async Task<string> FoundAsync(DbConnection connection, CancellationToken cancellationToken)
    {
-      await using DuckDBConnection connection = new(connectionString);
-      await connection.OpenAsync(cancellationToken);
-      await using DbCommand command = connection.CreateCommand();
-      command.CommandText = "SELECT (SELECT count(*) FROM duckdb_tables() WHERE NOT internal) + (SELECT count(*) FROM duckdb_views() WHERE NOT internal)";
-      long count = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+      ArgumentNullException.ThrowIfNull(connection);
+      long count = Convert.ToInt64(await ScalarAsync(connection,
+         "SELECT (SELECT count(*) FROM duckdb_tables() WHERE NOT internal) + (SELECT count(*) FROM duckdb_views() WHERE NOT internal)", cancellationToken),
+         CultureInfo.InvariantCulture);
       return $"Opened the DuckDB {connection.ServerVersion} database: {SqliteKind.Things(count, "table or view", "tables and views")}";
    }
 }

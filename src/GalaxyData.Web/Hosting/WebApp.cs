@@ -4,16 +4,21 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using GalaxyData.Query.DuckDb;
+using GalaxyData.Query.Excel;
 using GalaxyData.Query.Execution;
+using GalaxyData.Query.Types;
 using GalaxyData.Web.Auth;
+using GalaxyData.Web.Catalog;
 using GalaxyData.Web.Connections;
 using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Features.Audit;
 using GalaxyData.Web.Features.Auth;
+using GalaxyData.Web.Features.Catalog;
 using GalaxyData.Web.Features.Connections;
 using GalaxyData.Web.Features.Health;
 using GalaxyData.Web.Features.Users;
 using GalaxyData.Web.Problems;
+using GalaxyData.Web.Schemas;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -66,6 +71,15 @@ public static class WebApp
       services.AddSingleton<FileRoots>();
       services.AddSingleton<ConnectionSecrets>();
       services.AddSingleton<ConnectionTester>();
+      services.AddSingleton(sp => new ExcelSourceProvider(sp.GetRequiredService<DuckDbMergeEngine>()));
+      services.AddSingleton<SourceProviders>();
+      services.AddSingleton<SourceConnections>();
+      services.AddSingleton<CatalogService>();
+      services.AddSingleton<SchemaReader>();
+      services.AddSingleton<SchemaRefreshQueue>();
+      services.AddSingleton<SchemaRefresher>();
+      // After the metadata database is migrated (hosted services start in turn).
+      services.AddHostedService<SchemaRefreshWorker>();
       services.AddValidation();
 
       services.ConfigureHttpJsonOptions(o =>
@@ -100,6 +114,12 @@ public static class WebApp
          o.AddSchemaTransformer((schema, context, _) =>
          {
             if (context.JsonTypeInfo.Type == typeof(ProblemDetails)) { DescribeProblem(schema); }
+            if (context.JsonTypeInfo.Type == typeof(ScalarType))
+            {
+               // Written as the language writes types, by its own converter.
+               schema.Type = JsonSchemaType.String;
+               schema.Description = "A logical type as the query language writes it: int64, decimal(10,2)?, string(50,ansi); ? when it may be null";
+            }
             return Task.CompletedTask;
          });
       });
@@ -136,12 +156,14 @@ public static class WebApp
       ArgumentNullException.ThrowIfNull(app);
       RouteGroupBuilder api = app.MapGroup("/api")
          .ProducesProblem(StatusCodes.Status500InternalServerError)
-         .AddEndpointFilter<AntiforgeryFilter>();
+         .AddEndpointFilter<AntiforgeryFilter>()
+         .AddEndpointFilter<CatalogVersionFilter>();
       api.MapHealth();
       api.MapAuth();
       api.MapUsers();
       api.MapAudit();
       api.MapConnections();
+      api.MapCatalog();
 
       app.MapOpenApi(OpenApiPattern).RequireAuthorization(Policies.CanRead);
 

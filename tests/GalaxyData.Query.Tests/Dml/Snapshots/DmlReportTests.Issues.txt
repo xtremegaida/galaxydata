@@ -3,7 +3,7 @@ planned: 5
 0: shop.open_orders is a view: only tables can be changed
 1: reports.big_orders is defined by a query: only tables can be changed
 2: ro.things can't be changed: ro is read-only
-3: xl.sheet can't be changed: xl is a test source, which takes no changes
+3: xl.sheet can't be changed: xl (test) takes no changes
 4: other is a mysql source, and no provider for those is registered
 6: shop.customers has no column 'nmae'
 6 [city]: 'city' takes text of at most 40 characters; 'A city whose name is longer than forty c…' has 49
@@ -33,7 +33,7 @@ planned:
 0: shop.open_orders is a view: only tables can be changed
 1: reports.big_orders is defined by a query: only tables can be changed
 2: ro.things can't be changed: ro is read-only
-3: xl.sheet can't be changed: xl is a test source, which takes no changes
+3: xl.sheet can't be changed: xl (test) takes no changes
 4: other is a mysql source, and no provider for those is registered
 5 [id]: 'id' is an identity column: the database gives its value
 6: shop.customers has no column 'nmae'

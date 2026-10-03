@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <Compile Include="..\Shared\*.cs" LinkBase="Shared" />
+    <Compile Include="..\Shared\Excel\XlsxBuilder.cs" LinkBase="Shared" />
     <None Include="..\fixtures\**\*.sql" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

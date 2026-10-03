@@ -86,12 +86,19 @@ public enum ConnectionMode
    Raw,
 }
 
-/// <summary>Whether a connection's schema has been read (B3).</summary>
+/// <summary>Where reading a connection's schema stands.</summary>
 public enum SchemaStatus
 {
+   /// <summary>Never read.</summary>
    NotLoaded,
+
+   /// <summary>Being read, or waiting to be.</summary>
    Loading,
+
+   /// <summary>Read, the last time it was tried.</summary>
    Ready,
+
+   /// <summary>The last try failed (<see cref="SourceConnection.SchemaError"/>); a schema read before is still used.</summary>
    Failed,
 }
 
@@ -125,13 +132,55 @@ public sealed class SourceConnection : IVersioned
 
    public bool IsReadOnly { get; set; }
 
+   /// <summary>Changed with <c>ExecuteUpdate</c>, as the schema is read, so an administrator's edit isn't a conflict with it.</summary>
    public SchemaStatus SchemaStatus { get; set; }
+
+   /// <summary>Why the last try to read the schema failed; null when it didn't.</summary>
+   public string? SchemaError { get; set; }
+
+   /// <summary>When the schema was last read.</summary>
+   public DateTime? SchemaRefreshedAt { get; set; }
 
    public DateTime CreatedAt { get; set; }
 
    public DateTime UpdatedAt { get; set; }
 
    public int Version { get; set; }
+}
+
+/// <summary>
+/// A connection's schema as it was read: the engine's <c>SourceSchema</c> as gzipped JSON. A refresh that finds the
+/// structure changed (row counts aside) adds a snapshot, with what changed since the one before; one that finds it
+/// as it was brings the snapshot's row counts up to date. The newest five are kept.
+/// </summary>
+public sealed class SchemaSnapshot
+{
+   public long Id { get; set; }
+
+   public int ConnectionId { get; set; }
+
+   /// <summary>SHA-256 of the schema without its row counts, as lower-case hex: the same structure hashes the same.</summary>
+   public string Hash { get; set; } = string.Empty;
+
+   /// <summary>The schema's JSON, gzipped, with the row counts of the last refresh that found it.</summary>
+   public byte[] Data { get; set; } = [];
+
+   public int TableCount { get; set; }
+
+   /// <summary>When a refresh first found the structure.</summary>
+   public DateTime TakenAt { get; set; }
+
+   /// <summary>When a refresh last found it.</summary>
+   public DateTime CheckedAt { get; set; }
+
+   /// <summary>What changed since the snapshot before, as a JSON list; null for a connection's first.</summary>
+   public string? Changes { get; set; }
+
+   /// <summary>
+   /// The connection's settings and options (never its secrets) the schema was read with, as JSON: a folder of
+   /// workbooks is loaded as its schema was read, until it is read again.
+   /// </summary>
+   public string? ReadWith { get; set; }
 }
 
 /// <summary>A value the application keeps for itself.</summary>

@@ -66,7 +66,8 @@ public sealed class ConnectionApiTests
       created.GetProperty("connectionString").GetString().ShouldBe($"Data Source={path}");
       created.GetProperty("isReadOnly").GetBoolean().ShouldBeTrue("connections are read-only unless said otherwise");
       created.GetProperty("options").GetRawText().ShouldBe("""{"trustForeignKeys":"true"}""");
-      created.GetProperty("schemaStatus").GetString().ShouldBe("notLoaded");
+      created.GetProperty("schemaStatus").GetString().ShouldBe("loading", "its schema is read once it is made");
+      await Catalog.TestSources.SettledAsync(admin, id, "ready");
 
       JsonElement tried = await (await admin.PostAsync($"/api/connections/{id}/test")).JsonAsync(HttpStatusCode.OK);
       tried.GetProperty("ok").GetBoolean().ShouldBeTrue(tried.GetRawText());

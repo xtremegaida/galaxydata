@@ -37,6 +37,8 @@ parts (`GalaxyData__DataDirectory`).
 | `Auth:SignInsPerMinute` | `10` | Sign-in attempts (and password changes) a client address may make a minute. |
 | `Connections:AllowedFileRoots` | `files` in the data directory | The folders connections' files and folders must be in. Relative to the data directory unless absolute. A list given replaces the default. |
 | `Connections:TestTimeout` | `00:00:10` | How long trying a connection may take. |
+| `Connections:RefreshTimeout` | `00:10:00` | How long reading a connection's schema may take. |
+| `Connections:ParallelRefreshes` | `2` | How many connections' schemas are read at once (1 to 16). |
 
 Settings that don't make sense (a minimum password length of 3, a user name with spaces) stop the application at
 startup, naming the setting.
@@ -132,6 +134,28 @@ password `Bootstrap:AdminPassword`.
 A reset is done once for each password given, so a restart with the settings still there doesn't undo the change
 the administrator made. To reset again, give another password.
 
+### Anti-forgery
+
+Every request that changes anything (POST, PUT, PATCH, DELETE) needs an anti-forgery token, signing in included;
+one without it is answered 400 `xsrf-token-invalid`.
+
+1. `GET /api/auth/session` puts the token in the `XSRF-TOKEN` cookie.
+2. The client sends it back in the `X-XSRF-TOKEN` header, as Angular's HttpClient does by itself.
+
+A token belongs to the user it was made for. Signing in, signing out and changing one's password give a new one;
+after another change of user (a session that ended), ask for the session again.
+
+### Who may call what
+
+Every endpoint says which policy it needs:
+
+- **Anyone:** health, the session, signing in and signing out.
+- **Signed in:** changing one's own password, even while it must be changed.
+- **Signed in with no password to change:** everything else, by role. The OpenAPI document needs any role.
+
+A test (`PolicyTests`) fails when an endpoint under `/api` doesn't say. Anything that doesn't say needs a signed-in
+user with no password to change.
+
 ## Connections
 
 A connection is a source the application queries. Administrators manage connections under `/api/connections`.
@@ -189,6 +213,9 @@ settings, protected with the application's data protection keys, for that connec
 - **Lost keys.** If the data protection keys are lost, connections say `secretsUnreadable` and their secrets must
   be entered again.
 
+**Its schema** is read when it is made, when its settings, secrets or options change, and when an administrator
+asks: see [Schemas and the catalog](#schemas-and-the-catalog).
+
 **Trying a connection.** `POST /api/connections/{id}/test` tries a saved connection, and `POST /api/connections/test`
 tries settings before they are saved (with `connectionId`, keeping that connection's secrets).
 
@@ -199,27 +226,79 @@ tries settings before they are saved (with `connectionId`, keeping that connecti
 - **Any address.** It connects to whatever host an administrator gives; restrict the machine's outbound network
   where that matters.
 
-### Anti-forgery
+## Schemas and the catalog
 
-Every request that changes anything (POST, PUT, PATCH, DELETE) needs an anti-forgery token, signing in included;
-one without it is answered 400 `xsrf-token-invalid`.
+The catalog is what queries can name: each connection's tables and views, as its schema was last read.
 
-1. `GET /api/auth/session` puts the token in the `XSRF-TOKEN` cookie.
-2. The client sends it back in the `X-XSRF-TOKEN` header, as Angular's HttpClient does by itself.
+**Reading schemas.** A connection's schema is read in the background.
 
-A token belongs to the user it was made for. Signing in, signing out and changing one's password give a new one;
-after another change of user (a session that ended), ask for the session again.
+- **When.** When the connection is made; when its settings, secrets or options change; when an administrator asks
+  (`POST /api/connections/{id}/refresh`, answered 202); and at startup, for connections never read, or being read
+  when the application stopped.
+- **How it stands.** A connection's `schemaStatus` is `loading` (being read, or waiting to be), `ready`, or `failed`,
+  with `schemaError` saying why (the database's words, its secrets masked). When a read fails, the schema read
+  before is still used. `schemaRefreshedAt` is when it was last read.
+- **Limits.** A read may take `Connections:RefreshTimeout`. `Connections:ParallelRefreshes` connections are read at
+  once, and each connection one read at a time: one asked for while it is read is read again after.
+- **No conflicts.** Reading a schema leaves the connection's version as it was, so an administrator editing it
+  isn't in conflict with the read.
+- **As queries connect.** A schema is read the way queries connect: read-only or not, as the connection is set. A
+  read uses connections of its own, outside the pool queries use.
 
-### Who may call what
+**Snapshots.** The schemas read are kept in the metadata database.
 
-Every endpoint says which policy it needs:
+- **Structure only.** A read that finds the structure as it was (row counts aside, as they change all the time)
+  brings the newest snapshot's row counts up to date.
+- **What changed.** A read that finds the structure changed adds a snapshot, with what changed: tables and views
+  added and removed, and their columns, keys, indexes and foreign keys.
+- **The newest five** of each connection are kept, and deleted with it.
+- **What it was read with.** A snapshot keeps the settings and options it was read with (never secrets). A folder of
+  workbooks loads its sheets the way its snapshot was read until it is read again, so changing its options doesn't
+  change what queries find before then.
+- **Endpoints**, for administrators:
+  - `GET /api/connections/{id}/snapshots` lists them, newest first, with how many things each added, removed and
+    changed.
+  - `GET /api/connections/{id}/snapshots/{snapshotId}` gives one's schema and what changed.
 
-- **Anyone:** health, the session, signing in and signing out.
-- **Signed in:** changing one's own password, even while it must be changed.
-- **Signed in with no password to change:** everything else, by role. The OpenAPI document needs any role.
+**The catalog.** It is built from each connection's newest snapshot when first needed, and again after anything it
+is built from changes. A request after a change waits for it, so none reads the old one.
 
-A test (`PolicyTests`) fails when an endpoint under `/api` doesn't say. Anything that doesn't say needs a signed-in
-user with no password to change.
+- **Its version** is a hash of what it was built from: the same after a restart, different after any change.
+- **The header.** API answers carry the version in the `X-Catalog-Version` header, so clients know when to read the
+  catalog again. Answers that don't read the catalog carry it too, while it is up to date.
+- `GET /api/catalog` gives the version, the sources (how their schemas stand, how many entities each has), and
+  what building it found (a table whose shortcut a schema's name hides).
+
+**The tree.** `GET /api/catalog/tree/children?parent={id}` gives a node's children; without `parent`, the sources.
+
+- **As queries name things.** A source's own nodes are the tables and views of its default schema (`shop.orders`),
+  and its other schemas (`shop.sales`), with their tables and views under them. A folder of workbooks has a schema
+  for each workbook. A table whose name is also a schema's is under its own schema.
+- **Ids are paths**, as queries write them: `shop`, `shop.sales`, `shop.orders`, `xl['Budget 2024']['Sheet 1']`.
+- **What nodes say.** A source tells its kind, its status and whether it is read-only. An entity tells its row
+  count (the database's estimate) and whether the user may change its rows.
+- **Search.** `GET /api/catalog/tree/search?text=...&take=50` finds nodes by name: named so first, then starting so,
+  then containing it.
+  - Text with a `.` or `[` is looked for in paths too: the node at that path first, then those under it or starting
+    so (`shop.ord`), then those whose paths have it.
+  - Entities are also found by their columns (`credit` finds `customers` by `credit_limit`).
+  - Each hit has the ids of its ancestors, to open them. At most 200 are given; `more` says there were more.
+
+**Entities.** `GET /api/catalog/entity?name=shop.orders` describes one: its kind (table, view, virtual), its columns
+with their logical types, its keys and navigations, and what the user may do with its rows.
+
+- **Changing rows** takes three things: a table with a primary key of its own, a connection that isn't read-only,
+  and a role that edits data (data managers and administrators). A key with a column of a type the language has no
+  values for can't find rows, so such a table only takes new ones.
+  - Views, virtual entities and folders of workbooks are read-only.
+  - A table without a primary key takes new rows, but its rows can't be changed or deleted.
+  - Whatever can't be done says why.
+- **Columns** say whether they can be changed, and whether a new row needs a value (`required`), may have one
+  (`optional`), or takes none (`never`).
+  - Keys are given in new rows only.
+  - Computed and row version columns take no value.
+  - Identity columns take none on SQL Server; the other databases take a value given.
+  - Columns of types the language has no values for are read-only, and so, in this version, are binary columns.
 
 ## Health
 

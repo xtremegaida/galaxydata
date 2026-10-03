@@ -57,6 +57,10 @@ public sealed class PolicyTests
          HttpStatusCode status = (await lee.GetAsync(path)).StatusCode;
          status.ShouldBe(admin, path);
       }
+      foreach (string path in (string[])["/api/catalog", "/api/catalog/tree/children", "/api/catalog/tree/search?text=x"])
+      {
+         (await lee.GetAsync(path)).StatusCode.ShouldBe(HttpStatusCode.OK, path);
+      }
       if (admin == HttpStatusCode.Forbidden)
       {
          await (await lee.PostAsync("/api/users/1/unlock")).ProblemAsync(403, ProblemCodes.Forbidden);

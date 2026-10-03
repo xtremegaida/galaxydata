@@ -336,6 +336,20 @@ public sealed class DmlEdgeTests
       plan.Issues.ShouldContain(i => i.Message.Contains("has no primary key", StringComparison.Ordinal));
    }
 
+   /// <summary>A key with a column of a type the language has no values for can't find its row: such a table's rows are only inserted.</summary>
+   [Fact]
+   public void CantChangeRowsWhoseKeyHasNoValues()
+   {
+      QueryCatalog catalog = Build(("k", Source(Table("t", Col("id", "unknown") with { NativeType = "hierarchyid" }, Col("name", "string?")) with { PrimaryKey = Pk("id") })));
+      TableEntity table = (TableEntity)catalog.Entity("k.t");
+      const string Why = "k.t's key has a column of a type the language has no values for ('id', hierarchyid), so its rows can't be told apart: " +
+                         "they can be inserted, but not changed or deleted";
+      DmlRules.WhyNoChanges(table).ShouldBe(Why);
+      DmlRules.WhyNoInserts(table).ShouldBeNull();
+      DmlPlan plan = Plan(catalog, SqlDialect.SqlServer, new UpdateRow(table, Row(("id", "/1/")), Row(("name", "x"))), new DeleteRow(table, Row(("id", "/1/"))));
+      plan.Issues.Select(i => i.Message).ShouldBe([Why, Why]);
+   }
+
    [Fact]
    public void CanInsertIntoAKeylessTable()
    {
