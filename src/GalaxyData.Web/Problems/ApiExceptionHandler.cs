@@ -6,6 +6,7 @@ using GalaxyData.Query.Execution;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -59,6 +60,9 @@ internal sealed partial class ApiExceptionHandler(IProblemDetailsService problem
             return ApiProblems.Create(StatusCodes.Status422UnprocessableEntity, ProblemCodes.QueryFailed, "The query failed", failed.Message);
          case DmlScriptException script:
             return ApiProblems.ForScript(script);
+         case DbUpdateConcurrencyException:
+            return ApiProblems.Create(StatusCodes.Status409Conflict, ProblemCodes.ConcurrencyConflict, "It was changed by someone else first",
+               "Read it again, and make the change again");
          case ApiException api:
             return ApiProblems.Create(api.Status, api.Code, api.Title, api.Detail);
          case BadHttpRequestException bad:
@@ -73,7 +77,7 @@ internal sealed partial class ApiExceptionHandler(IProblemDetailsService problem
    {
       switch (exception)
       {
-         case QueryException or ApiException or BadHttpRequestException or DmlScriptException:
+         case QueryException or ApiException or BadHttpRequestException or DmlScriptException or DbUpdateConcurrencyException:
             LogRefused(logger, exception.Message);
             break;
          case QueryTimeoutException:

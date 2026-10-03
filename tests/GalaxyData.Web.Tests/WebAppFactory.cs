@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Text.Json;
@@ -15,7 +16,9 @@ namespace GalaxyData.Web.Tests;
 
 /// <summary>
 /// The application in memory, in production unless told otherwise, keeping its data in a directory of its own
-/// that is removed when the factory is disposed; with <see cref="WebRoot"/>, the client is served from there.
+/// that is removed when the factory is disposed; with <see cref="WebRoot"/>, the client is served from there. Its
+/// first administrator is <see cref="TestApi.AdminName"/>, with <see cref="TestApi.AdminPassword"/>, who needn't
+/// change it; <see cref="Settings"/> changes that, and any other setting (a null removes one).
 /// </summary>
 internal sealed class WebAppFactory : WebApplicationFactory<Program>
 {
@@ -36,6 +39,9 @@ internal sealed class WebAppFactory : WebApplicationFactory<Program>
 
    public string Environment { get; init; } = "Production";
 
+   /// <summary>Settings over the factory's own, by their configuration keys (<c>GalaxyData:Auth:MaxFailedSignIns</c>).</summary>
+   public IReadOnlyDictionary<string, string?> Settings { get; init; } = new Dictionary<string, string?>();
+
    /// <summary>Changes to the application's services, made after its own.</summary>
    public Action<IServiceCollection>? ServiceChanges { get; init; }
 
@@ -43,7 +49,18 @@ internal sealed class WebAppFactory : WebApplicationFactory<Program>
    {
       builder.UseEnvironment(Environment);
       builder.ConfigureLogging(logging => logging.ClearProviders());
-      builder.UseSetting("GalaxyData:DataDirectory", DataDirectory);
+      Dictionary<string, string?> settings = new(StringComparer.OrdinalIgnoreCase)
+      {
+         ["GalaxyData:DataDirectory"] = DataDirectory,
+         ["GalaxyData:Bootstrap:AdminUserName"] = TestApi.AdminName,
+         ["GalaxyData:Bootstrap:AdminPassword"] = TestApi.AdminPassword,
+         ["GalaxyData:Bootstrap:RequirePasswordChange"] = "false",
+      };
+      foreach ((string key, string? value) in Settings) { settings[key] = value; }
+      foreach ((string key, string? value) in settings)
+      {
+         if (value != null) { builder.UseSetting(key, value); }
+      }
       if (WebRoot != null) { builder.UseSetting(WebHostDefaults.WebRootKey, WebRoot); }
       if (ServiceChanges != null) { builder.ConfigureTestServices(ServiceChanges); }
    }

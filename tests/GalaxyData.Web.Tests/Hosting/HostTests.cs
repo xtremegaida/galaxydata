@@ -112,8 +112,8 @@ public sealed class HostTests
    public async Task PathsOfTheApiWithoutEndpointsAreNotFound(string path)
    {
       await using WebAppFactory factory = new();
-      HttpResponseMessage response = await factory.CreateClient().GetAsync(path, Token);
-      JsonElement problem = await response.ProblemAsync(404, "not-found");
+      TestApi api = await TestApi.SignedInAsync(factory);
+      JsonElement problem = await (await api.GetAsync(path)).ProblemAsync(404, "not-found");
       problem.GetProperty("title").GetString().ShouldBe("Not Found");
    }
 
@@ -121,9 +121,22 @@ public sealed class HostTests
    public async Task AnotherMethodIsNotAllowed()
    {
       await using WebAppFactory factory = new();
-      HttpResponseMessage response = await factory.CreateClient().PostAsync("/api/health", null, Token);
+      TestApi api = await TestApi.SignedInAsync(factory);
+      HttpResponseMessage response = await api.PostAsync("/api/health");
       await response.ProblemAsync(405, "method-not-allowed");
       response.Content.Headers.Allow.ShouldContain("GET");
+   }
+
+   /// <summary>To anyone not signed in, a path no endpoint has is unauthenticated: the fallback policy, which shows them nothing of the API's shape.</summary>
+   [Theory]
+   [InlineData("GET", "/api/nothing")]
+   [InlineData("POST", "/api/health")]
+   [InlineData("GET", "/assets/missing.js")]
+   public async Task ToAnyoneNotSignedInAPathWithoutAnEndpointIsUnauthenticated(string method, string path)
+   {
+      await using WebAppFactory factory = new();
+      HttpResponseMessage response = await factory.CreateClient().SendAsync(new HttpRequestMessage(new HttpMethod(method), path), Token);
+      await response.ProblemAsync(401, "unauthenticated");
    }
 
    /// <summary>
@@ -151,8 +164,10 @@ public sealed class HostTests
             (await page.Content.ReadAsStringAsync(Token)).ShouldBe("<html>the client</html>", path);
          }
          (await client.GetStringAsync("/assets/app.js", Token)).ShouldBe("// the client's script");
-         await (await client.GetAsync("/assets/missing.js", Token)).ProblemAsync(404, "not-found");
-         await (await client.GetAsync("/favicon.ico", Token)).ProblemAsync(404, "not-found");
+         // Missing files are 404s to those signed in (and 401s to others, as any path without an endpoint).
+         TestApi api = await TestApi.SignedInAsync(factory);
+         await (await api.GetAsync("/assets/missing.js")).ProblemAsync(404, "not-found");
+         await (await api.GetAsync("/favicon.ico")).ProblemAsync(404, "not-found");
       }
       finally
       {
@@ -165,7 +180,8 @@ public sealed class HostTests
    public async Task TheOpenApiDocumentDescribesTheApi()
    {
       await using WebAppFactory factory = new();
-      HttpResponseMessage response = await factory.CreateClient().GetAsync("/api/openapi/v1.json", Token);
+      TestApi api = await TestApi.SignedInAsync(factory);
+      HttpResponseMessage response = await api.GetAsync("/api/openapi/v1.json");
       response.StatusCode.ShouldBe(HttpStatusCode.OK);
       Golden.Match(await response.Content.ReadAsStringAsync(Token), "json");
    }

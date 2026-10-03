@@ -5,14 +5,21 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using GalaxyData.Query.DuckDb;
 using GalaxyData.Query.Execution;
+using GalaxyData.Web.Auth;
+using GalaxyData.Web.Metadata;
+using GalaxyData.Web.Features.Audit;
+using GalaxyData.Web.Features.Auth;
 using GalaxyData.Web.Features.Health;
+using GalaxyData.Web.Features.Users;
 using GalaxyData.Web.Problems;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -37,15 +44,23 @@ public static class WebApp
       ArgumentNullException.ThrowIfNull(builder);
       IServiceCollection services = builder.Services;
 
-      services.AddOptions<GalaxyDataOptions>().BindConfiguration(GalaxyDataOptions.Section).ValidateDataAnnotations().ValidateOnStart();
+      services.AddOptions<GalaxyDataOptions>().BindConfiguration(GalaxyDataOptions.Section).ValidateOnStart();
+      services.AddSingleton<IValidateOptions<GalaxyDataOptions>, GalaxyDataOptionsValidator>();
+      services.TryAddSingleton(TimeProvider.System);
       services.AddSingleton(sp => new DataDirectory(sp.GetRequiredService<IOptions<GalaxyDataOptions>>().Value, sp.GetRequiredService<IHostEnvironment>()));
       services.AddSingleton(sp => new DuckDbMergeEngine(MergeOptions(sp.GetRequiredService<IOptions<GalaxyDataOptions>>().Value.Merge,
          sp.GetRequiredService<DataDirectory>())));
       services.AddSingleton<IMergeEngine>(sp => sp.GetRequiredService<DuckDbMergeEngine>());
 
+      services.AddDbContext<MetadataDb>((sp, o) => o.UseSqlite(MetadataDb.ConnectionString(MetadataDb.PathIn(sp.GetRequiredService<DataDirectory>()))));
+      services.AddHostedService<MetadataInitializer>();
+      services.AddGalaxyDataAuth();
+      services.AddValidation();
+
       services.ConfigureHttpJsonOptions(o =>
       {
-         o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+         // Enums by name only: a number would be read as a value the enum hasn't (a role 7).
+         o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
          // Numbers are numbers (the web defaults read them from strings too, and describe them as either).
          o.SerializerOptions.NumberHandling = JsonNumberHandling.Strict;
       });
@@ -97,22 +112,31 @@ public static class WebApp
       app.UseExceptionHandler();
       app.UseStatusCodePages();
       app.UseStaticFiles();
+      app.UseRouting();
+      app.UseAuthentication();
+      app.UseAuthorization();
+      app.UseRateLimiter();
       return app;
    }
 
    public static WebApplication MapGalaxyData(this WebApplication app)
    {
       ArgumentNullException.ThrowIfNull(app);
-      RouteGroupBuilder api = app.MapGroup("/api").ProducesProblem(StatusCodes.Status500InternalServerError);
+      RouteGroupBuilder api = app.MapGroup("/api")
+         .ProducesProblem(StatusCodes.Status500InternalServerError)
+         .AddEndpointFilter<AntiforgeryFilter>();
       api.MapHealth();
+      api.MapAuth();
+      api.MapUsers();
+      api.MapAudit();
 
-      app.MapOpenApi(OpenApiPattern);
+      app.MapOpenApi(OpenApiPattern).RequireAuthorization(Policies.CanRead);
 
       // The client routes in the browser: every path but the API's and its files' is its page.
       app.MapFallbackToFile($"{{*path:{ClientPathConstraint.Name}}}", "index.html", new StaticFileOptions
       {
          OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-cache",
-      });
+      }).AllowAnonymous();
       return app;
    }
 

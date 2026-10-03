@@ -7,4 +7,4 @@ TestResults/
 *.received.*
 node_modules/
 src/GalaxyData.Web/wwwroot/
-data/
+/src/GalaxyData.Web/data/

@@ -24,6 +24,42 @@ public static class ProblemCodes
    /// <summary>422: an edited script can't run; its problems say where.</summary>
    public const string ScriptInvalid = "script-invalid";
 
+   /// <summary>409: what was changed had been changed by someone else since it was read (its version).</summary>
+   public const string ConcurrencyConflict = "concurrency-conflict";
+
+   /// <summary>400: a request that changes anything came without a valid anti-forgery token.</summary>
+   public const string XsrfTokenInvalid = "xsrf-token-invalid";
+
+   /// <summary>400: the request's values aren't valid; <c>errors</c> says which.</summary>
+   public const string InvalidRequest = "invalid-request";
+
+   /// <summary>401: no user has that name and password.</summary>
+   public const string InvalidCredentials = "invalid-credentials";
+
+   /// <summary>401: too many failed sign-ins; the user may try again later.</summary>
+   public const string LockedOut = "locked-out";
+
+   /// <summary>403: the user is disabled.</summary>
+   public const string AccountDisabled = "account-disabled";
+
+   /// <summary>403: the user must change their password before anything else.</summary>
+   public const string PasswordChangeRequired = "password-change-required";
+
+   /// <summary>422: the current password given to change it isn't right.</summary>
+   public const string WrongPassword = "wrong-password";
+
+   /// <summary>422: a new password doesn't meet the policy.</summary>
+   public const string WeakPassword = "weak-password";
+
+   /// <summary>409: another user has the name.</summary>
+   public const string UserNameTaken = "user-name-taken";
+
+   /// <summary>409: administrators can't demote, disable, delete or reset themselves.</summary>
+   public const string OwnAccount = "own-account";
+
+   /// <summary>409: the change would leave no enabled administrator.</summary>
+   public const string LastAdmin = "last-admin";
+
    public const string BadRequest = "bad-request";
 
    public const string Unauthenticated = "unauthenticated";

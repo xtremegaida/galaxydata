@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Shouldly;
 using Xunit;
@@ -48,6 +49,7 @@ public sealed class ProblemTests
       builder.WebHost.UseTestServer();
       builder.Logging.ClearProviders();
       builder.Configuration["GalaxyData:DataDirectory"] = data;
+      builder.Configuration["GalaxyData:Bootstrap:AdminPassword"] = TestApi.AdminPassword;
       builder.AddGalaxyData();
       WebApplication app = builder.Build();
       app.UseGalaxyData();
@@ -62,8 +64,9 @@ public sealed class ProblemTests
          "script" => throw new DmlScriptException(Shop, [new ScriptProblem("This string isn't closed", 30, 12, 3), new ScriptProblem("DROP isn't a change to rows", 50, 4, 4)]),
          "conflict" => throw new ApiException(409, "stale-plan", "The changes were previewed before they changed", "Preview them again"),
          "bug" => throw new InvalidOperationException("the secret of the bug"),
+         "concurrency" => throw new DbUpdateConcurrencyException("The database operation was expected to affect 1 row(s), but actually affected 0 row(s)"),
          _ => Results.Ok(),
-      });
+      }).AllowAnonymous();
       app.MapGalaxyData();
       await app.StartAsync(Token);
       return (app, app.GetTestClient(), data);
@@ -148,6 +151,13 @@ public sealed class ProblemTests
       problem.GetProperty("problems").EnumerateArray()
          .Select(p => (p.GetProperty("message").GetString(), p.GetProperty("line").GetInt32(), p.GetProperty("start").GetInt32(), p.GetProperty("length").GetInt32()))
          .ShouldBe([("This string isn't closed", 3, 30, 12), ("DROP isn't a change to rows", 4, 50, 4)]);
+   }
+
+   [Fact]
+   public async Task AChangeToWhatSomeoneElseChangedFirstIsAConflict()
+   {
+      JsonElement problem = await GetProblemAsync("concurrency", 409, ProblemCodes.ConcurrencyConflict);
+      problem.GetProperty("title").GetString().ShouldBe("It was changed by someone else first");
    }
 
    [Fact]

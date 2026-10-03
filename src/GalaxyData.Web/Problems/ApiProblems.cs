@@ -73,6 +73,9 @@ public static class ApiProblems
    /// <summary>Gives a problem the code of its status when it has none, so every problem has one.</summary>
    internal static void Complete(ProblemDetails problem)
    {
-      if (!problem.Extensions.ContainsKey("code")) { problem.Extensions["code"] = ProblemCodes.ForStatus(problem.Status ?? StatusCodes.Status500InternalServerError); }
+      if (problem.Extensions.ContainsKey("code")) { return; }
+      problem.Extensions["code"] = problem is HttpValidationProblemDetails
+         ? ProblemCodes.InvalidRequest
+         : ProblemCodes.ForStatus(problem.Status ?? StatusCodes.Status500InternalServerError);
    }
 }

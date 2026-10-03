@@ -446,6 +446,59 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
   - Guards stop an admin demoting or disabling the last Admin, or demoting themselves.
 - **Seeding:** `GalaxyData:Bootstrap:{AdminUserName, AdminPassword, RequirePasswordChange, ResetAdminPassword}`. If there are no users and no password is configured, startup fails. A reset sets MustChangePassword.
 
+**Built in B1**
+- **Metadata database** (`Metadata/`): `MetadataDb`, in `{data}/galaxydata.db`.
+  - Connections aren't pooled, so nothing holds the file once the application stops.
+  - Date-times are converted to and from UTC.
+  - Roles are stored as text, and `UserName` is `NOCASE` and unique.
+  - `IVersioned.Version` is a concurrency token that goes up on each save of a changed entity.
+  - Tables: `Users`, `AdminAuditEvents`, and `Settings` (a key/value store for the application itself).
+  - Migrations are made with the repo-local `dotnet-ef` 10.0.11 (`dotnet-tools.json`), into `Metadata/Migrations`. The source folder is `Metadata`, not `Data`, because file names ignore case on Windows, and `Data` is the default data directory `data`.
+- **Startup** (`MetadataInitializer`, a hosted service that runs before the server starts):
+  - refuses a database with a migration this version doesn't know;
+  - backs the database up with SQLite's online backup (`backups/galaxydata-{when}-before-{migration}.db`, the newest 10 kept) when it has applied migrations and this version has more;
+  - migrates, and sets WAL mode;
+  - makes the first administrator, or resets one.
+  - A reset is done once for each password: the `bootstrap.reset` setting keeps a hash of the last password used. A restart with the setting still there therefore doesn't undo the administrator's own change. The reset re-enables the user, makes them an admin, unlocks them, and re-creates them if they were deleted.
+- **Settings:** `GalaxyData:Auth:{MinimumPasswordLength 12, MaxFailedSignIns 5, LockoutDuration 15 min, SessionIdleTimeout 8 h, SignInsPerMinute 10}`. All settings, nested ones included, are checked at startup by a source-generated `[OptionsValidator]`.
+- **Auth** (`Auth/`):
+  - **Data Protection:** keys in `{data}/keys`, DPAPI-protected (current user) on Windows.
+  - **Cookie:** `gd.auth`, which on 401/403 answers with a status, not a redirect.
+  - **Claims:** id, name, role, `gd:stamp`, and `gd:must-change-password`.
+  - **`SessionValidator`:** `OnValidatePrincipal` with a 30-second `IMemoryCache` of each user's stamp and disabled flag, evicted at once on changes made here.
+  - **Policies:** `SignedIn`, `CanRead`, `CanEditData` and `CanAdmin`, plus a fallback that also covers requests with no endpoint, so anonymous requests for unknown paths get 401. The current-password requirement fails with a reason, and `AuthorizationProblems` (an `IAuthorizationMiddlewareResultHandler`) answers it with 403 `password-change-required`.
+  - **Antiforgery:** the `gd.xsrf` cookie, the `XSRF-TOKEN` cookie the client reads, and the `X-XSRF-TOKEN` header. A group-wide `AntiforgeryFilter` checks POST, PUT, PATCH and DELETE and answers 400 `xsrf-token-invalid`. Tokens are reissued at sign-in, sign-out and password change.
+  - **Rate limiter:** a fixed window per remote address, on sign-in and change-password.
+- **Endpoints:**
+
+  | Group | Endpoints | Who |
+  |---|---|---|
+  | `/api/auth` | `GET session`, `POST sign-in`, `POST sign-out` | anonymous |
+  | `/api/auth` | `POST change-password` | `SignedIn` |
+  | `/api/users` | `GET`, `GET {id}`, `POST`, `PUT {id}` (with version), `DELETE {id}` (`?version=`), `POST {id}/reset-password`, `POST {id}/unlock` | `CanAdmin` |
+  | `/api/audit/admin-events` | paged by `before` and `take` | `CanAdmin` |
+
+  - Request validation uses .NET 10's `AddValidation()` (DataAnnotations on records), answering 400 `invalid-request` with `errors`.
+  - Failed sign-ins are counted with `ExecuteUpdate`, atomically and without changing the version.
+  - Unknown users are checked against a dummy hash, so they take as long as known ones.
+  - Update and delete check `own-account` and `last-admin` in an IMMEDIATE transaction. Role, disabled, reset and delete changes give the user a new stamp.
+  - Each change is written to the admin audit in the same save.
+- **Problems added:** `concurrency-conflict` (also for `DbUpdateConcurrencyException`), `xsrf-token-invalid`, `invalid-request`, `invalid-credentials`, `locked-out`, `account-disabled`, `password-change-required`, `wrong-password`, `weak-password`, `user-name-taken`, `own-account` and `last-admin`.
+- **OpenAPI:** needs `CanRead`. The client fallback and health are anonymous.
+- **Tests:**
+  - **`TestApi`:** a cookie container and the XSRF header, recording every response for secrets.
+  - **Coverage:**
+    - sign-in, tokens, the same answer for unknown users and wrong passwords, lockout with a manual clock, unlock, disabled users, the rate limit, sign-out, validation;
+    - password-change-required, the policy, other sessions ending;
+    - users: CRUD in the audit, a name that ignores case, its format, version conflicts, own-account, last-admin (by a race through the database), the changes that end sessions, reset;
+    - every `/api` endpoint naming its policy, and the role matrix;
+    - the metadata database: the model matches the migrations, WAL and UTC, refusing to start without a password or with bad settings, reset once for each password, a database from a newer version, backups;
+    - no response holding a password or a hash.
+- **Known limitations:**
+  - Signing out removes the cookie, but a copy stays valid until it expires or the stamp changes, since sessions aren't kept on the server (an `ITicketStore` could do that later).
+  - The lockout message shows that the account exists.
+  - The rate limit is per remote address, which is the proxy's behind one until forwarded headers are set up (B8).
+
 **Connections**
 - **`IConnectionKind`** (app-side) provides a descriptor with fields (text, number, password, bool, select, filePath, folderPath, keyValues; groups; `visibleWhen`). It builds connection strings with the provider's `DbConnectionStringBuilder`, parses raw strings, and knows which keywords are secret.
 - **Secrets on the wire:**
@@ -479,15 +532,15 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
 
 | Area | Endpoints |
 |---|---|
-| Auth | session, login, logout, change-password |
-| Users | CRUD, reset-password |
+| Auth | session, sign-in, sign-out, change-password |
+| Users | CRUD, reset-password, unlock |
 | Connections | connection-kinds, convert; connection CRUD, test, refresh; snapshots and diff |
 | Catalog | tree/children, tree/search, entities/{name} |
 | Browse | browse/page, browse/trail |
 | Query | validate, explain, execute; saved-queries CRUD |
 | Changes | GET, ops, DELETE (scoped), preview, commit |
 | Overlay | relations, nav-overrides, virtual-entities (+ validate), entity-settings, issues |
-| Audit | commits, admin-events |
+| Audit | admin-events (B1), commits (B7) |
 
 **Browse (`POST /api/browse/page`)**
 - **Request:** `source` is `{entity}` or `{from:{entity,key}, nav}`, and `grid` holds filters, a where expression, sort and paging, plus `includeSchema` and `includeCount`.
@@ -602,7 +655,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | # | Scope |
 |---|---|
 | B0 | Host, ProblemDetails, OpenAPI, health; single instance per data directory; `SourceUnavailableException` in the engine (see "Built in B0" in §5) |
-| B1 | EF metadata, migrations and backup, seeding, cookie auth, antiforgery, policies, users |
+| B1 | EF metadata, migrations and backup, seeding, cookie auth, antiforgery, policies, users; the admin audit (see "Built in B1" in §5) |
 | B2 | Connections, kinds and descriptors, secrets and masking, test-connection |
 | B3 | Snapshots, refresh worker, diff, CatalogService, tree, search, entity descriptors and capabilities |
 | B4 | GridQueryComposer, codecs, NavigationResolver, CountStrategy, browse endpoints |
