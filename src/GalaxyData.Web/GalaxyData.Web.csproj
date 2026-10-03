@@ -15,6 +15,10 @@
   <ItemGroup>
     <ProjectReference Include="..\GalaxyData.Query\GalaxyData.Query.csproj" />
     <ProjectReference Include="..\GalaxyData.Query.DuckDb\GalaxyData.Query.DuckDb.csproj" />
+    <ProjectReference Include="..\GalaxyData.Query.Excel\GalaxyData.Query.Excel.csproj" />
+    <ProjectReference Include="..\GalaxyData.Query.PostgreSql\GalaxyData.Query.PostgreSql.csproj" />
+    <ProjectReference Include="..\GalaxyData.Query.Sqlite\GalaxyData.Query.Sqlite.csproj" />
+    <ProjectReference Include="..\GalaxyData.Query.SqlServer\GalaxyData.Query.SqlServer.csproj" />
   </ItemGroup>
 
   <ItemGroup>

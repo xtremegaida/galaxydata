@@ -1,0 +1,707 @@
+[
+  {
+    "id": "postgres",
+    "displayName": "PostgreSQL",
+    "supportsRaw": true,
+    "alwaysReadOnly": false,
+    "rawExample": "Host=db.example.com;Database=shop;Username=reader;Password=...",
+    "groups": [
+      {
+        "key": "connection",
+        "label": "Connection",
+        "collapsed": false
+      },
+      {
+        "key": "security",
+        "label": "Security",
+        "collapsed": false
+      },
+      {
+        "key": "advanced",
+        "label": "Advanced",
+        "collapsed": true
+      }
+    ],
+    "fields": [
+      {
+        "key": "Host",
+        "label": "Host",
+        "type": "text",
+        "required": true,
+        "default": null,
+        "placeholder": "db.example.com",
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Port",
+        "label": "Port",
+        "type": "number",
+        "required": false,
+        "default": "5432",
+        "placeholder": null,
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": 1,
+        "max": 65535
+      },
+      {
+        "key": "Database",
+        "label": "Database",
+        "type": "text",
+        "required": true,
+        "default": null,
+        "placeholder": null,
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Username",
+        "label": "User name",
+        "type": "text",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Password",
+        "label": "Password",
+        "type": "password",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "SSL Mode",
+        "label": "SSL",
+        "type": "select",
+        "required": false,
+        "default": "Prefer",
+        "placeholder": null,
+        "help": null,
+        "group": "security",
+        "choices": [
+          {
+            "value": "Disable",
+            "label": "Disable"
+          },
+          {
+            "value": "Allow",
+            "label": "Allow"
+          },
+          {
+            "value": "Prefer",
+            "label": "Prefer"
+          },
+          {
+            "value": "Require",
+            "label": "Require"
+          },
+          {
+            "value": "VerifyCA",
+            "label": "VerifyCA"
+          },
+          {
+            "value": "VerifyFull",
+            "label": "VerifyFull"
+          }
+        ],
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Root Certificate",
+        "label": "Root certificate",
+        "type": "filePath",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": "The certificate (PEM) the server\u0027s must be signed by",
+        "group": "security",
+        "choices": null,
+        "visibleWhen": {
+          "field": "SSL Mode",
+          "values": [
+            "VerifyCA",
+            "VerifyFull"
+          ]
+        },
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Timeout",
+        "label": "Connect timeout (s)",
+        "type": "number",
+        "required": false,
+        "default": "15",
+        "placeholder": null,
+        "help": null,
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": 1,
+        "max": 1024
+      },
+      {
+        "key": "Command Timeout",
+        "label": "Command timeout (s)",
+        "type": "number",
+        "required": false,
+        "default": "30",
+        "placeholder": null,
+        "help": null,
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": 0,
+        "max": null
+      },
+      {
+        "key": "Application Name",
+        "label": "Application name",
+        "type": "text",
+        "required": false,
+        "default": null,
+        "placeholder": "GalaxyData",
+        "help": null,
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Search Path",
+        "label": "Search path",
+        "type": "text",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": null,
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "otherSettings",
+        "label": "Other settings",
+        "type": "keyValues",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": "Any other keyword the provider takes, and its value",
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      }
+    ],
+    "options": [
+      {
+        "key": "trustForeignKeys",
+        "label": "Trust foreign keys",
+        "type": "bool",
+        "required": false,
+        "default": "false",
+        "placeholder": null,
+        "help": "Treat the source\u0027s foreign keys as kept even where the database doesn\u0027t check them, so a navigation along one finds exactly one row",
+        "group": null,
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      }
+    ]
+  },
+  {
+    "id": "sqlserver",
+    "displayName": "SQL Server",
+    "supportsRaw": true,
+    "alwaysReadOnly": false,
+    "rawExample": "Data Source=db.example.com;Initial Catalog=shop;User ID=reader;Password=...",
+    "groups": [
+      {
+        "key": "connection",
+        "label": "Connection",
+        "collapsed": false
+      },
+      {
+        "key": "security",
+        "label": "Security",
+        "collapsed": false
+      },
+      {
+        "key": "advanced",
+        "label": "Advanced",
+        "collapsed": true
+      }
+    ],
+    "fields": [
+      {
+        "key": "Data Source",
+        "label": "Server",
+        "type": "text",
+        "required": true,
+        "default": null,
+        "placeholder": "db.example.com,1433 or host\\instance",
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Initial Catalog",
+        "label": "Database",
+        "type": "text",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Integrated Security",
+        "label": "Windows authentication",
+        "type": "bool",
+        "required": false,
+        "default": "False",
+        "placeholder": null,
+        "help": "Sign in as the account the application runs as",
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "User ID",
+        "label": "User name",
+        "type": "text",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": {
+          "field": "Integrated Security",
+          "values": [
+            "False"
+          ]
+        },
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Password",
+        "label": "Password",
+        "type": "password",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": {
+          "field": "Integrated Security",
+          "values": [
+            "False"
+          ]
+        },
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Encrypt",
+        "label": "Encryption",
+        "type": "select",
+        "required": false,
+        "default": "Mandatory",
+        "placeholder": null,
+        "help": null,
+        "group": "security",
+        "choices": [
+          {
+            "value": "Mandatory",
+            "label": "Mandatory"
+          },
+          {
+            "value": "Optional",
+            "label": "Optional"
+          },
+          {
+            "value": "Strict",
+            "label": "Strict"
+          }
+        ],
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Trust Server Certificate",
+        "label": "Trust the server\u0027s certificate",
+        "type": "bool",
+        "required": false,
+        "default": "False",
+        "placeholder": null,
+        "help": "Accept a certificate no trusted authority signed (a server\u0027s own); the connection is still encrypted",
+        "group": "security",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Connect Timeout",
+        "label": "Connect timeout (s)",
+        "type": "number",
+        "required": false,
+        "default": "15",
+        "placeholder": null,
+        "help": null,
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": 0,
+        "max": null
+      },
+      {
+        "key": "Command Timeout",
+        "label": "Command timeout (s)",
+        "type": "number",
+        "required": false,
+        "default": "30",
+        "placeholder": null,
+        "help": null,
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": 0,
+        "max": null
+      },
+      {
+        "key": "Application Name",
+        "label": "Application name",
+        "type": "text",
+        "required": false,
+        "default": null,
+        "placeholder": "GalaxyData",
+        "help": null,
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "otherSettings",
+        "label": "Other settings",
+        "type": "keyValues",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": "Any other keyword the provider takes, and its value",
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      }
+    ],
+    "options": [
+      {
+        "key": "trustForeignKeys",
+        "label": "Trust foreign keys",
+        "type": "bool",
+        "required": false,
+        "default": "false",
+        "placeholder": null,
+        "help": "Treat the source\u0027s foreign keys as kept even where the database doesn\u0027t check them, so a navigation along one finds exactly one row",
+        "group": null,
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      }
+    ]
+  },
+  {
+    "id": "sqlite",
+    "displayName": "SQLite",
+    "supportsRaw": true,
+    "alwaysReadOnly": false,
+    "rawExample": "Data Source=C:\\data\\files\\shop.db",
+    "groups": [
+      {
+        "key": "connection",
+        "label": "Connection",
+        "collapsed": false
+      },
+      {
+        "key": "advanced",
+        "label": "Advanced",
+        "collapsed": true
+      }
+    ],
+    "fields": [
+      {
+        "key": "Data Source",
+        "label": "Database file",
+        "type": "filePath",
+        "required": true,
+        "default": null,
+        "placeholder": null,
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Default Timeout",
+        "label": "Lock timeout (s)",
+        "type": "number",
+        "required": false,
+        "default": "30",
+        "placeholder": null,
+        "help": "How long to wait for a database another program is writing",
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": 0,
+        "max": null
+      },
+      {
+        "key": "otherSettings",
+        "label": "Other settings",
+        "type": "keyValues",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": "Any other keyword the provider takes, and its value",
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      }
+    ],
+    "options": [
+      {
+        "key": "enforceForeignKeys",
+        "label": "Check foreign keys when writing",
+        "type": "select",
+        "required": false,
+        "default": "",
+        "placeholder": null,
+        "help": "SQLite\u0027s PRAGMA foreign_keys, which also carries out ON DELETE actions",
+        "group": null,
+        "choices": [
+          {
+            "value": "",
+            "label": "As the connection has it (on)"
+          },
+          {
+            "value": "true",
+            "label": "On"
+          },
+          {
+            "value": "false",
+            "label": "Off"
+          }
+        ],
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "trustForeignKeys",
+        "label": "Trust foreign keys",
+        "type": "bool",
+        "required": false,
+        "default": "false",
+        "placeholder": null,
+        "help": "Treat the source\u0027s foreign keys as kept even where the database doesn\u0027t check them, so a navigation along one finds exactly one row",
+        "group": null,
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      }
+    ]
+  },
+  {
+    "id": "duckdb",
+    "displayName": "DuckDB",
+    "supportsRaw": true,
+    "alwaysReadOnly": false,
+    "rawExample": "Data Source=C:\\data\\files\\warehouse.duckdb",
+    "groups": [
+      {
+        "key": "connection",
+        "label": "Connection",
+        "collapsed": false
+      },
+      {
+        "key": "advanced",
+        "label": "Advanced",
+        "collapsed": true
+      }
+    ],
+    "fields": [
+      {
+        "key": "Data Source",
+        "label": "Database file",
+        "type": "filePath",
+        "required": true,
+        "default": null,
+        "placeholder": null,
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "otherSettings",
+        "label": "Other settings",
+        "type": "keyValues",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": "DuckDB settings (threads=4, memory_limit=1GB)",
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      }
+    ],
+    "options": [
+      {
+        "key": "trustForeignKeys",
+        "label": "Trust foreign keys",
+        "type": "bool",
+        "required": false,
+        "default": "false",
+        "placeholder": null,
+        "help": "Treat the source\u0027s foreign keys as kept even where the database doesn\u0027t check them, so a navigation along one finds exactly one row",
+        "group": null,
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      }
+    ]
+  },
+  {
+    "id": "excel",
+    "displayName": "Excel folder",
+    "supportsRaw": false,
+    "alwaysReadOnly": true,
+    "rawExample": null,
+    "groups": [
+      {
+        "key": "connection",
+        "label": "Folder",
+        "collapsed": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "Folder",
+        "label": "Folder of workbooks",
+        "type": "folderPath",
+        "required": true,
+        "default": null,
+        "placeholder": null,
+        "help": "Its own .xlsx workbooks (not those of folders in it) are the source\u0027s schemas, their sheets its tables",
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      }
+    ],
+    "options": [
+      {
+        "key": "headerRow",
+        "label": "First row names the columns",
+        "type": "bool",
+        "required": false,
+        "default": "true",
+        "placeholder": null,
+        "help": null,
+        "group": null,
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "allText",
+        "label": "Read every column as text",
+        "type": "bool",
+        "required": false,
+        "default": "false",
+        "placeholder": null,
+        "help": null,
+        "group": null,
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "includeHiddenSheets",
+        "label": "Include hidden sheets",
+        "type": "bool",
+        "required": false,
+        "default": "false",
+        "placeholder": null,
+        "help": null,
+        "group": null,
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      }
+    ]
+  }
+]

@@ -79,6 +79,61 @@ public sealed class AdminAuditEvent
    public string? Details { get; set; }
 }
 
+/// <summary>How an administrator edits a connection's settings: field by field, or as a connection string.</summary>
+public enum ConnectionMode
+{
+   Form,
+   Raw,
+}
+
+/// <summary>Whether a connection's schema has been read (B3).</summary>
+public enum SchemaStatus
+{
+   NotLoaded,
+   Loading,
+   Ready,
+   Failed,
+}
+
+/// <summary>
+/// A source the application queries: a database, or a folder of workbooks. Its settings are the provider's
+/// keywords and values, as its connection string builder names them, without secrets; the secrets (passwords,
+/// tokens) are kept apart, protected with the application's data protection keys, for this alias alone.
+/// </summary>
+public sealed class SourceConnection : IVersioned
+{
+   public int Id { get; set; }
+
+   /// <summary>How queries name the source (<c>shop</c>); unique ignoring case, and never changed.</summary>
+   public string Alias { get; set; } = string.Empty;
+
+   /// <summary>The connection kind: <c>postgres</c>, <c>sqlserver</c>, <c>sqlite</c>, <c>duckdb</c>, <c>excel</c>.</summary>
+   public string Kind { get; set; } = string.Empty;
+
+   public string? DisplayName { get; set; }
+
+   public ConnectionMode Mode { get; set; }
+
+   /// <summary>The settings without secrets: a JSON object of keywords and values.</summary>
+   public string SettingsJson { get; set; } = "{}";
+
+   /// <summary>The secrets: a JSON object of keywords and values, protected; null when there are none.</summary>
+   public string? ProtectedSecrets { get; set; }
+
+   /// <summary>The source's options (foreign keys, a folder's sheets): a JSON object of names and values.</summary>
+   public string OptionsJson { get; set; } = "{}";
+
+   public bool IsReadOnly { get; set; }
+
+   public SchemaStatus SchemaStatus { get; set; }
+
+   public DateTime CreatedAt { get; set; }
+
+   public DateTime UpdatedAt { get; set; }
+
+   public int Version { get; set; }
+}
+
 /// <summary>A value the application keeps for itself.</summary>
 public sealed class MetadataSetting
 {

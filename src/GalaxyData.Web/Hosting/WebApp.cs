@@ -6,9 +6,11 @@ using System.Threading.Tasks;
 using GalaxyData.Query.DuckDb;
 using GalaxyData.Query.Execution;
 using GalaxyData.Web.Auth;
+using GalaxyData.Web.Connections;
 using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Features.Audit;
 using GalaxyData.Web.Features.Auth;
+using GalaxyData.Web.Features.Connections;
 using GalaxyData.Web.Features.Health;
 using GalaxyData.Web.Features.Users;
 using GalaxyData.Web.Problems;
@@ -55,6 +57,15 @@ public static class WebApp
       services.AddDbContext<MetadataDb>((sp, o) => o.UseSqlite(MetadataDb.ConnectionString(MetadataDb.PathIn(sp.GetRequiredService<DataDirectory>()))));
       services.AddHostedService<MetadataInitializer>();
       services.AddGalaxyDataAuth();
+      services.AddSingleton<ConnectionKind, PostgreSqlKind>();
+      services.AddSingleton<ConnectionKind, SqlServerKind>();
+      services.AddSingleton<ConnectionKind, SqliteKind>();
+      services.AddSingleton<ConnectionKind, DuckDbKind>();
+      services.AddSingleton<ConnectionKind, ExcelKind>();
+      services.AddSingleton<ConnectionKinds>();
+      services.AddSingleton<FileRoots>();
+      services.AddSingleton<ConnectionSecrets>();
+      services.AddSingleton<ConnectionTester>();
       services.AddValidation();
 
       services.ConfigureHttpJsonOptions(o =>
@@ -109,6 +120,7 @@ public static class WebApp
    {
       ArgumentNullException.ThrowIfNull(app);
       app.Services.GetRequiredService<DataDirectory>().Open();
+      app.Services.GetRequiredService<FileRoots>().Prepare();
       app.UseExceptionHandler();
       app.UseStatusCodePages();
       app.UseStaticFiles();
@@ -129,6 +141,7 @@ public static class WebApp
       api.MapAuth();
       api.MapUsers();
       api.MapAudit();
+      api.MapConnections();
 
       app.MapOpenApi(OpenApiPattern).RequireAuthorization(Policies.CanRead);
 

@@ -13,6 +13,7 @@ using GalaxyData.Query.IntegrationTests.Execution;
 using GalaxyData.Query.PostgreSql;
 using GalaxyData.Query.Providers;
 using GalaxyData.Query.SqlServer;
+using GalaxyData.Testing;
 using Microsoft.Data.SqlClient;
 using Npgsql;
 using Xunit;
@@ -35,8 +36,8 @@ public enum ServerKind
 /// </summary>
 public sealed partial class Servers : IAsyncDisposable
 {
-   public const string DefaultPostgres = "Host=127.0.0.1;Port=55432;Username=postgres;Password=GdqTest2026;Timeout=5";
-   public const string DefaultSqlServer = "Server=127.0.0.1,51433;User ID=sa;Password=GdqTest2026;TrustServerCertificate=True;Connect Timeout=5";
+   public const string DefaultPostgres = TestServers.DefaultPostgres;
+   public const string DefaultSqlServer = TestServers.DefaultSqlServer;
 
    private readonly ConcurrentDictionary<string, Lazy<Task<ServerDatabase>>> databases = new(StringComparer.Ordinal);
    private readonly ConcurrentDictionary<ServerKind, Lazy<Task<string?>>> unavailable = new();

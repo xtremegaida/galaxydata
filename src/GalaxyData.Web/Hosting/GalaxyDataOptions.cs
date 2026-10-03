@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
@@ -28,6 +29,27 @@ public sealed class GalaxyDataOptions
    /// <summary>Signing in: passwords, lockout and sessions.</summary>
    [ValidateObjectMembers]
    public AuthSettings Auth { get; set; } = new();
+
+   /// <summary>Connections to sources.</summary>
+   [ValidateObjectMembers]
+   public ConnectionSettings Connections { get; set; } = new();
+}
+
+public sealed class ConnectionSettings
+{
+   /// <summary>The folder files and folders are allowed in when no roots are given: <c>files</c> in the data directory.</summary>
+   public const string DefaultFileRoot = "files";
+
+   /// <summary>
+   /// The folders a connection's files and folders must be in (database files, folders of workbooks, certificates),
+   /// relative to the data directory unless absolute; null for <see cref="DefaultFileRoot"/>. Configured lists
+   /// replace the default.
+   /// </summary>
+   public List<string>? AllowedFileRoots { get; set; }
+
+   /// <summary>How long testing a connection may take.</summary>
+   [Range(typeof(TimeSpan), "00:00:01", "00:10:00")]
+   public TimeSpan TestTimeout { get; set; } = TimeSpan.FromSeconds(10);
 }
 
 /// <summary>The merge engine's settings; see <c>DuckDbMergeOptions</c>. Directories are relative to the data directory unless absolute.</summary>

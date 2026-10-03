@@ -35,6 +35,8 @@ parts (`GalaxyData__DataDirectory`).
 | `Auth:LockoutDuration` | `00:15:00` | How long a lockout lasts. |
 | `Auth:SessionIdleTimeout` | `08:00:00` | How long a session lasts without requests; each request extends it. |
 | `Auth:SignInsPerMinute` | `10` | Sign-in attempts (and password changes) a client address may make a minute. |
+| `Connections:AllowedFileRoots` | `files` in the data directory | The folders connections' files and folders must be in. Relative to the data directory unless absolute. A list given replaces the default. |
+| `Connections:TestTimeout` | `00:00:10` | How long trying a connection may take. |
 
 Settings that don't make sense (a minimum password length of 3, a user name with spaces) stop the application at
 startup, naming the setting.
@@ -56,6 +58,7 @@ there is no shared state for a farm of them.
 | `galaxydata.db` | The application's own database (SQLite, in WAL mode): users, the audit, and what later features keep. Its `-wal` and `-shm` files belong with it. |
 | `keys/` | The keys that protect session cookies and stored secrets (ASP.NET Data Protection). On Windows they are encrypted with DPAPI for the account the application runs as, so only that account can use them. Elsewhere they are stored as they are, so keep the directory readable by that account alone. **Losing them signs everyone out and loses stored secrets.** |
 | `backups/` | Copies of the database made before a new version changes its schema, the newest ten. |
+| `files/` | The folder connections' files may be in, unless `Connections:AllowedFileRoots` says otherwise. Put SQLite and DuckDB databases and folders of workbooks here. |
 | `galaxydata.lock` | Held while the application runs (see above). |
 
 **Upgrades.** At startup the application applies the schema changes (migrations) a new version brings, after
@@ -71,7 +74,7 @@ before the upgrade.
 |---|---|
 | `read` | read data and run queries |
 | `dataManager` | also change data |
-| `admin` | also manage users, connections, the overlay, and see the audit |
+| `admin` | also manage users and connections (and, with later features, the overlay), and see the audit |
 
 **Sessions.** Signing in starts a session: the `gd.auth` cookie, which is HttpOnly and SameSite=Strict. It is a
 browser-session cookie that ends after `Auth:SessionIdleTimeout` without requests.
@@ -128,6 +131,73 @@ password `Bootstrap:AdminPassword`.
 
 A reset is done once for each password given, so a restart with the settings still there doesn't undo the change
 the administrator made. To reset again, give another password.
+
+## Connections
+
+A connection is a source the application queries. Administrators manage connections under `/api/connections`.
+
+| Kind | Source | Settings |
+|---|---|---|
+| `postgres` | PostgreSQL 12 or later | Npgsql's keywords: `Host`, `Port`, `Database`, `Username`, `Password`, `SSL Mode`, ... |
+| `sqlserver` | SQL Server 2016 or later | SqlClient's: `Data Source`, `Initial Catalog`, `Integrated Security`, `User ID`, `Password`, `Encrypt`, ... |
+| `sqlite` | a SQLite database file | `Data Source`, `Default Timeout`, ... |
+| `duckdb` | a DuckDB database file | `Data Source`, and DuckDB's settings (`threads`, `memory_limit`) |
+| `excel` | a folder of `.xlsx` workbooks | `Folder` |
+
+**Settings.** A connection's settings are its provider's connection-string keywords and values, named as the
+provider names them.
+
+- **Synonyms are renamed.** `Server` becomes `Host` for PostgreSQL; `uid` becomes `User ID` for SQL Server.
+- **Unknown keywords are refused.** A keyword or value the provider doesn't take is refused with its message.
+- **Two ways to edit.** Administrators edit the settings field by field (the form each kind describes at
+  `GET /api/connection-kinds`) or as a connection string. `POST /api/connection-kinds/{kind}/convert` turns one
+  into the other. Folders of workbooks have no connection string.
+- **Bool values.** Values are text, as in a connection string. A bool is `true` or `false` in any case; SQL
+  Server's are written `True`/`False`.
+
+**The alias.** Each connection has an alias, which is how queries name it (`shop.customers`). An alias:
+
+- is a plain name: a letter or `_`, then letters, digits and `_`, at most 64;
+- isn't a word the language has (`and`, `or`, `not`, `in`, `true`, `false`, `null`);
+- is unique, ignoring case;
+- never changes.
+
+**Read-only.** Connections are read-only unless made otherwise, and folders of workbooks always are.
+
+- **Opening files.** The application opens SQLite and DuckDB files read-only or read-write itself (so `Mode` and
+  `ACCESS_MODE` aren't settings), and never makes a missing file.
+- **PostgreSQL** sessions start read-only (`default_transaction_read_only`).
+- **SQL Server** has no such setting: give a read-only connection a login that can't write.
+- **Server-side files.** SQL Server's `AttachDbFilename` isn't a setting either.
+
+**Files and folders.** Database files, folders of workbooks and PostgreSQL's certificate and key files must be in
+one of `Connections:AllowedFileRoots` (by default the data directory's `files` folder), given by their full
+paths.
+
+- **Links.** A link in those folders that leads outside them is refused.
+- **Why.** This keeps an administrator's account from reading whatever else the machine has.
+
+**Secrets.** Passwords, and settings named like secrets (`token`, `secret`), are kept apart from the other
+settings, protected with the application's data protection keys, for that connection alone.
+
+- **Never sent back.** A connection says which secrets have a value, never what it is, and its connection string
+  shows them as `********`.
+- **Editing secrets.** An edit keeps, sets or clears each secret. In a connection string, `********` keeps it, a
+  value written out sets it, and leaving the keyword out clears it.
+- **Never logged.** Secrets aren't in the audit, which names them only, nor in the log. A database's answer that
+  repeats one has it masked.
+- **Lost keys.** If the data protection keys are lost, connections say `secretsUnreadable` and their secrets must
+  be entered again.
+
+**Trying a connection.** `POST /api/connections/{id}/test` tries a saved connection, and `POST /api/connections/test`
+tries settings before they are saved (with `connectionId`, keeping that connection's secrets).
+
+- **What it does.** It checks that the file or folder is there, connects within `Connections:TestTimeout`, and runs
+  a statement.
+- **What it answers.** It says what it found (the server's version, the database, how many tables or workbooks),
+  or the database's own words.
+- **Any address.** It connects to whatever host an administrator gives; restrict the machine's outbound network
+  where that matters.
 
 ### Anti-forgery
 
@@ -209,6 +279,7 @@ Errors are problem details (RFC 9457, `application/problem+json`). Every problem
 | 409 | `user-name-taken` | Another user has the name (names ignore case). |
 | 409 | `own-account` | Administrators can't demote, disable, delete or reset themselves. |
 | 409 | `last-admin` | The change would leave no enabled administrator. |
+| 409 | `alias-taken` | Another connection has the alias (aliases ignore case). |
 | 422 | `wrong-password` | The current password given to change it isn't right. |
 | 422 | `weak-password` | A new password doesn't meet the policy; `detail` says how. |
 | 429 | `too-many-requests` | Too many sign-ins from the address; `Retry-After` says when to try again. |

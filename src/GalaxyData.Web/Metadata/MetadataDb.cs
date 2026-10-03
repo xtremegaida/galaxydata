@@ -25,6 +25,8 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
 
    public DbSet<MetadataSetting> Settings => Set<MetadataSetting>();
 
+   public DbSet<SourceConnection> Connections => Set<SourceConnection>();
+
    /// <summary>The database's path in a data directory.</summary>
    public static string PathIn(DataDirectory data)
    {
@@ -45,6 +47,8 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
       configurationBuilder.Properties<DateTime>().HaveConversion<UtcConverter>();
       configurationBuilder.Properties<DateTime?>().HaveConversion<UtcConverter>();
       configurationBuilder.Properties<UserRole>().HaveConversion<string>().HaveMaxLength(20);
+      configurationBuilder.Properties<ConnectionMode>().HaveConversion<string>().HaveMaxLength(20);
+      configurationBuilder.Properties<SchemaStatus>().HaveConversion<string>().HaveMaxLength(20);
    }
 
    protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -66,6 +70,15 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
          audit.Property(e => e.Action).HasMaxLength(64);
          audit.Property(e => e.Target).HasMaxLength(200);
          audit.HasIndex(e => e.At);
+      });
+      modelBuilder.Entity<SourceConnection>(connection =>
+      {
+         connection.ToTable("Connections");
+         connection.Property(c => c.Alias).HasMaxLength(64).UseCollation("NOCASE");
+         connection.HasIndex(c => c.Alias).IsUnique();
+         connection.Property(c => c.Kind).HasMaxLength(20);
+         connection.Property(c => c.DisplayName).HasMaxLength(200);
+         connection.Property(c => c.Version).IsConcurrencyToken();
       });
       modelBuilder.Entity<MetadataSetting>(setting =>
       {

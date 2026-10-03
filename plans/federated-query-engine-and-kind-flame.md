@@ -511,6 +511,44 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
   - `AllowedFileRoots` restricts file and folder paths.
   - Excel connections are always read-only.
 
+**Built in B2**
+- **Model:** `Connections` (`SourceConnection`, `IVersioned`), added by the `Connections` migration.
+  - `Alias`: NOCASE, unique, immutable; `Kind`; `Mode` (`Form` or `Raw`, how it is edited).
+  - `SettingsJson`: the provider's canonical keywords and values, without secrets.
+  - `ProtectedSecrets`: Data Protection, purpose `GalaxyData.Connections.Secrets.v1` plus the alias, so a copied blob doesn't read under another alias.
+  - `OptionsJson`, `IsReadOnly`, and `SchemaStatus`, used from B3.
+  - Connection strings exist only in memory, to connect.
+- **`ConnectionKind`** (in place of `IConnectionKind`): one for each of `postgres`, `sqlserver`, `sqlite`, `duckdb` and `excel`. Each has:
+  - the descriptor: groups (empty ones left out); fields of type text, number, password, bool, select, filePath, folderPath or keyValues, with `visibleWhen`; and options;
+  - `IsSecret` (password, pwd, token, secret);
+  - path keywords, checked against `AllowedFileRoots`;
+  - reserved keywords: SQLite `Mode`, DuckDB `ACCESS_MODE`, SQL Server `AttachDbFilename`;
+  - `Normalize`/`Parse` through the provider's builder, so synonyms get canonical names and unknown keywords fail with the provider's message. DuckDB's builder doesn't do this, so the kind canonicalizes `Data Source` and lowercases settings itself;
+  - `Restrict` for read-only: SQLite `Mode=ReadOnly`/`ReadWrite` (never create), DuckDB `ACCESS_MODE=READ_ONLY`, PostgreSQL `Options=-c default_transaction_read_only=on` added to the user's own;
+  - `ProbeAsync`: PostgreSQL through `CreateDataSource`, plus the provider's connection prep.
+- **`ConnectionInputs`:**
+  - **Form:** settings without secrets, plus `secrets: {keyword: {action: keep|set|clear, value}}`. A stored secret not mentioned is kept.
+  - **Raw:** `********` keeps (or follows the secret's action), a written value sets, and an absent keyword clears.
+  - **Errors:** given by field (`connectionString`, `settings.X`, `secrets.X`, `options.X`, `alias`, `kind`, `mode`) as validation problems.
+  - **`Convert`:** echoes only the secrets given in the request.
+- **`FileRoots`:** `GalaxyData:Connections:AllowedFileRoots`, by default `{data}/files`, made at startup. Paths must be fully qualified and inside a root (case-insensitive on Windows and macOS). A link that resolves outside the roots is refused.
+- **`ConnectionTester`:**
+  - checks that the file or folder exists (so it never creates one);
+  - runs within `TestTimeout` (10 s), using `WaitAsync` for providers that ignore the token;
+  - answers `{ok, message, elapsedMs}`, with secret values scrubbed from messages, and a SQLite probe that clears its pool.
+- **Endpoints:**
+  - `GET /api/connection-kinds`, `POST /api/connection-kinds/{kind}/convert`;
+  - `GET`, `POST`, `GET {id}`, `PUT {id}` (versioned), `DELETE {id}` (`?version=`), `POST {id}/test` and `POST test` (`connectionId` keeps stored secrets) under `/api/connections`;
+  - all `CanAdmin`, all audited (secrets by name: set, changed, cleared).
+  - Secrets whose keys are gone show `secretsUnreadable`; keeping them is a validation problem, and they must be set again.
+  - New problem code: `alias-taken`.
+- **Tests:**
+  - field keys equal each builder's canonical names; synonyms; refusals; read-only strings; masking; the connection string splitter;
+  - resolution in form and raw: keep, set and clear, reserved keywords, roots, options, Excel;
+  - API: SQLite, DuckDB and Excel tried; secrets never in answers, the row or the audit; unsaved tries keep stored secrets; the timeout; alias rules; versions; convert; unreadable secrets;
+  - PostgreSQL and SQL Server tried against the container servers. Their defaults now live in `tests/Shared/TestServers.cs`, shared with the container tests;
+  - the backup before migrating, end to end, from a database at the first migration.
+
 **Schema refresh and catalog**
 - A refresh is a `Channel`-queued `BackgroundService` job; the API returns 202 and the UI polls the status.
   - The worker introspects the source and hashes the result.
@@ -656,7 +694,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 |---|---|
 | B0 | Host, ProblemDetails, OpenAPI, health; single instance per data directory; `SourceUnavailableException` in the engine (see "Built in B0" in §5) |
 | B1 | EF metadata, migrations and backup, seeding, cookie auth, antiforgery, policies, users; the admin audit (see "Built in B1" in §5) |
-| B2 | Connections, kinds and descriptors, secrets and masking, test-connection |
+| B2 | Connections, kinds and descriptors, secrets and masking, test-connection; allowed file roots (see "Built in B2" in §5) |
 | B3 | Snapshots, refresh worker, diff, CatalogService, tree, search, entity descriptors and capabilities |
 | B4 | GridQueryComposer, codecs, NavigationResolver, CountStrategy, browse endpoints |
 | B5 | Overlay CRUD and validation |

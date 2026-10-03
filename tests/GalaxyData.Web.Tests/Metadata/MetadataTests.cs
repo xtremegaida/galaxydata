@@ -9,6 +9,8 @@ using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Problems;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 using Xunit;
@@ -112,6 +114,37 @@ public sealed class MetadataTests
       await using WebAppFactory second = new() { DataDirectory = data.Path };
       InvalidOperationException e = Should.Throw<InvalidOperationException>(() => second.CreateClient());
       e.Message.ShouldContain("was made by a newer version of GalaxyData: it has the migration 29991231000000_FromTheFuture");
+   }
+
+   /// <summary>A database an older version made is backed up before this version's migrations change it, and keeps its users.</summary>
+   [Fact]
+   public async Task AnOlderDatabaseIsBackedUpBeforeItIsMigrated()
+   {
+      await using SharedData data = new();
+      Directory.CreateDirectory(data.Path);
+      string database = Path.Combine(data.Path, MetadataDb.FileName);
+      string first;
+      await using (MetadataDb old = new(new DbContextOptionsBuilder<MetadataDb>().UseSqlite(MetadataDb.ConnectionString(database)).Options))
+      {
+         first = old.Database.GetMigrations().First();
+         await old.GetService<IMigrator>().MigrateAsync(first, Token);
+         await old.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Users (UserName, Role, PasswordHash, SecurityStamp, MustChangePassword, IsDisabled, FailedSignIns, CreatedAt, PasswordChangedAt, Version) " +
+            "VALUES ('old-admin', 'Admin', 'x', 'stamp', 0, 0, 0, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 0)", Token);
+      }
+      await using WebAppFactory factory = new() { DataDirectory = data.Path };
+      factory.CreateClient();
+      string second = (await WithDbAsync(factory, async db => (await db.Database.GetAppliedMigrationsAsync(Token)).ToList()))[1];
+      string backup = Directory.GetFiles(Path.Combine(data.Path, MetadataBackup.DirectoryName)).Single();
+      Path.GetFileName(backup).ShouldEndWith($"-before-{second}.db");
+      await using (SqliteConnection copy = new(MetadataDb.ConnectionString(backup)))
+      {
+         await copy.OpenAsync(Token);
+         await using SqliteCommand read = copy.CreateCommand();
+         read.CommandText = "SELECT group_concat(MigrationId) FROM __EFMigrationsHistory";
+         (await read.ExecuteScalarAsync(Token)).ShouldBe(first);
+      }
+      (await WithDbAsync(factory, db => db.Users.Select(u => u.UserName).ToListAsync(Token))).ShouldBe(["old-admin"], "an existing database isn't bootstrapped");
    }
 
    /// <summary>A backup is the database as it was, written-ahead changes too; the newest ten are kept.</summary>
