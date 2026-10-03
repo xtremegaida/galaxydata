@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using GalaxyData.Web.Auth;
 using GalaxyData.Web.Browse;
+using GalaxyData.Web.Hosting;
 using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Problems;
 using Microsoft.AspNetCore.Builder;
@@ -22,6 +23,7 @@ public static class BrowseEndpoints
       RouteGroupBuilder browse = api.MapGroup("/browse")
          .WithTags("Browse")
          .RequireAuthorization(Policies.CanRead)
+         .RequireRateLimiting(RateLimits.Queries)
          .ProducesProblem(StatusCodes.Status401Unauthorized)
          .ProducesProblem(StatusCodes.Status403Forbidden);
       browse.MapPost("/page", PageAsync).WithName("BrowsePage")

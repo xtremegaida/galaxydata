@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using GalaxyData.Web.Auth;
 using GalaxyData.Web.Changes;
+using GalaxyData.Web.Hosting;
 using GalaxyData.Web.Problems;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -39,6 +40,7 @@ public static class ChangeEndpoints
          .Produces<ChangePreviewDto>()
          .ProducesProblem(StatusCodes.Status409Conflict);
       changes.MapPost("/commit", CommitAsync).WithName("CommitChanges")
+         .RequireRateLimiting(RateLimits.Queries)
          .WithSummary("Commits a preview's plan, with scripts as edited; what came of it on each connection")
          .Produces<CommitResultDto>()
          .ProducesValidationProblem()

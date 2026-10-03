@@ -829,6 +829,34 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
   - The engine's: a new row can't be referred to by another in the same set when its key is generated.
 - **Tests:** operations merged (originals, values set back, decimals as values, new rows, deletes, reverts by key, id and columns, display values, versions, clearing by source); refused by field (entities, views, read-only sources, keys, key columns, nulls, values, originals, names, sizes), whole batches, readers, a deleted user's changes; limits; one id for a row; previews (order, changes, issues); commits (written, cleared, new rows, the audit); a conflict rolling everything back; one commit at a time (a preview during a commit); stale plans (changes, version, replaced, expired, the catalog, twice); edited scripts (refused, the same but for line breaks, as edited, any statement, statements that changed no rows); two connections, and a conflict on either; DuckDB's scripts; a connection deleted; commits cut short; the guard's quoted names.
 
+**Built in B8**
+- **Security headers** (`Hosting/SecurityHeaders.cs`), set as each answer starts, so those made over for a failure keep them:
+  - nosniff, no framing, no referrer, same-origin COOP/CORP, a Permissions-Policy turning devices off;
+  - a content security policy: the client's (`Security:ContentSecurityPolicy`: its own scripts, inline styles, data images and fonts, blob workers), or the API's, which loads nothing;
+  - `Cache-Control: no-store` on the API's answers; HSTS over HTTPS outside development, but for local hosts (`Security:Hsts`, `HstsMaxAge`); `Security:RequireHttps` (and `HttpsPort`) redirects HTTP; no `Server` header.
+- **Static files:** names with a content hash (eight capitals and digits, a capital among them) are cached for a year; others `no-cache`.
+- **Behind a proxy** (`Proxy:Enabled`, `KnownProxies`, `KnownNetworks`, `ForwardLimit`): `X-Forwarded-For` and `-Proto` from trusted proxies alone (one on the machine, by default). Addresses and networks are checked written in full. `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, which believes every client, stops the application. This resolves B1's limitation of sign-ins counted by the proxy's address.
+- **Rate limits** (`Hosting/RateLimits.cs`, `RateLimits:*`):
+  - requests to the API a minute, for each user (signed out, each address; IPv6 by /64), in a token bucket given back at the rate set, counted before authorization (so 401s count), health checks aside;
+  - requests that run queries or reach sources (`queries`: browse, query execute, commits, trying connections and overlay items) a few at a time for each user, more waiting;
+  - 429 on every operation in the OpenAPI document. Sign-ins count by the same address (IPv6 /64).
+- **Log redaction** (`Hosting/LogRedaction.cs`): the logger factory is replaced by one whose loggers mask secrets before any provider writes them (providers' own filters kept).
+  - `SecretRedactor` masks secrets the application knows (connections' secrets as protected, read or tried; the bootstrap password; six characters or more, standing alone), secret settings as connection strings and JSON write them (`=` or `:`), and URL passwords. Its patterns don't backtrack (linear in the entry).
+  - An entry with a secret goes on with its values (its template too) masked, and its exception as masked text.
+- **Publish** (`GalaxyData.Web.csproj`, `PublishClient`): `npm ci` and `npm run build` in `src/client` (or `-p:ClientRoot`, relative to the project), publishing `dist/browser` as `wwwroot`. Skipped with `-p:SkipClientBuild=true` or without a client. A `ClientRoot` without one, or a project `wwwroot`, is an error. Checked with a stand-in client.
+- **Found by the review**, fixed:
+  - publishing the client with a `wwwroot` in the project crashed MSBuild (a stack overflow in the static web assets' pipeline) and hung; it is an error now;
+  - `-p:ClientRoot` without a trailing slash skipped the client without a word;
+  - secrets added at once could drop one from those masked (8 threads: one in seven rounds);
+  - the secret-setting pattern was quadratic: 100 KB took 16 s; patterns are non-backtracking now;
+  - `ASPNETCORE_FORWARDEDHEADERS_ENABLED` believed every client, past the `Proxy` settings;
+  - answers refused by authorization weren't counted, health checks were, and an IPv6 client could take a new address for each request;
+  - HSTS was dropped from answers the exception handler made;
+  - short secrets were masked in other words and numbers, telling what they were (`1234` in `51234`);
+  - smaller: `Password: x`, JSON keys and URL passwords weren't masked, a line break after `Password=` masked the next line; the token bucket gave 120 a minute for 61; a CSP with a line break would fail every page; `10.1` was taken for `10.0.0.1`; dated names (`notes-20250101.txt`) were cached as hashed; checking queries waited behind running ones.
+- **Known limitations:** scopes aren't masked; an exception with a secret reaches structured sinks as text; the publish copies native libraries of every platform (370 MB) unless a runtime is given.
+- **Tests:** headers on pages, files, the API, 401s, 404s and failures; the client's policy as a setting; HSTS by environment and setting, through a proxy, on failures; HTTPS redirects; trusted and untrusted proxies, IPv4 as IPv6; the forwarded-headers switch refused; settings checked; each user's requests, an address's (401s, IPv6 /64, health aside), each user's queries at once; masking patterns, known secrets standing alone, long entries, secrets added at once, loggers (messages, values, exceptions), and the application's secrets in its own log.
+
 ---
 
 ## 6. Angular app (`src/client`)
@@ -915,13 +943,13 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | B5 | Overlay CRUD and validation; overlay items named by the engine's diagnostics (see "Built in B5" in §5) |
 | B6 | Query validate, explain, execute and links; saved queries (see "Built in B6" in §5) |
 | B7 | ChangeSets, merger, preview, commit, audit (see "Built in B7" in §5) |
-| B8 | Security headers and CSP, rate limits, log redaction, publish target |
+| B8 | Security headers and CSP, rate limits, log redaction, publish target (see "Built in B8" in §5) |
 
 **Frontend**
 
 | # | Scope |
 |---|---|
-| F0 | Workspace, theme, generated types, Vitest |
+| F0 | Workspace, theme, generated types, Vitest. The build's `outputPath` is `dist` (the publish target takes `dist/browser`), and `inlineCritical: false`, as the CSP refuses the inline loader of critical CSS |
 | F1 | Auth, guards, interceptors, shell |
 | F2 | Admin users and connections (dynamic form) |
 | F3 | Tree and search |

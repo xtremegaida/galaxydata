@@ -13,6 +13,25 @@ dotnet run --project src/GalaxyData.Web
 In development it listens on `http://localhost:5180` (`Properties/launchSettings.json`). Elsewhere, set the
 address with `ASPNETCORE_URLS` or Kestrel's settings as for any ASP.NET Core application.
 
+**Publishing.**
+
+```bash
+dotnet publish src/GalaxyData.Web -c Release -o out
+```
+
+- **The client is built as it is published.** `npm ci` and `npm run build` run in `src/client`, and what the build
+  leaves in `src/client/dist/browser` is published as `wwwroot`. This needs Node.js.
+- **Skipping it.** `-p:SkipClientBuild=true` publishes the server alone; so does a checkout without the client.
+  `-p:ClientRoot=<folder>` (relative to `src/GalaxyData.Web`) builds a client from elsewhere, and fails when there
+  is none there. A `wwwroot` in `src/GalaxyData.Web` would be published over the client's build, so publishing the
+  client fails while there is one.
+- **One platform.** Without a runtime, the databases' native libraries come for every platform (about 370 MB).
+  `-r linux-x64` (or `win-x64`, ...) publishes that platform's alone.
+- **Running it.** The published folder runs with `dotnet GalaxyData.Web.dll`, or the executable. Its data directory
+  (`data`, beside it, unless configured) must be writable, and backed up with its `keys`.
+- **In front of it.** Serve it over HTTPS: set Kestrel's certificate, or put a reverse proxy in front (see
+  [Security](#security)). Set `AllowedHosts` to the host names it is reached by.
+
 ## Configuration
 
 Settings are in the `GalaxyData` section of `appsettings.json`, or environment variables with `__` between the
@@ -45,6 +64,18 @@ parts (`GalaxyData__DataDirectory`).
 | `Query:MaxPageSize` | `1000` | The most rows a page of a grid may have. |
 | `Changes:MaxChanges` | `10000` | The most changes a user may have pending. |
 | `Changes:PlanLifetime` | `00:30:00` | How long a preview of changes may be committed. |
+| `Security:ContentSecurityPolicy` | see [Security](#security) | The client's content security policy; empty for none. |
+| `Security:Hsts` | `true` | Whether answers over HTTPS tell browsers to keep to HTTPS (outside development). |
+| `Security:HstsMaxAge` | `180.00:00:00` | How long browsers keep to HTTPS. |
+| `Security:RequireHttps` | `false` | Whether requests over HTTP are redirected to HTTPS. |
+| `Security:HttpsPort` | the server's | The port to redirect to HTTPS on. |
+| `Proxy:Enabled` | `false` | Whether a reverse proxy passes requests on, saying who the client is. |
+| `Proxy:KnownProxies` | none | The trusted proxies' addresses. With neither these nor networks, only a proxy on the same machine is trusted. |
+| `Proxy:KnownNetworks` | none | The networks trusted proxies are in (`10.0.0.0/8`). |
+| `Proxy:ForwardLimit` | `1` | How many proxies in a row are believed. |
+| `RateLimits:RequestsPerMinute` | `600` | Requests to the API a user (or, signed out, an address) may make a minute; `0` for no limit. |
+| `RateLimits:ConcurrentQueries` | `4` | Requests that run queries or reach sources a user may have running at once. |
+| `RateLimits:QueuedQueries` | `16` | Such requests that may wait for one to end; more are refused. |
 
 Settings that don't make sense (a minimum password length of 3, a user name with spaces) stop the application at
 startup, naming the setting.
@@ -111,7 +142,8 @@ with the right password. An administrator may unlock them sooner.
 - A locked-out user is told so, which shows that the user exists.
 
 **Rate limit.** A client address may try `Auth:SignInsPerMinute` sign-ins (and password changes) a minute. Behind
-a reverse proxy, every client has the proxy's address until forwarded headers are set up.
+a reverse proxy, every client has the proxy's address, unless the proxy is trusted to say whose it is (`Proxy`, see
+[Security](#security)).
 
 **Administrators.**
 
@@ -616,6 +648,65 @@ when it starts again, as each connection may have committed or not. Administrato
 /api/audit/commits` (newest first, paged with `before` and `take` as the admin audit is), and `GET
 /api/audit/commits/{id}`, with its scripts.
 
+## Security
+
+**Headers.** Every answer has these, those made over for a failure too:
+
+- `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy` and
+  `Cross-Origin-Resource-Policy: same-origin`, and a `Permissions-Policy` that turns devices off;
+- `Referrer-Policy: no-referrer`, as the client's addresses name entities, filters and rows;
+- a `Content-Security-Policy`. The API's loads nothing (`default-src 'none'; frame-ancestors 'none'`). The client's
+  is `Security:ContentSecurityPolicy`, by default:
+
+  ```text
+  default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;
+  worker-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  ```
+
+  The client's own scripts only; inline styles, which the grid and the editor set; the editor's workers. The client
+  is built without inlined critical CSS (Angular's `inlineCritical: false`), whose loader is an inline script.
+
+**Caching.** The API's answers are `Cache-Control: no-store`, as they hold data. The client's page is `no-cache`, so
+a new version is picked up at once. Its files named by their content's hash (`main-LKPGWKWT.js`: eight capitals
+and digits) are kept for a year, and its other files are checked each time.
+
+**HTTPS.** Answers over HTTPS have `Strict-Transport-Security` (`Security:Hsts`, for `Security:HstsMaxAge`) outside
+development, and never for `localhost`. With `Security:RequireHttps`, requests over HTTP are redirected to HTTPS:
+on `Security:HttpsPort`, or the port the server listens on for HTTPS. Cookies are `Secure` when the request came
+over HTTPS.
+
+**Behind a reverse proxy.** With `Proxy:Enabled`, a proxy's `X-Forwarded-For` and `X-Forwarded-Proto` say who the
+client is and how it connected. That client's address is what rate limits count by, and HTTPS through the proxy is
+HTTPS to the application. Only trusted proxies are believed: those in `Proxy:KnownProxies` and
+`Proxy:KnownNetworks`, or, with neither, one on the same machine (an address written as IPv6, `::ffff:10.0.0.1`,
+is the IPv4 one). What another says is ignored, as is everything without `Proxy:Enabled`. ASP.NET Core's own
+switch, `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, believes every client, so it stops the application.
+
+**Rate limits.** Refusals are `429 too-many-requests`, with `Retry-After` when there is a time to give.
+
+- **Requests:** a user may make `RateLimits:RequestsPerMinute` requests to the API a minute, each user apart. Signed
+  out, each address is counted apart, an IPv6 address by its /64 (which one client may have), and requests refused
+  for want of a session count too. A minute's requests may come at once, and are given back at that rate, about a
+  second's worth at a time. Health checks aren't counted.
+- **Queries:** a user may run `RateLimits:ConcurrentQueries` requests that run queries or reach sources at once,
+  with `RateLimits:QueuedQueries` more waiting their turn. These are browsing, running queries, commits of changes,
+  trying connections, and trying overlay items. Checking, explaining and following a query's links run nothing,
+  so an editor's checks don't wait for queries; nor do previews of changes.
+- **Sign-ins:** see [Users and signing in](#users-and-signing-in).
+
+**The log.** Whatever writes to the log, secrets in its entries are masked as `********`: in messages, values and
+exceptions. These are masked:
+
+- secrets the application knows (connections' passwords and tokens, as they are saved, read or tried, and the
+  bootstrap password), of six characters or more, where they stand alone: not within a longer word or number;
+- the value of any setting that looks like a secret, as connection strings and JSON write them (`Password=...`,
+  `Pwd: ...`, `"token": "..."`, `...Key=...`), to the setting's end;
+- passwords in URLs (`postgres://user:********@host`).
+
+An entry with a secret goes on with its values masked, and its exception as its text masked (its type, message and
+stack, as it reads). Scopes aren't masked; the application's hold request paths and ids. Nothing the application
+logs should hold a secret in the first place: this is the last line.
+
 ## Health
 
 `GET /api/health` reports whether the application can do its work:
@@ -681,7 +772,7 @@ Errors are problem details (RFC 9457, `application/problem+json`). Every problem
 | 409 | `commit-in-progress` | The user's changes are being committed: they can't be previewed or committed again until that has finished. |
 | 422 | `wrong-password` | The current password given to change it isn't right. |
 | 422 | `weak-password` | A new password doesn't meet the policy; `detail` says how. |
-| 429 | `too-many-requests` | Too many sign-ins from the address; `Retry-After` says when to try again. |
+| 429 | `too-many-requests` | Too many requests: sign-ins from the address, or a user's requests or queries (see [Security](#security)). `Retry-After` says when to try again, when it can. |
 | others | by status | Problems the application raises have codes of their own. The rest have their status's: `bad-request`, `unauthenticated`, `forbidden`, `not-found`, `method-not-allowed`, `conflict`, `unsupported-media-type`, `unprocessable`, `too-many-requests`. |
 
 **`diagnostics`** lists every diagnostic of the query, warnings included. Each has a `code` (`GDQ1001`, see the
@@ -699,9 +790,9 @@ level, with status 499.
 
 ## The client
 
-The client is served from `wwwroot`, which the client's build fills (it isn't in the repository). Every path that
-isn't the API's is the client's page, `index.html`, served with `Cache-Control: no-cache`, so a new version is
-picked up at once. That includes paths with dots and matrix parameters, such as
+The client is served from `wwwroot`, which publishing fills from the client's build (it isn't in the
+repository). Every path that isn't the API's is the client's page, `index.html`, served with `Cache-Control:
+no-cache`, so a new version is picked up at once. That includes paths with dots and matrix parameters, such as
 `/browse/shop.customers;f=country:eq:ZA/orders`.
 
 **Asset files are the exception.** A path whose last segment has no matrix parameters and ends in an extension of

@@ -81,7 +81,7 @@ public static class AuthSetup
          o.AddPolicy(SignInLimit, context =>
          {
             int permits = context.RequestServices.GetRequiredService<IOptions<GalaxyDataOptions>>().Value.Auth.SignInsPerMinute;
-            return RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            return RateLimitPartition.GetFixedWindowLimiter(RateLimits.Address(context.Connection.RemoteIpAddress),
                _ => new FixedWindowRateLimiterOptions { PermitLimit = permits, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 });
          });
          o.OnRejected = (context, _) =>

@@ -8,3 +8,5 @@ TestResults/
 node_modules/
 src/GalaxyData.Web/wwwroot/
 /src/GalaxyData.Web/data/
+/src/client/dist/
+/src/client/.angular/

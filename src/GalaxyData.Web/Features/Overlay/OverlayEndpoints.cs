@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Web.Auth;
 using GalaxyData.Web.Catalog;
+using GalaxyData.Web.Hosting;
 using GalaxyData.Web.Overlay;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -42,7 +43,7 @@ public static class OverlayEndpoints
       relations.MapDelete("/{id:int}", (int id, int? version, ClaimsPrincipal me, OverlayEditor editor, CancellationToken cancellationToken) =>
             editor.DeleteAsync(RelationKind.Instance, id, version, me, cancellationToken))
          .WithName("DeleteRelation").ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
-      relations.MapPost("/validate", ValidateRelationAsync).WithName("ValidateRelation")
+      relations.MapPost("/validate", ValidateRelationAsync).WithName("ValidateRelation").RequireRateLimiting(RateLimits.Queries)
          .WithSummary("Tries a relation, in place of the relation id when given, without saving it")
          .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound);
 
@@ -56,7 +57,7 @@ public static class OverlayEndpoints
       navigations.MapDelete("/{id:int}", (int id, int? version, ClaimsPrincipal me, OverlayEditor editor, CancellationToken cancellationToken) =>
             editor.DeleteAsync(NavigationOverrideKind.Instance, id, version, me, cancellationToken))
          .WithName("DeleteNavigationOverride").ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
-      navigations.MapPost("/validate", ValidateNavigationAsync).WithName("ValidateNavigationOverride")
+      navigations.MapPost("/validate", ValidateNavigationAsync).WithName("ValidateNavigationOverride").RequireRateLimiting(RateLimits.Queries)
          .WithSummary("Tries a navigation override, in place of the override id when given, without saving it")
          .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound);
 
@@ -70,7 +71,7 @@ public static class OverlayEndpoints
       virtualEntities.MapDelete("/{id:int}", (int id, int? version, ClaimsPrincipal me, OverlayEditor editor, CancellationToken cancellationToken) =>
             editor.DeleteAsync(VirtualEntityKind.Instance, id, version, me, cancellationToken))
          .WithName("DeleteVirtualEntity").ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
-      virtualEntities.MapPost("/validate", ValidateVirtualEntityAsync).WithName("ValidateVirtualEntity")
+      virtualEntities.MapPost("/validate", ValidateVirtualEntityAsync).WithName("ValidateVirtualEntity").RequireRateLimiting(RateLimits.Queries)
          .WithSummary("Tries a virtual entity, in place of the virtual entity id when given, without saving it: its issues, the entity it makes, and its query's diagnostics")
          .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound);
 
@@ -84,7 +85,7 @@ public static class OverlayEndpoints
       settings.MapDelete("/{id:int}", (int id, int? version, ClaimsPrincipal me, OverlayEditor editor, CancellationToken cancellationToken) =>
             editor.DeleteAsync(EntitySettingsKind.Instance, id, version, me, cancellationToken))
          .WithName("DeleteEntitySettings").ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
-      settings.MapPost("/validate", ValidateEntitySettingsAsync).WithName("ValidateEntitySettings")
+      settings.MapPost("/validate", ValidateEntitySettingsAsync).WithName("ValidateEntitySettings").RequireRateLimiting(RateLimits.Queries)
          .WithSummary("Tries an entity's settings, in place of the settings id when given, without saving them: their issues, and the entity as they make it")
          .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound);
       return api;

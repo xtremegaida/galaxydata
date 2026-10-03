@@ -12,6 +12,7 @@ using GalaxyData.Web.Auth;
 using GalaxyData.Web.Catalog;
 using GalaxyData.Web.Connections;
 using GalaxyData.Web.Features.Audit;
+using GalaxyData.Web.Hosting;
 using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Problems;
 using GalaxyData.Web.Schemas;
@@ -91,9 +92,11 @@ public static partial class ConnectionEndpoints
          .ProducesProblem(StatusCodes.Status404NotFound)
          .ProducesProblem(StatusCodes.Status409Conflict);
       connections.MapPost("/{id:int}/test", TestStoredAsync).WithName("TestConnection")
+         .RequireRateLimiting(RateLimits.Queries)
          .WithSummary("Tries a connection as it is saved")
          .ProducesProblem(StatusCodes.Status404NotFound);
       connections.MapPost("/test", TestAsync).WithName("TestConnectionSettings")
+         .RequireRateLimiting(RateLimits.Queries)
          .WithSummary("Tries settings before they are saved")
          .ProducesValidationProblem();
       connections.MapPost("/{id:int}/refresh", RefreshAsync).WithName("RefreshConnectionSchema")

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 
@@ -41,6 +42,111 @@ public sealed class GalaxyDataOptions
    /// <summary>Changes to rows: how many a user may have pending, and how long a preview may be committed.</summary>
    [ValidateObjectMembers]
    public ChangeSettings Changes { get; set; } = new();
+
+   /// <summary>What answers tell browsers: the client's content security policy, HSTS and HTTPS.</summary>
+   [ValidateObjectMembers]
+   public SecuritySettings Security { get; set; } = new();
+
+   /// <summary>A reverse proxy in front of the application, trusted to say who the client is.</summary>
+   [ValidateObjectMembers]
+   public ProxySettings Proxy { get; set; } = new();
+
+   /// <summary>How much each user may ask of the application.</summary>
+   [ValidateObjectMembers]
+   public RateLimitSettings RateLimits { get; set; } = new();
+}
+
+public sealed class SecuritySettings
+{
+   /// <summary>
+   /// What the client's pages may load: their own scripts, styles (and inline ones, which the grid and editor set),
+   /// images and fonts (and data URLs), workers (and blob URLs, as the editor makes them), and calls to the API alone.
+   /// </summary>
+   public const string DefaultContentSecurityPolicy =
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; " +
+      "worker-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+
+   /// <summary>The content security policy of the client's pages and files; empty for none. The API's answers have one of their own, which loads nothing.</summary>
+   [RegularExpression("^[^\\x00-\\x1F\\x7F]*$", ErrorMessage = "Security:ContentSecurityPolicy is a header's value: it has no line breaks or other control characters")]
+   public string ContentSecurityPolicy { get; set; } = DefaultContentSecurityPolicy;
+
+   /// <summary>Whether answers over HTTPS tell browsers to use HTTPS alone for the host (Strict-Transport-Security), outside development.</summary>
+   public bool Hsts { get; set; } = true;
+
+   /// <summary>How long browsers keep to HTTPS for the host.</summary>
+   [Range(typeof(TimeSpan), "00:00:00", "730.00:00:00")]
+   public TimeSpan HstsMaxAge { get; set; } = TimeSpan.FromDays(180);
+
+   /// <summary>Whether requests over HTTP are redirected to HTTPS.</summary>
+   public bool RequireHttps { get; set; }
+
+   /// <summary>The port to redirect to HTTPS on; null for the one the server listens on for HTTPS.</summary>
+   [Range(1, 65535)]
+   public int? HttpsPort { get; set; }
+}
+
+public sealed class ProxySettings
+{
+   /// <summary>
+   /// Whether a reverse proxy passes requests on, saying who the client is and how it connected
+   /// (<c>X-Forwarded-For</c>, <c>X-Forwarded-Proto</c>): believed only of the proxies trusted.
+   /// </summary>
+   public bool Enabled { get; set; }
+
+   /// <summary>The trusted proxies' addresses. With no proxies or networks given, only one on the same machine is trusted.</summary>
+   [IpAddresses]
+   public List<string>? KnownProxies { get; set; }
+
+   /// <summary>The networks trusted proxies are in, in CIDR form (<c>10.0.0.0/8</c>).</summary>
+   [IpAddresses(Networks = true)]
+   public List<string>? KnownNetworks { get; set; }
+
+   /// <summary>How many proxies in a row are believed, from the one nearest.</summary>
+   [Range(1, 10)]
+   public int ForwardLimit { get; set; } = 1;
+}
+
+public sealed class RateLimitSettings
+{
+   /// <summary>Requests to the API a user (or, signed out, an address) may make a minute, in bursts of up to as many; 0 for no limit.</summary>
+   [Range(0, 1_000_000)]
+   public int RequestsPerMinute { get; set; } = 600;
+
+   /// <summary>Requests that run queries or reach sources a user may have running at once: browsing, queries, previews and commits, trying connections and overlay items.</summary>
+   [Range(1, 1000)]
+   public int ConcurrentQueries { get; set; } = 4;
+
+   /// <summary>Such requests a user may have waiting for one of those to end; more are refused (429).</summary>
+   [Range(0, 10_000)]
+   public int QueuedQueries { get; set; } = 16;
+}
+
+/// <summary>
+/// Each item is an IP address, or with <see cref="Networks"/> a network in CIDR form (<c>10.0.0.0/8</c>), written in
+/// full: <c>10</c> and <c>10.1</c>, which .NET reads as <c>0.0.0.10</c> and <c>10.0.0.1</c>, aren't.
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class IpAddressesAttribute : ValidationAttribute
+{
+   public bool Networks { get; set; }
+
+   protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+   {
+      ArgumentNullException.ThrowIfNull(validationContext);
+      if (value is not IEnumerable<string> items) { return ValidationResult.Success; }
+      foreach (string item in items)
+      {
+         int slash = item.IndexOf('/', StringComparison.Ordinal);
+         string address = Networks && slash >= 0 ? item[..slash] : item;
+         bool full = address.Contains(':', StringComparison.Ordinal) || address.Split('.') is [_, _, _, _];
+         if (!full || (Networks ? !System.Net.IPNetwork.TryParse(item, out _) : !IPAddress.TryParse(item, out _)))
+         {
+            string member = validationContext.MemberName ?? validationContext.DisplayName;
+            return new ValidationResult($"{member}: '{item}' isn't {(Networks ? "a network in CIDR form, such as 10.0.0.0/8" : "an IP address")}", [member]);
+         }
+      }
+      return ValidationResult.Success;
+   }
 }
 
 public sealed class ChangeSettings

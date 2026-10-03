@@ -72,6 +72,26 @@ public sealed class ProblemTests
       return (app, app.GetTestClient(), data);
    }
 
+   /// <summary>An answer made over, for a failure, keeps the security headers, HSTS too.</summary>
+   [Fact]
+   public async Task FailuresKeepTheSecurityHeaders()
+   {
+      (WebApplication app, HttpClient client, string data) = await HostAsync();
+      try
+      {
+         HttpResponseMessage response = await client.GetAsync("https://galaxydata.test/api/test/bug", Token);
+         await response.ProblemAsync(500, ProblemCodes.InternalError);
+         response.Headers.GetValues("Strict-Transport-Security").Single().ShouldBe("max-age=15552000");
+         response.Headers.GetValues("X-Content-Type-Options").Single().ShouldBe("nosniff");
+         response.Headers.CacheControl!.NoStore.ShouldBeTrue();
+      }
+      finally
+      {
+         await app.DisposeAsync();
+         Directory.Delete(data, recursive: true);
+      }
+   }
+
    private static async Task<JsonElement> GetProblemAsync(string kind, int status, string code, string environment = "Production")
    {
       (WebApplication app, HttpClient client, string data) = await HostAsync(environment);

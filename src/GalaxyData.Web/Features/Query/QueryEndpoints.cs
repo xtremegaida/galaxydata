@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using GalaxyData.Web.Auth;
+using GalaxyData.Web.Hosting;
 using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Problems;
 using GalaxyData.Web.Queries;
@@ -34,7 +35,9 @@ public static class QueryEndpoints
          .Produces<QueryExplainDto>()
          .ProducesValidationProblem()
          .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+      // Checking, explaining and following links prepare queries alone: as an editor checks as it is typed, they don't wait for those that run.
       query.MapPost("/execute", ExecuteAsync).WithName("ExecuteQuery")
+         .RequireRateLimiting(RateLimits.Queries)
          .WithSummary("A page of a query's rows, as a grid shows them, with their columns and count when asked for")
          .Produces<QueryPageDto>()
          .ProducesValidationProblem()

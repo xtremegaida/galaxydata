@@ -25,4 +25,45 @@
     <InternalsVisibleTo Include="GalaxyData.Web.Tests" />
   </ItemGroup>
 
+  <!--
+    The client (the Angular workspace in src/client, or -p:ClientRoot=<folder>, relative to this project) is built
+    when the application is published, and its files published as wwwroot: npm ci, then npm run build, which leaves
+    them in ClientDist (the workspace's outputPath is dist). Publishing needs Node.js then; -p:SkipClientBuild=true
+    publishes the server alone, without a client.
+  -->
+  <PropertyGroup>
+    <ClientRootGiven Condition="'$(ClientRoot)' != ''">true</ClientRootGiven>
+    <ClientRoot Condition="'$(ClientRoot)' == ''">..\client</ClientRoot>
+    <ClientDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(ClientRoot)'))</ClientDirectory>
+    <ClientDist>$([MSBuild]::NormalizeDirectory('$(ClientDirectory)', 'dist', 'browser'))</ClientDist>
+  </PropertyGroup>
+
+  <Target Name="CheckClient" BeforeTargets="ComputeFilesToPublish" Condition="'$(SkipClientBuild)' != 'true' And '$(ClientRootGiven)' == 'true' And !Exists('$(ClientDirectory)package.json')">
+    <Error Text="There is no client in $(ClientDirectory) (no package.json): give the Angular workspace's folder as ClientRoot." />
+  </Target>
+
+  <Target Name="PublishClient" AfterTargets="ComputeFilesToPublish" Condition="'$(SkipClientBuild)' != 'true' And Exists('$(ClientDirectory)package.json')">
+    <!-- A wwwroot of the project's own would be published over the client's (and the static web assets' pipeline fails with both). -->
+    <Error Condition="Exists('$(MSBuildProjectDirectory)\wwwroot')"
+           Text="$(MSBuildProjectDirectory)\wwwroot would be published with the client's build: remove it (the client's build is published as wwwroot), or publish it as it is with -p:SkipClientBuild=true." />
+    <Exec Command="npm --version" ContinueOnError="true" StandardOutputImportance="low">
+      <Output TaskParameter="ExitCode" PropertyName="NpmExitCode" />
+    </Exec>
+    <Error Condition="'$(NpmExitCode)' != '0'" Text="Node.js and npm build the client ($(ClientDirectory)) as the application is published: install them, or publish with -p:SkipClientBuild=true." />
+    <Exec WorkingDirectory="$(ClientDirectory)" Command="npm ci" />
+    <Exec WorkingDirectory="$(ClientDirectory)" Command="npm run build" />
+    <ItemGroup>
+      <ClientFile Include="$(ClientDist)**" />
+    </ItemGroup>
+    <Error Condition="'@(ClientFile)' == ''" Text="The client's build left nothing in $(ClientDist)." />
+    <Error Condition="!Exists('$(ClientDist)index.html')" Text="The client's build left no index.html in $(ClientDist)." />
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(ClientFile->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">
+        <RelativePath>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
 </Project>

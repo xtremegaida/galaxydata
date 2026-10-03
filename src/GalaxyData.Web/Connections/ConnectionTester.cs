@@ -17,13 +17,15 @@ public sealed record ConnectionTestDto(bool Ok, string Message, double ElapsedMs
 /// Tries a connection: its file or folder is there, it connects within <see cref="ConnectionSettings.TestTimeout"/>,
 /// and runs a statement. Its secrets are masked in whatever the database answers.
 /// </summary>
-public sealed partial class ConnectionTester(IOptions<GalaxyDataOptions> options, TimeProvider clock, ILogger<ConnectionTester> logger)
+public sealed partial class ConnectionTester(IOptions<GalaxyDataOptions> options, SecretRedactor redactor, TimeProvider clock, ILogger<ConnectionTester> logger)
 {
    public async Task<ConnectionTestDto> TestAsync(string alias, ConnectionKind kind, ConnectionResolution connection, CancellationToken cancellationToken)
    {
       ArgumentNullException.ThrowIfNull(kind);
       ArgumentNullException.ThrowIfNull(connection);
       long started = clock.GetTimestamp();
+      // Secrets tried before they are saved are masked in the log too.
+      foreach (string secret in connection.Secrets.Values) { redactor.Add(secret); }
       double Elapsed() => Math.Round(clock.GetElapsedTime(started).TotalMilliseconds, 1);
       if (kind.Missing(connection.Settings) is { } missing) { return new ConnectionTestDto(false, missing, Elapsed()); }
       TimeSpan limit = options.Value.Connections.TestTimeout;

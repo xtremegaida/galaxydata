@@ -28,7 +28,11 @@ using GalaxyData.Web.Problems;
 using GalaxyData.Web.Queries;
 using GalaxyData.Web.Schemas;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.HttpsPolicy;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.StaticFiles;
@@ -37,6 +41,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 
@@ -47,7 +52,7 @@ namespace GalaxyData.Web.Hosting;
 /// <see cref="UseGalaxyData"/> sets up how requests are handled, and <see cref="MapGalaxyData"/> maps the API under
 /// <c>/api</c> (each feature's endpoints), its OpenAPI document, and the client for every other path.
 /// </summary>
-public static class WebApp
+public static partial class WebApp
 {
    /// <summary>The OpenAPI document's path; <c>{documentName}</c> is <c>v1</c>.</summary>
    public const string OpenApiPattern = "/api/openapi/{documentName}.json";
@@ -58,6 +63,14 @@ public static class WebApp
    {
       ArgumentNullException.ThrowIfNull(builder);
       IServiceCollection services = builder.Services;
+      builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
+
+      // Every logger's entries are masked of secrets, whichever providers write them.
+      services.AddSingleton<SecretRedactor>();
+      services.Replace(ServiceDescriptor.Singleton<ILoggerFactory>(sp => new RedactingLoggerFactory(
+         new LoggerFactory(sp.GetServices<ILoggerProvider>(), sp.GetRequiredService<IOptionsMonitor<LoggerFilterOptions>>(), sp.GetService<IOptions<LoggerFactoryOptions>>(),
+            sp.GetService<IExternalScopeProvider>()),
+         sp.GetRequiredService<SecretRedactor>())));
 
       services.AddOptions<GalaxyDataOptions>().BindConfiguration(GalaxyDataOptions.Section).ValidateOnStart();
       services.AddSingleton<IValidateOptions<GalaxyDataOptions>, GalaxyDataOptionsValidator>();
@@ -70,6 +83,9 @@ public static class WebApp
       services.AddDbContext<MetadataDb>((sp, o) => o.UseSqlite(MetadataDb.ConnectionString(MetadataDb.PathIn(sp.GetRequiredService<DataDirectory>()))));
       services.AddHostedService<MetadataInitializer>();
       services.AddGalaxyDataAuth();
+      services.AddGalaxyDataRateLimits();
+      services.AddOptions<HttpsRedirectionOptions>().Configure<IOptions<GalaxyDataOptions>>((o, settings) => o.HttpsPort ??= settings.Value.Security.HttpsPort);
+      services.AddOptions<ForwardedHeadersOptions>().Configure<IOptions<GalaxyDataOptions>>((o, settings) => Proxies(o, settings.Value.Proxy));
       services.AddSingleton<ConnectionKind, PostgreSqlKind>();
       services.AddSingleton<ConnectionKind, SqlServerKind>();
       services.AddSingleton<ConnectionKind, SqliteKind>();
@@ -159,18 +175,44 @@ public static class WebApp
       schema.Required.Add("code");
    }
 
+   /// <summary>The proxies believed when they say who the client is: those configured, or one on the same machine.</summary>
+   private static void Proxies(ForwardedHeadersOptions options, ProxySettings proxy)
+   {
+      options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+      options.ForwardLimit = proxy.ForwardLimit;
+      if (proxy.KnownProxies is not { Count: > 0 } && proxy.KnownNetworks is not { Count: > 0 }) { return; }
+      options.KnownProxies.Clear();
+      options.KnownIPNetworks.Clear();
+      foreach (string address in proxy.KnownProxies ?? []) { options.KnownProxies.Add(System.Net.IPAddress.Parse(address)); }
+      foreach (string network in proxy.KnownNetworks ?? []) { options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network)); }
+   }
+
    public static WebApplication UseGalaxyData(this WebApplication app)
    {
       ArgumentNullException.ThrowIfNull(app);
+      // ASP.NET Core's own switch believes every address of what it says of the client. (Before the data directory
+      // is held, which an application that doesn't start wouldn't let go.)
+      if (string.Equals(app.Configuration["FORWARDEDHEADERS_ENABLED"], "true", StringComparison.OrdinalIgnoreCase))
+      {
+         throw new InvalidOperationException(
+            "ASPNETCORE_FORWARDEDHEADERS_ENABLED believes any client of whom it is and how it connected: unset it, and set GalaxyData:Proxy (Enabled, and the proxies to trust) instead.");
+      }
       app.Services.GetRequiredService<DataDirectory>().Open();
       app.Services.GetRequiredService<FileRoots>().Prepare();
+      GalaxyDataOptions settings = app.Services.GetRequiredService<IOptions<GalaxyDataOptions>>().Value;
+      app.Services.GetRequiredService<SecretRedactor>().Add(settings.Bootstrap.AdminPassword);
+      // Who the client is, before anything goes by it (limits, HTTPS, cookies).
+      if (settings.Proxy.Enabled) { app.UseForwardedHeaders(); }
+      app.UseSecurityHeaders(settings.Security, hsts: settings.Security.Hsts && !app.Environment.IsDevelopment());
+      if (settings.Security.RequireHttps) { app.UseHttpsRedirection(); }
       app.UseExceptionHandler();
       app.UseStatusCodePages();
-      app.UseStaticFiles();
+      app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = CacheControl(context.File.Name) });
       app.UseRouting();
       app.UseAuthentication();
-      app.UseAuthorization();
+      // Before authorization, so requests it refuses are counted too.
       app.UseRateLimiter();
+      app.UseAuthorization();
       return app;
    }
 
@@ -178,6 +220,7 @@ public static class WebApp
    {
       ArgumentNullException.ThrowIfNull(app);
       RouteGroupBuilder api = app.MapGroup("/api")
+         .ProducesProblem(StatusCodes.Status429TooManyRequests)
          .ProducesProblem(StatusCodes.Status500InternalServerError)
          .AddEndpointFilter<AntiforgeryFilter>()
          .AddEndpointFilter<CatalogVersionFilter>();
@@ -202,6 +245,16 @@ public static class WebApp
       }).AllowAnonymous();
       return app;
    }
+
+   /// <summary>
+   /// Files whose names have their content's hash (<c>main-LKPGWKWT.js</c>, as the client is built: eight capitals
+   /// and digits, a capital among them) are kept by browsers for a year; others are checked each time.
+   /// </summary>
+   private static string CacheControl(string fileName) =>
+      HashedFile().IsMatch(fileName) ? "public, max-age=31536000, immutable" : "no-cache";
+
+   [System.Text.RegularExpressions.GeneratedRegex("-(?=[A-Z0-9]*[A-Z])[A-Z0-9]{8}\\.[A-Za-z0-9]+$")]
+   private static partial System.Text.RegularExpressions.Regex HashedFile();
 
    private static DuckDbMergeOptions MergeOptions(MergeSettings settings, DataDirectory data) => new()
    {

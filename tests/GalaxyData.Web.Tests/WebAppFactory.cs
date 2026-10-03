@@ -55,6 +55,8 @@ internal sealed class WebAppFactory : WebApplicationFactory<Program>
          ["GalaxyData:Bootstrap:AdminUserName"] = TestApi.AdminName,
          ["GalaxyData:Bootstrap:AdminPassword"] = TestApi.AdminPassword,
          ["GalaxyData:Bootstrap:RequirePasswordChange"] = "false",
+         // Tests poll as they wait; the limits' own tests set them.
+         ["GalaxyData:RateLimits:RequestsPerMinute"] = "0",
       };
       foreach ((string key, string? value) in Settings) { settings[key] = value; }
       foreach ((string key, string? value) in settings)
