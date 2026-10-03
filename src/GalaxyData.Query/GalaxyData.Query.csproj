@@ -10,6 +10,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="GalaxyData.Query.Tests" />
+    <InternalsVisibleTo Include="GalaxyData.Query.IntegrationTests" />
+    <InternalsVisibleTo Include="GalaxyData.Query.ContainerTests" />
   </ItemGroup>
 
 </Project>

@@ -96,4 +96,50 @@ public sealed partial class GdqTests
          ":quit\n"));
       Golden.Match(transcript.ToString());
    }
+
+   /// <summary>Changes to rows from a JSON file, and edited scripts: shown, written, refused.</summary>
+   [Fact]
+   public async Task Changes()
+   {
+      using TempFolder folder = new();
+      async Task<string> FileAsync(string name, string text)
+      {
+         await File.WriteAllTextAsync(folder.File(name), text, TestContext.Current.CancellationToken);
+         return folder.File(name);
+      }
+      string changes = await FileAsync("changes.json", """
+         [
+            { "insert": "shop.order_lines", "values": { "order_id": 2001, "line_no": 1, "product_code": "P-100", "qty": 2, "price": "6.25" } },
+            { "insert": "shop.orders", "values": { "id": 2001, "customer_id": 1, "total": 12.50, "order_date": "2026-03-01" } },
+            { "update": "shop.orders", "key": { "id": 1001 }, "values": { "total": 260 }, "original": { "status": "open" } },
+            { "delete": "shop.order_lines", "key": { "order_id": 1001, "line_no": 2 }, "original": { "qty": 1 } }
+         ]
+         """);
+      string conflict = await FileAsync("conflict.json", """
+         [
+            { "update": "shop.orders", "key": { "id": 1001 }, "values": { "total": 260 } },
+            { "update": "shop.orders", "key": { "id": 1002 }, "values": { "total": 1 }, "original": { "status": "open" } }
+         ]
+         """);
+      string wrong = await FileAsync("wrong.json", """[{ "update": "shop.open_orders", "key": { "id": 1001 }, "values": { "total": 1 } }, { "insert": "shop.customers", "values": { "nmae": "x" } }]""");
+      string script = await FileAsync("edits.sql", "UPDATE orders SET total = 1 WHERE id = 1001;\nDELETE FROM order_lines WHERE order_id = 1001;\n");
+      string ddl = await FileAsync("ddl.sql", "UPDATE orders SET total = 1 WHERE id = 1001;\nDROP TABLE order_lines;\n");
+
+      StringBuilder transcript = new();
+      transcript.Append(await RunAsync("changes, shown", ["changes", "-s", Sqlite, "-w", "shop", "-f", changes]));
+      transcript.Append(await RunAsync("changes, written", ["changes", "-s", Sqlite, "-w", "shop", "-f", changes, "--commit"]));
+      transcript.Append(await RunAsync("changes across sources, written", ["changes", "-s", Sqlite, "-s", Warehouse, "-w", "shop", "-w", "wh", "-f",
+         await FileAsync("across.json", """[{ "update": "shop.orders", "key": { "id": 1001 }, "values": { "total": 1 } }, { "delete": "wh.order_lines", "key": { "order_id": 1003, "line_no": 1 } }]"""),
+         "--commit"]));
+      transcript.Append(await RunAsync("changes that conflict", ["changes", "-s", DuckDb, "-w", "shop", "-f", conflict, "--commit"]));
+      transcript.Append(await RunAsync("changes to a source that isn't written", ["changes", "-s", Sqlite, "-f", conflict]));
+      transcript.Append(await RunAsync("changes that can't be made", ["changes", "-s", Sqlite, "-w", "shop", "-f", wrong]));
+      transcript.Append(await RunAsync("a change file that isn't one", ["changes", "-s", Sqlite, "-w", "shop", "-f", await FileAsync("bad.json", """{"update": "shop.orders"}""")]));
+      transcript.Append(await RunAsync("a script, checked", ["script", "-s", DuckDb, "-w", "shop", "-f", script, "shop"]));
+      transcript.Append(await RunAsync("a script, run", ["script", "-s", DuckDb, "-w", "shop", "-f", script, "--commit", "shop"]));
+      transcript.Append(await RunAsync("a script that does more than change data", ["script", "-s", Sqlite, "-w", "shop", "-f", ddl, "shop"]));
+      transcript.Append(await RunAsync("a script that does more, as an administrator may", ["script", "-s", Sqlite, "-w", "shop", "-f", ddl, "--any-statement", "--commit", "shop"]));
+      transcript.Append(await RunAsync("a source that can't be written", ["changes", "-s", Sqlite, "-w", "nope", "-f", changes]));
+      Golden.Match(transcript.ToString());
+   }
 }

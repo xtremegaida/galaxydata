@@ -42,6 +42,16 @@ public sealed class PostgreSqlSourceProvider : SourceProvider
    public override async ValueTask PrepareConnectionAsync(DbConnection connection, CancellationToken cancellationToken) =>
       await connection.ExecuteAsync("SET TIME ZONE 'UTC'", cancellationToken).ConfigureAwait(false);
 
+   /// <summary>Deferred constraints are checked now, so a change that breaks one stops before any connection commits.</summary>
+   public override async ValueTask PrepareCommitAsync(DbConnection connection, DbTransaction transaction, CancellationToken cancellationToken)
+   {
+      ArgumentNullException.ThrowIfNull(connection);
+      await using DbCommand command = connection.CreateCommand();
+      command.CommandText = "SET CONSTRAINTS ALL IMMEDIATE";
+      command.Transaction = transaction;
+      await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+   }
+
    public override void BindParameter(DbParameter parameter, object? value, ScalarType type)
    {
       ArgumentNullException.ThrowIfNull(parameter);
@@ -86,11 +96,15 @@ public sealed class PostgreSqlSourceProvider : SourceProvider
       };
    }
 
+   /// <summary>
+   /// Text compared with or stored in a column is sent untyped, so PostgreSQL takes it as the column's type (an enum,
+   /// char(n), citext); so is JSON stored in a column, which may be <c>json</c> or <c>jsonb</c>.
+   /// </summary>
    public override void BindParameter(DbParameter parameter, object? value, SqlParameterSlot slot)
    {
       ArgumentNullException.ThrowIfNull(slot);
       BindParameter(parameter, value, slot.Type);
-      if (slot.ComparedWithColumn && slot.Type.Kind == ScalarKind.String && parameter is NpgsqlParameter npgsql)
+      if (slot.ComparedWithColumn && slot.Type.Kind is ScalarKind.String or ScalarKind.Json && parameter is NpgsqlParameter npgsql)
       {
          npgsql.NpgsqlDbType = NpgsqlDbType.Unknown;
       }

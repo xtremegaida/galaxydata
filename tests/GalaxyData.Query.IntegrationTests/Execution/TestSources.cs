@@ -60,13 +60,13 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
    /// <summary>The schemas of the folders added, by alias.</summary>
    public Dictionary<string, SourceSchema> Schemas { get; } = new(StringComparer.Ordinal);
 
-   public async Task<TestSources> AddSqliteAsync(string alias, string script, bool trustForeignKeys = false)
+   public async Task<TestSources> AddSqliteAsync(string alias, string script, bool trustForeignKeys = false, bool? enforceForeignKeys = null)
    {
       string connectionString = $"Data Source=gdq_{alias}_{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
       SqliteConnection keeper = new(connectionString);
       await keeper.OpenAsync();
       await keeper.ExecuteAsync(script);
-      await AddAsync(alias, keeper, () => new SqliteConnection(connectionString), SqliteSourceProvider.Instance, trustForeignKeys);
+      await AddAsync(alias, keeper, () => new SqliteConnection(connectionString), SqliteSourceProvider.Instance, trustForeignKeys, enforceForeignKeys);
       return this;
    }
 
@@ -75,7 +75,7 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
       DuckDBConnection keeper = new("Data Source=:memory:");
       await keeper.OpenAsync();
       await keeper.ExecuteAsync(script);
-      await AddAsync(alias, keeper, keeper.Duplicate, DuckDbSourceProvider.Instance, trustForeignKeys: false);
+      await AddAsync(alias, keeper, keeper.Duplicate, DuckDbSourceProvider.Instance);
       return this;
    }
 
@@ -84,14 +84,15 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
    {
       DbConnection keeper = open();
       await keeper.OpenAsync();
-      await AddAsync(alias, keeper, open, provider, trustForeignKeys: false);
+      await AddAsync(alias, keeper, open, provider);
       return this;
    }
 
-   private async Task AddAsync(string alias, DbConnection keeper, Func<DbConnection> open, SourceProvider provider, bool trustForeignKeys)
+   private async Task AddAsync(string alias, DbConnection keeper, Func<DbConnection> open, SourceProvider provider, bool trustForeignKeys = false,
+                               bool? enforceForeignKeys = null)
    {
       SourceSchema schema = await provider.Introspector.IntrospectAsync(keeper, IntrospectionOptions.Default, CancellationToken.None);
-      builder.AddSource(new SourceInfo(alias, provider.ProviderKind, schema.DefaultSchema) { TrustForeignKeys = trustForeignKeys }, schema);
+      builder.AddSource(new SourceInfo(alias, provider.ProviderKind, schema.DefaultSchema) { TrustForeignKeys = trustForeignKeys, EnforceForeignKeys = enforceForeignKeys }, schema);
       sources.Add(alias, (keeper, open));
       if (!providers.Contains(provider)) { providers.Add(provider); }
    }

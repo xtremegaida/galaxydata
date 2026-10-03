@@ -365,3 +365,41 @@ internal sealed class SqlSelect : SqlQuery
 }
 
 #endregion
+
+#region Data changes
+
+/// <summary>A statement that changes rows of one table.</summary>
+internal abstract class SqlDml(SqlTable table)
+{
+   public SqlTable Table { get; } = table;
+}
+
+/// <summary>
+/// <c>INSERT INTO t (columns) VALUES (values)</c>, or <c>DEFAULT VALUES</c> when there are no columns; the row is
+/// given back (<c>RETURNING</c>, SQL Server's <c>OUTPUT INSERTED</c>) when <see cref="Returning"/> has items.
+/// </summary>
+internal sealed class SqlInsert(SqlTable table, IReadOnlyList<SqlColumn> columns, IReadOnlyList<SqlExpr> values) : SqlDml(table)
+{
+   public IReadOnlyList<SqlColumn> Columns { get; } = columns;
+
+   public IReadOnlyList<SqlExpr> Values { get; } = values;
+
+   /// <summary>The inserted row's values to give back, over columns of no table.</summary>
+   public IReadOnlyList<SqlExpr> Returning { get; init; } = [];
+}
+
+internal sealed record SqlAssignment(SqlColumn Column, SqlExpr Value);
+
+internal sealed class SqlUpdate(SqlTable table, IReadOnlyList<SqlAssignment> assignments, SqlExpr where) : SqlDml(table)
+{
+   public IReadOnlyList<SqlAssignment> Assignments { get; } = assignments;
+
+   public SqlExpr Where { get; } = where;
+}
+
+internal sealed class SqlDelete(SqlTable table, SqlExpr where) : SqlDml(table)
+{
+   public SqlExpr Where { get; } = where;
+}
+
+#endregion

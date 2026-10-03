@@ -23,6 +23,14 @@ public sealed record SourceInfo(string Alias, string ProviderKind, string Defaul
    public bool TrustForeignKeys { get; init; }
 
    /// <summary>
+   /// Whether the database checks foreign keys as changes are written, where that is a setting of the connection
+   /// (SQLite's <c>PRAGMA foreign_keys</c>, which also carries out <c>ON DELETE</c> actions): true or false sets it on
+   /// the connections changes are written on; null leaves it as the connection has it (on, with the SQLite that
+   /// Microsoft.Data.Sqlite bundles). Other databases always check them.
+   /// </summary>
+   public bool? EnforceForeignKeys { get; init; }
+
+   /// <summary>
    /// The database the source's tables are in, written before their schema in its SQL; for sources whose tables are
    /// kept in a database with others' (an Excel folder's sheets, in the merge engine's). Null for databases of their own.
    /// </summary>
@@ -186,8 +194,11 @@ public sealed class TableEntity : EntityDef
 
    public bool HasTriggers { get; }
 
-   /// <summary>A table with a key, in a source that is writable and supports DML.</summary>
-   public bool IsWritable => Kind == EntityKind.Table && Key != null && Source.SupportsDml && !Source.IsReadOnly;
+   /// <summary>
+   /// A table with a primary key of its own (a key the overlay declares serves navigation only), in a source that is
+   /// writable and supports DML: its rows can be changed and deleted.
+   /// </summary>
+   public bool IsWritable => Kind == EntityKind.Table && Key is { IsDeclared: false } && Source.SupportsDml && !Source.IsReadOnly;
 }
 
 /// <summary>

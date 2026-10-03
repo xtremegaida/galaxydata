@@ -72,6 +72,19 @@ internal sealed class SqliteDialect : SqlDialect
       return new SqlBinary(op, left, right);
    }
 
+   /// <summary>
+   /// A key kept in a form other than the value's still finds its row: a guid in either case, a date with a time or a
+   /// 'T', a date-time to any precision or with an offset. Such keys are compared through a function, which their
+   /// index doesn't serve; whole numbers and text are compared as they are.
+   /// </summary>
+   internal override SqlExpr KeyEquals(SqlColumn column, SqlExpr value, ScalarType type) => type.Kind switch
+   {
+      ScalarKind.Guid => Binary(SqlBinaryOp.Equal, Call("upper", column), value),
+      ScalarKind.Date => Binary(SqlBinaryOp.Equal, Call("date", column), value),
+      ScalarKind.DateTime or ScalarKind.DateTimeOffset => Binary(SqlBinaryOp.Equal, Instant(column, type), Instant(value, type)),
+      _ => base.KeyEquals(column, value, type),
+   };
+
    /// <summary>Date-times with an offset sort in UTC.</summary>
    internal override SqlExpr SortKey(SqlExpr key, ScalarType type) => type.Kind == ScalarKind.DateTimeOffset ? Instant(key, type) : key;
 

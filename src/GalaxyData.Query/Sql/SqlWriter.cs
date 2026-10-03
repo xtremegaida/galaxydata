@@ -22,6 +22,9 @@ internal sealed class SqlWriter
    private bool inlineConstants;
    private int indent;
 
+   /// <summary>What columns of no table are written after, in SQL Server's OUTPUT clause: <c>INSERTED</c>.</summary>
+   private string? columnPrefix;
+
    private SqlWriter(SqlDialect dialect) { this.dialect = dialect; }
 
    /// <summary>
@@ -42,6 +45,116 @@ internal sealed class SqlWriter
    }
 
    public static string Write(SqlQuery query, SqlDialect dialect) => Write(query, dialect, out _);
+
+   /// <summary>
+   /// Writes a data change, with the rows it gives back when <paramref name="returning"/> is set, and then
+   /// <paramref name="then"/> in the same batch (SQL Server reads an inserted row back, or the count of rows changed).
+   /// With <paramref name="inline"/>, values are written in as constants: the text people read, and may edit and run.
+   /// </summary>
+   public static string Write(SqlDml statement, SqlSelect? then, SqlDialect dialect, bool returning, bool inline, out IReadOnlyList<SqlParameterSlot> parameters)
+   {
+      SqlWriter writer = new(dialect) { inlineConstants = inline };
+      writer.Dml(statement, then, returning);
+      if (writer.written.Count > dialect.MaxParameters)
+      {
+         writer = new SqlWriter(dialect) { inlineConstants = true };
+         writer.Dml(statement, then, returning);
+      }
+      parameters = writer.written;
+      return writer.text.ToString();
+   }
+
+   private void Dml(SqlDml statement, SqlSelect? then, bool returning)
+   {
+      switch (statement)
+      {
+         case SqlInsert insert:
+            Insert(insert, returning && insert.Returning.Count > 0);
+            break;
+         case SqlUpdate update:
+            text.Append("UPDATE ");
+            TableName(update.Table);
+            NewLine();
+            text.Append("SET ");
+            for (int i = 0; i < update.Assignments.Count; i++)
+            {
+               if (i > 0) { text.Append(", "); }
+               SqlAssignment assignment = update.Assignments[i];
+               text.Append(dialect.Identifier(assignment.Column.Column)).Append(" = ");
+               Compared(assignment.Value, assignment.Column, parentheses: false);
+            }
+            NewLine();
+            text.Append("WHERE ");
+            Expr(update.Where);
+            break;
+         case SqlDelete delete:
+            text.Append("DELETE FROM ");
+            TableName(delete.Table);
+            NewLine();
+            text.Append("WHERE ");
+            Expr(delete.Where);
+            break;
+      }
+      if (returning && then != null)
+      {
+         text.Append(';');
+         NewLine();
+         Select(then);
+      }
+   }
+
+   private void Insert(SqlInsert insert, bool returning)
+   {
+      text.Append("INSERT INTO ");
+      TableName(insert.Table);
+      if (insert.Columns.Count > 0)
+      {
+         text.Append(" (");
+         for (int i = 0; i < insert.Columns.Count; i++)
+         {
+            if (i > 0) { text.Append(", "); }
+            text.Append(dialect.Identifier(insert.Columns[i].Column));
+         }
+         text.Append(')');
+      }
+      bool output = returning && dialect.Returning == ReturningStyle.Output;
+      if (output)
+      {
+         NewLine();
+         text.Append("OUTPUT ");
+         columnPrefix = "INSERTED";
+         List(insert.Returning);
+         columnPrefix = null;
+      }
+      NewLine();
+      if (insert.Columns.Count == 0)
+      {
+         text.Append("DEFAULT VALUES");
+      }
+      else
+      {
+         text.Append("VALUES (");
+         for (int i = 0; i < insert.Values.Count; i++)
+         {
+            if (i > 0) { text.Append(", "); }
+            Compared(insert.Values[i], insert.Columns[i], parentheses: false);
+         }
+         text.Append(')');
+      }
+      if (returning && !output)
+      {
+         NewLine();
+         text.Append("RETURNING ");
+         List(insert.Returning);
+      }
+   }
+
+   private void TableName(SqlTable table)
+   {
+      if (table.Catalog != null) { text.Append(dialect.Identifier(table.Catalog)).Append('.'); }
+      if (table.Schema != null) { text.Append(dialect.Identifier(table.Schema)).Append('.'); }
+      text.Append(dialect.Identifier(table.Name));
+   }
 
    private SqlParameterSlot Named(SqlParameterSlot slot)
    {
@@ -219,9 +332,7 @@ internal sealed class SqlWriter
       switch (source)
       {
          case SqlTable table:
-            if (table.Catalog != null) { text.Append(dialect.Identifier(table.Catalog)).Append('.'); }
-            if (table.Schema != null) { text.Append(dialect.Identifier(table.Schema)).Append('.'); }
-            text.Append(dialect.Identifier(table.Name));
+            TableName(table);
             if (!string.Equals(table.Name, table.Alias, StringComparison.Ordinal)) { text.Append(" AS ").Append(dialect.Identifier(table.Alias)); }
             break;
          case SqlDerivedTable derived:
@@ -267,11 +378,13 @@ internal sealed class SqlWriter
       {
          case SqlColumn column:
             if (column.Table != null) { text.Append(dialect.Identifier(column.Table)).Append('.'); }
+            else if (columnPrefix != null) { text.Append(columnPrefix).Append('.'); }
             text.Append(dialect.Identifier(column.Column));
             break;
          case SqlParameterRef { Slot.Source: null } constant when inlineConstants:
             SqlParameterSlot value = constant.Slot;
-            dialect.WriteLiteral(text, value.Pattern != null && value.Constant is string pattern ? value.Pattern.Apply(pattern) : value.Constant, value.Type);
+            dialect.WriteLiteral(text, value.Pattern != null && value.Constant is string pattern ? value.Pattern.Apply(pattern) : value.Constant, value.Type,
+                                 comparedWith?.NativeType);
             break;
          case SqlParameterRef parameter:
             SqlParameterSlot slot = Named(parameter.Slot);
@@ -415,7 +528,7 @@ internal sealed class SqlWriter
       else { Wrapped(binary.Right, right); }
    }
 
-   /// <summary>Writes a value compared with <paramref name="other"/>: a parameter compared with a column is marked so.</summary>
+   /// <summary>Writes a value compared with <paramref name="other"/>, or stored in it: a parameter meeting a column is marked so.</summary>
    private void Compared(SqlExpr value, SqlExpr other, bool parentheses)
    {
       comparedWith = value is SqlParameterRef ? other as SqlColumn : null;

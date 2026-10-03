@@ -20,6 +20,16 @@ internal enum PagingStyle : byte
    TopOrOffsetFetch,
 }
 
+/// <summary>How a data change gives back the rows it wrote.</summary>
+internal enum ReturningStyle : byte
+{
+   /// <summary><c>INSERT ... VALUES (...) RETURNING a, b</c>.</summary>
+   Returning,
+
+   /// <summary>SQL Server's <c>INSERT ... OUTPUT INSERTED.a, INSERTED.b VALUES (...)</c>, which a table with triggers doesn't take.</summary>
+   Output,
+}
+
 /// <summary>
 /// How one database spells SQL: names, literals, parameters, paging, null ordering, and each language function.
 /// A function a dialect has no translation for can't run in that database. All dialects live in this assembly.
@@ -98,8 +108,11 @@ public abstract class SqlDialect
    /// <summary>How to write ORDER BY null placement so nulls sort smallest; null when the default already does.</summary>
    internal virtual string? NullOrdering(bool descending) => descending ? "NULLS LAST" : "NULLS FIRST";
 
-   /// <summary>Writes a constant; used for literals the SQL must contain and for display.</summary>
-   internal virtual void WriteLiteral(StringBuilder text, object? value, ScalarType type)
+   /// <summary>
+   /// Writes a constant; used for literals the SQL must contain, for display, and in scripts people may edit and run.
+   /// <paramref name="columnType"/> is the declared type of the column the value is compared with or stored in, when known.
+   /// </summary>
+   internal virtual void WriteLiteral(StringBuilder text, object? value, ScalarType type, string? columnType = null)
    {
       switch (value)
       {
@@ -119,9 +132,13 @@ public abstract class SqlDialect
             text.Append(number.ToString(CultureInfo.InvariantCulture));
             break;
          case double or float:
-            string written = Convert.ToDouble(value, CultureInfo.InvariantCulture).ToString("R", CultureInfo.InvariantCulture);
+            // A float written as a double would have digits it doesn't (1.1f is 1.100000023841858).
+            string written = value is float single ? single.ToString("R", CultureInfo.InvariantCulture) : ((double)value).ToString("R", CultureInfo.InvariantCulture);
             text.Append(written);
             if (written.AsSpan().IndexOfAny(".E") < 0) { text.Append(".0"); }
+            break;
+         case TimeSpan span:
+            text.Append("INTERVAL '").Append(span.TotalSeconds.ToString("R", CultureInfo.InvariantCulture)).Append(" seconds'");
             break;
          case DateOnly date:
             WriteTemporal(text, "DATE", date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
@@ -167,6 +184,14 @@ public abstract class SqlDialect
    internal virtual SqlExpr Modulo(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       new SqlBinary(SqlBinaryOp.Modulo, left, right);
 
+   /// <summary>Text's length as the database counts it against a column's: in characters, or UTF-16 units (SQL Server).</summary>
+   internal virtual int TextLength(string text)
+   {
+      int count = 0;
+      foreach (Rune _ in text.EnumerateRunes()) { count++; }
+      return count;
+   }
+
    /// <summary>The longest name the database takes, as <see cref="NameLength"/> counts: longer aliases are cut short.</summary>
    internal virtual int MaxNameLength => int.MaxValue;
 
@@ -183,6 +208,34 @@ public abstract class SqlDialect
       }
       return fitted + suffix;
    }
+
+   /// <summary>How a data change gives back the row it wrote.</summary>
+   internal virtual ReturningStyle Returning => ReturningStyle.Returning;
+
+   /// <summary>Whether an insert may give an identity column its value (SQL Server's take one only with IDENTITY_INSERT on).</summary>
+   internal virtual bool AcceptsIdentityValues => true;
+
+   /// <summary>
+   /// The count of rows the last statement changed, as a value, where the count the database reports for a statement
+   /// isn't that (SQL Server adds the rows its triggers changed, and reports none with NOCOUNT on): changes select
+   /// it after them. Null where the reported count is the statement's own.
+   /// </summary>
+   internal virtual SqlExpr? RowCountOfChange => null;
+
+   /// <summary>The identity value the last insert gave, as a value: to read an inserted row back where it can't be given back.</summary>
+   internal virtual SqlExpr? InsertedIdentity => null;
+
+   /// <summary>
+   /// Whether a change checks that a column still has the value it was read with, where it compares with
+   /// <c>=</c>: the column's value must equal it when read and sent back, as it does for the types that compare exactly.
+   /// </summary>
+   internal virtual bool ComparesOriginal(ScalarType type, string? nativeType) => ComparesExactly(type);
+
+   /// <summary>
+   /// The condition that a key column equals a value, to find the row a change is for: <c>column = value</c>, or, where
+   /// the database may keep a key in another form than the value's, both in one form.
+   /// </summary>
+   internal virtual SqlExpr KeyEquals(SqlColumn column, SqlExpr value, ScalarType type) => new SqlBinary(SqlBinaryOp.Equal, column, value);
 
    /// <summary>A sort key; dialects adjust values whose storage doesn't sort the way the language does.</summary>
    internal virtual SqlExpr SortKey(SqlExpr key, ScalarType type) => key;

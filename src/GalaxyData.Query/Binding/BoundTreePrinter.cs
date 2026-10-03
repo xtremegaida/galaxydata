@@ -195,6 +195,7 @@ public static class BoundTreePrinter
       DateTime dateTime => $"'{dateTime.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", CultureInfo.InvariantCulture)}'::datetime",
       DateTimeOffset offset => $"'{offset.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFFzzz", CultureInfo.InvariantCulture)}'::datetimeoffset",
       Guid guid => $"'{guid}'::guid",
+      byte[] bytes => "0x" + Convert.ToHexString(bytes),
       _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? "?",
    };
 }

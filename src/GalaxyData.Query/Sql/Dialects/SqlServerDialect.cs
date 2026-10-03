@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Text;
 using GalaxyData.Query.Functions;
 using GalaxyData.Query.Planning;
@@ -75,6 +76,32 @@ internal sealed class SqlServerDialect : SqlDialect
    }
 
    private protected override void WriteBinary(StringBuilder text, byte[] value) => text.Append("0x").Append(Convert.ToHexString(value));
+
+   /// <summary>A date-time compared with or stored in a <c>datetime</c> column is one, for the same reason as in <see cref="Compare"/>.</summary>
+   internal override void WriteLiteral(StringBuilder text, object? value, ScalarType type, string? columnType = null)
+   {
+      if (value is DateTime dateTime && columnType is "datetime" or "smalldatetime")
+      {
+         text.Append("CAST('").Append(dateTime.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)).Append("' AS ").Append(columnType).Append(')');
+         return;
+      }
+      base.WriteLiteral(text, value, type, columnType);
+   }
+
+   /// <summary>nvarchar(n) holds n UTF-16 units: a character outside the BMP takes two (varchar's bytes are no fewer, but in UTF-8 collations).</summary>
+   internal override int TextLength(string text) => text.Length;
+
+   internal override ReturningStyle Returning => ReturningStyle.Output;
+
+   internal override bool AcceptsIdentityValues => false;
+
+   internal override SqlExpr? RowCountOfChange => Raw("@@ROWCOUNT");
+
+   internal override SqlExpr? InsertedIdentity => Call("SCOPE_IDENTITY");
+
+   /// <summary>The old large types (<c>text</c>, <c>ntext</c>, <c>image</c>) don't compare with <c>=</c>.</summary>
+   internal override bool ComparesOriginal(ScalarType type, string? nativeType) =>
+      base.ComparesOriginal(type, nativeType) && nativeType is not ("text" or "ntext" or "image");
 
    /// <summary>
    /// A <c>datetime</c> column compared with a date-time worked out in the query (<c>toDateTime('...')</c>) is compared

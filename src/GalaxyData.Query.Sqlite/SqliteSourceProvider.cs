@@ -1,8 +1,12 @@
 using System;
 using System.Data.Common;
 using System.Globalization;
+using System.Threading;
+using System.Threading.Tasks;
+using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Execution;
 using GalaxyData.Query.Introspection;
+using GalaxyData.Query.Providers;
 using GalaxyData.Query.Sql;
 using GalaxyData.Query.Types;
 
@@ -22,6 +26,20 @@ public sealed class SqliteSourceProvider : SourceProvider
    public override SqlDialect Dialect => SqlDialect.Sqlite;
 
    public override ISchemaIntrospector Introspector { get; } = new SqliteSchemaIntrospector();
+
+   /// <summary>
+   /// Foreign keys are checked as each statement runs, or not, as the source says (see
+   /// <see cref="SourceInfo.EnforceForeignKeys"/>). SQLite takes the setting only outside a transaction, and it stays
+   /// with the connection, a pooled one too.
+   /// </summary>
+   public override async ValueTask PrepareWriteAsync(DbConnection connection, SourceInfo source, CancellationToken cancellationToken)
+   {
+      ArgumentNullException.ThrowIfNull(source);
+      if (source.EnforceForeignKeys is { } enforce)
+      {
+         await connection.ExecuteAsync(enforce ? "PRAGMA foreign_keys = ON" : "PRAGMA foreign_keys = OFF", cancellationToken).ConfigureAwait(false);
+      }
+   }
 
    public override void BindParameter(DbParameter parameter, object? value, ScalarType type)
    {

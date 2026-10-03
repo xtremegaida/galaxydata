@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using GalaxyData.Query.Binding;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Diagnostics;
+using GalaxyData.Query.Dml;
 using GalaxyData.Query.Planning;
 using GalaxyData.Query.Planning.Federation;
 using GalaxyData.Query.Sql;
@@ -64,6 +65,9 @@ public sealed class QueryEngineOptions
 
    /// <summary>The most keys in one statement (fewer when the source takes fewer parameters).</summary>
    public int MaxBindBatch { get; init; } = 2_000;
+
+   /// <summary>Runs before each connection commits changes; tests make it fail, as a commit can.</summary>
+   internal Func<SourceInfo, ValueTask>? BeforeCommit { get; init; }
 }
 
 /// <summary>
@@ -308,6 +312,75 @@ public sealed class QueryEngine
 
    public async Task<QueryResult> ExecuteAsync(QueryRequest request, CancellationToken cancellationToken = default) =>
       await Prepare(request).ExecuteAsync(cancellationToken).ConfigureAwait(false);
+
+   /// <summary>Plans changes to rows of the catalog's tables, without running anything: see <see cref="DmlPlanner"/>.</summary>
+   public DmlPlan PlanChanges(ChangeSet changes) =>
+      DmlPlanner.Plan(changes, s => providers.TryGetValue(s.ProviderKind, out SourceProvider? provider) ? provider.Dialect : null);
+
+   /// <summary>
+   /// A script a person wrote or edited, to run on <paramref name="source"/>: split into statements, which may only
+   /// change data (see <see cref="DmlGuard"/>) unless <paramref name="allowAnyStatement"/>. How many rows they change
+   /// isn't checked. Throws <see cref="DmlScriptException"/> with the problems found.
+   /// </summary>
+   public DmlScript ParseScript(SourceInfo source, string text, bool allowAnyStatement = false)
+   {
+      ArgumentNullException.ThrowIfNull(source);
+      ArgumentNullException.ThrowIfNull(text);
+      if (!providers.TryGetValue(source.ProviderKind, out SourceProvider? provider))
+      {
+         throw new DmlScriptException(source, [new ScriptProblem($"{source.Alias} is a {source.ProviderKind} source, and no provider for those is registered", 0, 0, 1)]);
+      }
+      if (source.IsReadOnly || !source.SupportsDml)
+      {
+         throw new DmlScriptException(source, [new ScriptProblem($"{source.Alias} can't be changed: it is read-only", 0, 0, 1)]);
+      }
+      SqlDialect dialect = provider.Dialect;
+      SplitScript script = SqlScriptSplitter.Split(text, dialect);
+      List<ScriptProblem> problems = [.. DmlGuard.Check(script, dialect, allowAnyStatement)];
+      if (script.Statements.Count == 0 && problems.Count == 0) { problems.Add(new ScriptProblem("The script has no statements", 0, text.Length, 1)); }
+      if (problems.Count > 0) { throw new DmlScriptException(source, problems); }
+      // Where the database's count of rows changed includes its triggers' (SQL Server), the statement's own is read after it.
+      string? count = DmlPlanner.RowCountQuery(dialect);
+      List<DmlStatement> statements = script.Statements.Select((s, i) => new DmlStatement(KindOf(s.Keyword), count == null ? s.Text : s.Text + ";" + Environment.NewLine + count, [], s.Text, s.Text)
+      {
+         Description = $"statement {(i + 1).ToString(CultureInfo.InvariantCulture)} (line {s.Line.ToString(CultureInfo.InvariantCulture)})",
+         Counting = count == null ? DmlRowCount.Affected : DmlRowCount.Selected,
+      }).ToList();
+      return new DmlScript(source, dialect, statements, isEdited: true);
+   }
+
+   private static DmlStatementKind KindOf(string? keyword) => keyword switch
+   {
+      "INSERT" or "REPLACE" => DmlStatementKind.Insert,
+      "UPDATE" => DmlStatementKind.Update,
+      "DELETE" => DmlStatementKind.Delete,
+      "MERGE" => DmlStatementKind.Merge,
+      _ => DmlStatementKind.Other,
+   };
+
+   /// <summary>Runs a plan's scripts as one change (see <see cref="CommitAsync(IEnumerable{DmlScript}, CancellationToken)"/>); a plan with issues can't run.</summary>
+   public Task<DmlResult> CommitAsync(DmlPlan plan, CancellationToken cancellationToken = default)
+   {
+      ArgumentNullException.ThrowIfNull(plan);
+      if (!plan.Success) { throw new InvalidOperationException($"The changes can't be made: {plan.Issues[0]}"); }
+      return CommitAsync(plan.Scripts, cancellationToken);
+   }
+
+   /// <summary>
+   /// Runs scripts, one for each connection (planned ones, edited ones, or both), as one change: in a transaction on
+   /// each connection, committed when every statement has run and changed the rows it had to. Failures are in the
+   /// result, not thrown: nothing is committed, or, should a commit fail after another succeeded, only part.
+   /// </summary>
+   public Task<DmlResult> CommitAsync(IEnumerable<DmlScript> scripts, CancellationToken cancellationToken = default)
+   {
+      ArgumentNullException.ThrowIfNull(scripts);
+      List<DmlScript> all = scripts.ToList();
+      if (all.FirstOrDefault(s => !providers.ContainsKey(s.Source.ProviderKind)) is { } unserved)
+      {
+         throw new InvalidOperationException($"{unserved.Source.Alias} is a {unserved.Source.ProviderKind} source, and no provider for those is registered");
+      }
+      return new DmlExecutor(this).RunAsync(all, cancellationToken);
+   }
 
    internal SourceProvider Provider(SourceInfo source) => providers[source.ProviderKind];
 

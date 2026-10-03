@@ -1,0 +1,126 @@
+### changes, shown
+exit 0
+--- out
+-- shop (SQLite)
+INSERT INTO orders (id, customer_id, total, order_date)
+VALUES (2001, 1, 12.50, '2026-03-01');
+
+INSERT INTO order_lines (order_id, line_no, product_code, qty, price)
+VALUES (2001, 1, 'P-100', 2, 6.25);
+
+UPDATE orders
+SET total = 260.00
+WHERE id = 1001 AND status = 'open';
+
+DELETE FROM order_lines
+WHERE order_id = 1001 AND line_no = 2 AND qty = 1;
+
+### changes, written
+exit 0
+--- out
+-- shop (SQLite)
+INSERT INTO orders (id, customer_id, total, order_date)
+VALUES (2001, 1, 12.50, '2026-03-01');
+
+INSERT INTO order_lines (order_id, line_no, product_code, qty, price)
+VALUES (2001, 1, 'P-100', 2, 6.25);
+
+UPDATE orders
+SET total = 260.00
+WHERE id = 1001 AND status = 'open';
+
+DELETE FROM order_lines
+WHERE order_id = 1001 AND line_no = 2 AND qty = 1;
+
+Committed.
+shop: committed, 4 rows changed
+  the insert into shop.orders: id = 2001, customer_id = 1, ship_address_id = null, bill_address_id = null, status = open, total = 12.50, order_date = 2026-03-01, placed_at = null
+  the insert into shop.order_lines: order_id = 2001, line_no = 1, product_code = P-100, qty = 2, price = 6.25
+
+### changes across sources, written
+exit 0
+--- out
+-- shop (SQLite)
+UPDATE orders
+SET total = 1.00
+WHERE id = 1001;
+
+-- wh (DuckDB)
+DELETE FROM order_lines
+WHERE order_id = 1003 AND line_no = 1;
+
+Committed.
+shop: committed, 1 row changed
+wh: committed, 1 row changed
+--- err
+gdq: warning: the changes are written on 2 connections, each committing after the other: should one fail to commit after another has, they are left partly written
+
+### changes that conflict
+exit 2
+--- out
+-- shop (DuckDB)
+UPDATE orders
+SET total = 260.00
+WHERE id = 1001;
+
+UPDATE orders
+SET total = 1.00
+WHERE id = 1002 AND status = 'open';
+
+Nothing was written: shop (DuckDB): the update of shop.orders (id = 1002) found no row: it was changed or deleted since it was read
+shop: rolled back
+
+### changes to a source that isn't written
+exit 1
+--- err
+gdq: change 0: shop.orders can't be changed: shop is read-only
+gdq: change 1: shop.orders can't be changed: shop is read-only
+
+### changes that can't be made
+exit 1
+--- err
+gdq: change 0: shop.open_orders is a view: only tables can be changed
+gdq: change 1: shop.customers has no column 'nmae'
+gdq: change 1: 'name' needs a value: it can't be null, and has no default
+
+### a change file that isn't one
+exit 2
+--- err
+gdq: A change file is a JSON array of changes, e.g. [{"update": "shop.orders", "key": {"id": 1001}, "values": {"total": 260}}]
+
+### a script, checked
+exit 0
+--- out
+UPDATE orders SET total = 1 WHERE id = 1001;
+
+DELETE FROM order_lines WHERE order_id = 1001;
+
+### a script, run
+exit 0
+--- out
+UPDATE orders SET total = 1 WHERE id = 1001;
+
+DELETE FROM order_lines WHERE order_id = 1001;
+
+Committed.
+shop: committed, 3 rows changed
+
+### a script that does more than change data
+exit 1
+--- err
+gdq: line 2: DROP statements can't run here: only those that change data (INSERT, UPDATE, DELETE and MERGE)
+
+### a script that does more, as an administrator may
+exit 0
+--- out
+UPDATE orders SET total = 1 WHERE id = 1001;
+
+DROP TABLE order_lines;
+
+Committed.
+shop: committed, 1 row changed
+
+### a source that can't be written
+exit 2
+--- err
+gdq: 'nope' is no source, so it can't be written

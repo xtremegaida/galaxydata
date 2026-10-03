@@ -26,6 +26,7 @@
     <Compile Include="..\GalaxyData.Query.IntegrationTests\Fixtures.cs" LinkBase="Shared" />
     <Compile Include="..\GalaxyData.Query.IntegrationTests\Execution\Conformance.cs" LinkBase="Shared" />
     <Compile Include="..\GalaxyData.Query.IntegrationTests\Execution\TestSources.cs" LinkBase="Shared" />
+    <Compile Include="..\GalaxyData.Query.IntegrationTests\Dml\DmlScenarios.cs" LinkBase="Shared" />
     <None Include="..\fixtures\**\*.sql" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

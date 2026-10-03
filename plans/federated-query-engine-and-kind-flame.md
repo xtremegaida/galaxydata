@@ -270,18 +270,41 @@ Rules implement `IRewriteRule` and run in phases to a fixpoint.
 An `ExplainTextRenderer` draws it for the CLI.
 
 ### 4.8 DML (`Dml/`)
-- **Input:** a `ChangeSet` of `InsertRow`, `UpdateRow(key, original, new)` and `DeleteRow(key, original)`.
-- **Planning:** `DmlPlanner.Plan` returns a `DmlPlan` with one `DmlScript` per connection. Each script has `DmlStatement`s (SQL, parameters, expected rows, returns-rows) and `ToDisplayText(inlineParameters)`.
-- **Rules:**
-  - Only writable `TableEntity`s (a table with a PK, and a provider that supports DML) can be written.
-  - UPDATE sets only the changed columns.
-  - The WHERE clause is the PK plus `col = @orig`, or `IS NULL` for a null original. Float, text/blob and xml columns are left out; a rowversion or `xmin` column is used when there is one.
-  - INSERT leaves out identity, computed and unset columns.
-  - Returned rows: `RETURNING *` on PG, SQLite and DuckDB. MSSQL uses `OUTPUT INSERTED.*`, or `SCOPE_IDENTITY()` when the table has triggers.
-  - Statement order: inserts parents-first, then updates, then deletes children-first.
-- **`DmlExecutor`** opens all connections and begins a transaction on each (SQLite uses IMMEDIATE). It runs the statements and checks expected rows. Any failure rolls back all connections. Otherwise it commits in order and reports `PartialCommit` if a later commit fails.
-- **Edited scripts:** `SqlScriptSplitter` is dialect-aware (quotes, comments, PG `$$`, MSSQL `GO`). The DML-only guard classifies each statement's leading keyword, skipping `WITH` CTE heads. Row-count checks are skipped for edited scripts.
-- **`ResultRowEditor`** turns grid edits into `RowChange`s using the `EditTarget` ordinals.
+Built in M10.
+- **Input:** a `ChangeSet` of `InsertRow(entity, values)`, `UpdateRow(entity, key, values) { Original }` and `DeleteRow(entity, key) { Original }`. Values are by column name: CLR values of the column's type, or text that converts as a database's value is read (`"2026-03-01"` for a date). `ResultRowEditor` makes them from a query's rows: `Update(schema, row, values by ordinal)` gives one update for each table row the edited values came from (through their `EditTarget`s; the values read are the originals), and `Delete(schema, row)` the delete of the row's `RowIdentity`.
+- **Planning** (`DmlPlanner.Plan`, `QueryEngine.PlanChanges`) runs nothing: it checks each change and writes one `DmlScript` per source. What can't be done is a `DmlIssue` (change index, column, message), and a plan with issues doesn't run (its other statements are planned all the same, to show).
+  - Only tables (not views or virtual entities) in sources that are writable and take changes. Updates and deletes need the whole primary key. A key the overlay declares serves navigation only, since it needn't be unique (`TableEntity.IsWritable`). Inserts into tables without a primary key are fine.
+  - Values convert to the column's type without loss. These are issues: a date with a time of day, a decimal with more places than its scale or too large for its precision, text longer than the column as the database counts it (SQL Server's nvarchar in UTF-16 units), a whole number out of range, and a null for a non-null column. Date-times keep their offsets.
+  - Inserts need a value for each non-null column without a default. Computed and row version columns take none, nor do identity columns on SQL Server (the others accept one: SQLite's rowid, PostgreSQL's `BY DEFAULT` and serial, DuckDB's sequences). Updates can't change key, identity, computed or row version columns. Columns of unknown types aren't written.
+- **Statements:**
+  - Inserts give the row back, every column as queries read it: `RETURNING` (PostgreSQL, SQLite, DuckDB), `OUTPUT INSERTED.…` (SQL Server). A SQL Server table with triggers takes no `OUTPUT`, so the row is read back by its key: `WHERE @@ROWCOUNT = 1 AND id = SCOPE_IDENTITY()`, or the key values given.
+  - Updates set the columns given. Updates and deletes find the row by its key (`SqlDialect.KeyEquals`: SQLite compares guid, date and date-time keys through `upper()`, `date()` and `strftime()`, as it may keep them in other forms). They change it only if the original values given still hold: its row version alone when that is given (SQL Server's `rowversion`); otherwise each original whose type compares exactly in the database (`SqlDialect.ComparesOriginal`: not floating-point, binary, JSON or unknown types, nor SQL Server's `text`, `ntext` and `image`; in SQLite only whole numbers and text), and `IS NULL` for nulls. PostgreSQL's `xmin` isn't used, as the language can't read it.
+  - Parameters are typed by their column and marked as meeting it, so PostgreSQL takes text and JSON as the column's type (enums, char(n), json and jsonb), and SQL Server sends `datetime` for its datetime columns.
+  - Each statement must change one row. SQL Server's count is `SELECT @@ROWCOUNT` after the statement (the count it reports adds the rows its triggers changed, and NOCOUNT hides it); the others report the statement's own.
+  - Each script runs inserts first, with the tables they refer to first, then updates, then deletes, with the tables that refer to theirs first. Tables that refer to each other, and rows of one table, keep the order given.
+  - `ToDisplayText(inlineParameters)` gives the statements as people read them, without the rows they give back. With the values written in (`SqlDialect.WriteLiteral`, which knows the column's type: a SQL Server literal for a `datetime` column is a `datetime`), the text can be edited and run as a script.
+- **Running** (`QueryEngine.CommitAsync(plan or scripts)`, `DmlExecutor`):
+  - Every connection is opened and readied (`SourceProvider.PrepareWriteAsync`: SQLite's `PRAGMA foreign_keys` as `SourceInfo.EnforceForeignKeys` says, which is on, off, or as the connection has it, on with the SQLite that Microsoft.Data.Sqlite bundles). A transaction is begun on each (SQLite's is IMMEDIATE), and the scripts run in order.
+  - A statement that fails, or changes another number of rows than one, rolls every connection back.
+  - Each connection then checks what its commit would (`SourceProvider.PrepareCommitAsync`: PostgreSQL's deferred constraints, `SET CONSTRAINTS ALL IMMEDIATE`), so such a failure also comes before anything commits. Then they commit in order.
+  - There is no two-phase commit: a commit that fails after another succeeded leaves the changes partly written (`DmlOutcome.PartiallyCommitted`), and the rest are rolled back.
+  - Failures aren't thrown. The `DmlResult` gives the outcome, each script's status (committed, rolled back, commit failed), each statement's rows changed and returned row, and the failure (connection, statement, conflict or commit) with its message.
+  - Cancelling before the commits rolls everything back; commits aren't cancelled. `DmlPlan.IsMultiConnection` warns when a change set spans connections.
+- **Edited scripts** (`QueryEngine.ParseScript(source, text, allowAnyStatement)`):
+  - `SqlScriptSplitter` splits at `;` outside strings, quoted names and comments, as each dialect writes them: PostgreSQL's and DuckDB's `E'…'` and `$tag$…$tag$`, SQL Server's and SQLite's `[…]`, SQLite's backticks, nested block comments (but SQLite's), and SQL Server's `GO` lines. A SQLite `CREATE TRIGGER` keeps its body; other procedural blocks are split. What isn't closed, and `GO n`, are problems.
+  - `DmlGuard` lets only `INSERT`, `UPDATE`, `DELETE` and `MERGE` run (and SQLite's `REPLACE`), `WITH …` forms of those included, by the word after the common table expressions. In SQL Server, where statements needn't end with `;`, reserved words that start other statements or run code (`DROP`, `EXEC`, `DECLARE`, …) and `SELECT … INTO` are rejected anywhere in a statement. Functions that reach outside the database are rejected too: DuckDB's `read_*`, PostgreSQL's file and server functions, SQLite's `load_extension`.
+  - An administrator may allow any statement, but never transaction control, which is the engine's. The guard isn't a sandbox; the login's rights are.
+  - Edited statements don't check how many rows they change. Problems give their line and position.
+- **Found by the review** (222 probes on the four databases, now `DmlEdgeTests`), fixed:
+  - a key the overlay declares made a keyless table's rows changeable;
+  - text was measured in characters, where SQL Server's nvarchar counts UTF-16 units;
+  - an edited SQL Server statement with `OUTPUT` counted its first value as its rows.
+- **`gdq`:** `changes -f changes.json [--commit]` shows the scripts of a JSON change file, and writes them. `script <alias> -f edits.sql [--commit] [--any-statement]` checks an edited script, and runs it. `-w <alias>` makes a source writable (its files open read-write).
+- **Known limitations:**
+  - DuckDB can't update an indexed column of a row that a foreign key refers to: it updates by deleting and inserting (DuckDB's own limitation), so such changes fail with its error.
+  - A row inserted can't be referred to by another inserted in the same change set when its key is generated.
+  - SQL Server identity values can't be given (there is no IDENTITY_INSERT).
+  - Binary values' lengths aren't checked before they run; the database rejects what doesn't fit.
 
 ### 4.9 Excel Folder (`GalaxyData.Query.Excel`)
 Built in M8 without DuckDB's `excel` extension (it would be a 22 MB download per DuckDB version, to ship for offline use, and `read_xlsx` types a column by its first row, failing later rows that differ). The cells are read here, and the rows loaded into DuckDB through appenders.
@@ -304,7 +327,7 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
 - **Collation:** the conformance runs on case-sensitive databases (C, Latin1_General_100_CS_AS), as SQLite compares; SQL Server databases usually ignore case, and queries that run there do too (the documented exception); ilike and icontains are the same everywhere.
 - **Tests** (`tests/GalaxyData.Query.ContainerTests`): `servers.sh up` starts PostgreSQL (port 55432) and SQL Server Developer (51433) in Docker; `GDQ_TEST_POSTGRES` and `GDQ_TEST_SQLSERVER` name other servers (logins that may create databases). Each fixture database is made once per run under a name of its own and dropped after. Tests of a server that can't be reached are skipped (failed when it was named). The conformance set on each server, in the merge engine, split across the two servers (every bind-join mode, both ways) and with SQLite and DuckDB; introspection snapshots; a value of each type read directly and through the merge engine and sent back as a parameter; SQL Server's parameter declarations in its plan cache (no `CONVERT_IMPLICIT`); bind joins at the parameter limit; a case-insensitive database; cancelling a statement stops it on the server; the CLI.
 - **Documented differences** (tested as what each gives): decimal division and averages have each database's digits (PostgreSQL 20 places, SQL Server 6 to 10, DuckDB a double's); toString of date-times, times, offsets and doubles is each database's text; division by zero fails on the servers (SQLite gives null, the merge engine infinity); PostgreSQL's text functions ignore char(n) padding, which the value read keeps; SQL Server counts a character outside the BMP as two without an `_SC` collation; `tinyint + tinyint` overflows past 255 in SQL Server (the language's int16 would not); the merge engine keeps date-times to the microsecond (datetime2(7)'s last digit goes).
-- **Known limitations:** SQLite groups and takes min/max of offset date-times by their text. Server sources are read-only in the CLI; DML is M10.
+- **Known limitations:** SQLite groups and takes min/max of offset date-times by their text.
 
 ---
 
@@ -503,7 +526,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | M7 | Adaptive bind-join, runtime scalar params, TopN through navs, cardinality estimates | A 50-row page sends ≤ 50 keys (`ExecutionStats.KeysSent`, `FragmentStats.Strategy/Keys/Batches`); k = 0 early-out; fallback above the key limit; the conformance set split across sources gives the same rows with bind joins always and never |
 | M8 | Excel Folder provider (own cell reader, sheets loaded into the merge engine's database, reloaded when workbooks change) | OpenXml-generated fixtures (multiple, hidden, chart, empty and spaced sheets; lock files, damaged files, subfolders); Excel ⋈ SQLite join (navigation and join(), sheets fetched by keys, runtime values) |
 | M9 | PG and MSSQL providers (see 4.10) | Container suite runs the same conformance and differential tests; MSSQL varchar parameter typing |
-| M10 | DML planner, script splitter, DML-only guard, coordinated executor; optional FK enforcement per connection on commit (SQLite `PRAGMA foreign_keys = ON`) | Per provider: insert with returned rows, concurrency conflict rolls back all, cross-connection success, simulated partial commit, guard rejects DDL |
+| M10 | DML planner, script splitter, DML-only guard, coordinated executor, `ResultRowEditor`; foreign-key checking per connection (SQLite's `PRAGMA foreign_keys`: on, off, or as the connection has it); `gdq changes` and `gdq script` (see 4.8) | Per provider: insert with returned rows, concurrency conflict rolls back all, cross-connection success, simulated partial commit, guard rejects DDL |
 | M11 | Hardening, timeouts, guardrails, language reference doc (`docs/language.md`) | |
 
 **App backend**
@@ -545,7 +568,7 @@ Engine work starts at **M0**. The first commit goes on a new branch off `master`
 - **Engine:**
   - `dotnet test tests/GalaxyData.Query.Tests tests/GalaxyData.Query.IntegrationTests` covers golden SQL for all 4 dialects, binder and optimizer snapshots, the SQLite+DuckDB differential federation suite, Excel, and DML.
   - `dotnet test tests/GalaxyData.Query.ContainerTests` needs the servers `servers.sh up` starts (here: `wsl -d Alpine -u root sh tests/GalaxyData.Query.ContainerTests/servers.sh up`), or `GDQ_TEST_POSTGRES`/`GDQ_TEST_SQLSERVER`. It skips itself when they can't be reached.
-- **CLI smoke test:** `gdq repl --source shop=sqlite:tests/fixtures/shop.db --source wh=duckdb:... --overlay overlay.json`, then run the four spec examples plus a cross-source query with `:explain`. Check the fragments, the merge SQL and the lineage output.
+- **CLI smoke test:** `gdq repl --source shop=sqlite:tests/fixtures/shop.db --source wh=duckdb:... --overlay overlay.json`, then run the four spec examples plus a cross-source query with `:explain`. Check the fragments, the merge SQL and the lineage output. Then `gdq changes -s shop=sqlite:shop.db -w shop -f changes.json` to see a change set's scripts, and again with `--commit`.
 - **Backend:** `dotnet test tests/GalaxyData.Web.Tests`. A `WebApplicationFactory` points at a temp data directory with bootstrap credentials and SQLite/DuckDB/Excel fixture sources, and a `TestApi` helper handles the XSRF token. The suite includes:
   - a test that every `/api` endpoint has a policy;
   - a test that no response body contains the fixture password;
@@ -573,5 +596,5 @@ Engine work starts at **M0**. The first commit goes on a new branch off `master`
 - **Group-key matching complexity:** a large table of positive and negative binder tests.
 - **Reserved words** (`and`, `or`, `not`, `in`, `if`, `for`): escape with `it["in"]`. The app quotes names through `QueryText`.
 - **AG Grid Community's infinite model with pagination when the total is unknown:** spike this early in F4. The fallback is `MatPaginator` driving the datasource; the URL format doesn't change.
-- **Partial commits across connections:** the preview warning, audit statuses and a per-connection result view.
+- **Partial commits across connections:** the preview warning, audit statuses and a per-connection result view. Deferred constraints are checked before the first commit.
 - **Losing Data Protection keys loses stored secrets:** document that the keys directory must be backed up. The UI shows "re-enter secret" for affected connections.

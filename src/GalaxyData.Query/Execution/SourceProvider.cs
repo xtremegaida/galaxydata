@@ -50,6 +50,18 @@ public abstract class SourceProvider
    /// </summary>
    public virtual ValueTask PrepareConnectionAsync(DbConnection connection, CancellationToken cancellationToken) => ValueTask.CompletedTask;
 
+   /// <summary>
+   /// Readies a connection before changes are written on it, before its transaction begins: whether SQLite checks
+   /// foreign keys is a setting of the connection (<see cref="SourceInfo.EnforceForeignKeys"/>).
+   /// </summary>
+   public virtual ValueTask PrepareWriteAsync(DbConnection connection, SourceInfo source, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+   /// <summary>
+   /// Checks, inside the transaction, what the database would check when it commits (PostgreSQL's deferred
+   /// constraints), so that a change that can't be committed stops before any connection commits.
+   /// </summary>
+   public virtual ValueTask PrepareCommitAsync(DbConnection connection, DbTransaction transaction, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
    /// <summary>Readies a command for a query before it runs, such as streaming its rows instead of computing them all first.</summary>
    public virtual void PrepareCommand(DbCommand command) { }
 

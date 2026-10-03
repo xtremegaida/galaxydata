@@ -106,6 +106,15 @@ public sealed partial class Servers : IAsyncDisposable
       return await made.Value;
    }
 
+   /// <summary>A database of the test's own, which it may change: made from the fixture and <paramref name="then"/>, and dropped with the others.</summary>
+   public async Task<ServerDatabase> FreshAsync(ServerKind server, string fixture = "shop", string? then = null)
+   {
+      await RequireAsync(server);
+      Lazy<Task<ServerDatabase>> made = databases.GetOrAdd($"{server}|{fixture}|{then}|fresh {Guid.NewGuid():N}",
+         _ => new Lazy<Task<ServerDatabase>>(() => CreateAsync(server, fixture, then, serverCollation: false)));
+      return await made.Value;
+   }
+
    private static async Task<ServerDatabase> CreateAsync(ServerKind server, string fixture, string? then, bool serverCollation)
    {
       string name = "gdq_test_" + Guid.NewGuid().ToString("N")[..12];

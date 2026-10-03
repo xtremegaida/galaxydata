@@ -1,0 +1,202 @@
+### 0: the insert into shop.customers
+-- shown
+INSERT INTO customers (name, city)
+VALUES ('Delta Ltd', 'Durban')
+-- with parameters
+INSERT INTO customers (name, city)
+VALUES (@p0, @p1)
+-- p0 string(100) = 'Delta Ltd'
+-- p1 string(40) = 'Durban'
+-- run (Rows, 1 row, gives back id, name, city, credit_limit, created_at)
+INSERT INTO customers (name, city)
+VALUES (@p0, @p1)
+RETURNING id, name, city, credit_limit, created_at
+-- p0 string(100) = 'Delta Ltd'
+-- p1 string(40) = 'Durban'
+
+### 2: the insert into shop.orders
+-- shown
+INSERT INTO orders (id, customer_id, total, order_date, placed_at, mood)
+VALUES (2001, 4, 12.50, '2026-03-01', '2026-03-01 10:30:00+02:00', 'happy')
+-- with parameters
+INSERT INTO orders (id, customer_id, total, order_date, placed_at, mood)
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5)
+-- p0 int64 = 2001
+-- p1 int32 = 4
+-- p2 decimal(10,2) = 12.50
+-- p3 date = '2026-03-01'::date
+-- p4 datetimeoffset = '2026-03-01 10:30:00+02:00'::datetimeoffset
+-- p5 string = 'happy'
+-- run (Rows, 1 row, gives back id, customer_id, status, total, order_date, placed_at, logged, mood, version)
+INSERT INTO orders (id, customer_id, total, order_date, placed_at, mood)
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5)
+RETURNING id, customer_id, status, total, order_date, placed_at, logged, CAST(mood AS text), version
+-- p0 int64 = 2001
+-- p1 int32 = 4
+-- p2 decimal(10,2) = 12.50
+-- p3 date = '2026-03-01'::date
+-- p4 datetimeoffset = '2026-03-01 10:30:00+02:00'::datetimeoffset
+-- p5 string = 'happy'
+
+### 1: the insert into shop.order_lines
+-- shown
+INSERT INTO order_lines (order_id, line_no, qty, price)
+VALUES (2001, 1, 2, 6.25)
+-- with parameters
+INSERT INTO order_lines (order_id, line_no, qty, price)
+VALUES (@p0, @p1, @p2, @p3)
+-- p0 int64 = 2001
+-- p1 int32 = 1
+-- p2 int32 = 2
+-- p3 decimal(10,2) = 6.25
+-- run (Rows, 1 row, gives back order_id, line_no, qty, price, amount)
+INSERT INTO order_lines (order_id, line_no, qty, price)
+VALUES (@p0, @p1, @p2, @p3)
+RETURNING order_id, line_no, qty, price, amount
+-- p0 int64 = 2001
+-- p1 int32 = 1
+-- p2 int32 = 2
+-- p3 decimal(10,2) = 6.25
+
+### 3: the insert into shop.notes
+-- shown
+INSERT INTO notes
+DEFAULT VALUES
+-- with parameters
+INSERT INTO notes
+DEFAULT VALUES
+-- run (Rows, 1 row, gives back at, text, score)
+INSERT INTO notes
+DEFAULT VALUES
+RETURNING "at", text, score
+
+### 4: the update of shop.orders (id = 1001)
+-- shown
+UPDATE orders
+SET status = 'shipped', logged = '2026-03-02 09:00:00.123'
+WHERE id = 1001 AND customer_id IS NULL AND status = 'open' AND mood = 'calm'
+-- with parameters
+UPDATE orders
+SET status = @p0, logged = @p1
+WHERE id = @p2 AND customer_id IS NULL AND status = @p3 AND mood = @p4
+-- p0 string(20,ansi) = 'shipped'
+-- p1 datetime = '2026-03-02 09:00:00.123'::datetime
+-- p2 int64 = 1001
+-- p3 string(20,ansi) = 'open'
+-- p4 string = 'calm'
+-- run (Affected, 1 row)
+UPDATE orders
+SET status = @p0, logged = @p1
+WHERE id = @p2 AND customer_id IS NULL AND status = @p3 AND mood = @p4
+-- p0 string(20,ansi) = 'shipped'
+-- p1 datetime = '2026-03-02 09:00:00.123'::datetime
+-- p2 int64 = 1001
+-- p3 string(20,ansi) = 'open'
+-- p4 string = 'calm'
+
+### 5: the update of shop.orders (id = 1002)
+-- shown
+UPDATE orders
+SET total = 99.00
+WHERE id = 1002 AND version = X'00000000000007D1'
+-- with parameters
+UPDATE orders
+SET total = @p0
+WHERE id = @p1 AND version = @p2
+-- p0 decimal(10,2) = 99.00
+-- p1 int64 = 1002
+-- p2 binary = 0x00000000000007D1
+-- run (Affected, 1 row)
+UPDATE orders
+SET total = @p0
+WHERE id = @p1 AND version = @p2
+-- p0 decimal(10,2) = 99.00
+-- p1 int64 = 1002
+-- p2 binary = 0x00000000000007D1
+
+### 6: the update of shop.customers (id = 3)
+-- shown
+UPDATE customers
+SET city = 'Cape Town'
+WHERE id = 3 AND name = 'Gamma Inc' AND city IS NULL AND credit_limit IS NULL
+-- with parameters
+UPDATE customers
+SET city = @p0
+WHERE id = @p1 AND name = @p2 AND city IS NULL AND credit_limit IS NULL
+-- p0 string(40) = 'Cape Town'
+-- p1 int32 = 3
+-- p2 string(100) = 'Gamma Inc'
+-- run (Affected, 1 row)
+UPDATE customers
+SET city = @p0
+WHERE id = @p1 AND name = @p2 AND city IS NULL AND credit_limit IS NULL
+-- p0 string(40) = 'Cape Town'
+-- p1 int32 = 3
+-- p2 string(100) = 'Gamma Inc'
+
+### 7: the update of shop.contacts (id = '2f1c0000-0000-4000-8000-000000000001'::guid)
+-- shown
+UPDATE contacts
+SET "Display Name" = 'Ann'
+WHERE upper(id) = '2F1C0000-0000-4000-8000-000000000001'
+-- with parameters
+UPDATE contacts
+SET "Display Name" = @p0
+WHERE upper(id) = @p1
+-- p0 string = 'Ann'
+-- p1 guid = '2f1c0000-0000-4000-8000-000000000001'::guid
+-- run (Affected, 1 row)
+UPDATE contacts
+SET "Display Name" = @p0
+WHERE upper(id) = @p1
+-- p0 string = 'Ann'
+-- p1 guid = '2f1c0000-0000-4000-8000-000000000001'::guid
+
+### 10: the delete from shop.contacts (id = '2f1c0000-0000-4000-8000-000000000001'::guid)
+-- shown
+DELETE FROM contacts
+WHERE upper(id) = '2F1C0000-0000-4000-8000-000000000001' AND email = 'ann@acme.test' AND "Display Name" = 'Ann'
+-- with parameters
+DELETE FROM contacts
+WHERE upper(id) = @p0 AND email = @p1 AND "Display Name" = @p2
+-- p0 guid = '2f1c0000-0000-4000-8000-000000000001'::guid
+-- p1 string = 'ann@acme.test'
+-- p2 string = 'Ann'
+-- run (Affected, 1 row)
+DELETE FROM contacts
+WHERE upper(id) = @p0 AND email = @p1 AND "Display Name" = @p2
+-- p0 guid = '2f1c0000-0000-4000-8000-000000000001'::guid
+-- p1 string = 'ann@acme.test'
+-- p2 string = 'Ann'
+
+### 8: the delete from shop.order_lines (order_id = 1001, line_no = 2)
+-- shown
+DELETE FROM order_lines
+WHERE order_id = 1001 AND line_no = 2 AND qty = 1
+-- with parameters
+DELETE FROM order_lines
+WHERE order_id = @p0 AND line_no = @p1 AND qty = @p2
+-- p0 int64 = 1001
+-- p1 int32 = 2
+-- p2 int32 = 1
+-- run (Affected, 1 row)
+DELETE FROM order_lines
+WHERE order_id = @p0 AND line_no = @p1 AND qty = @p2
+-- p0 int64 = 1001
+-- p1 int32 = 2
+-- p2 int32 = 1
+
+### 9: the delete from shop.orders (id = 1001)
+-- shown
+DELETE FROM orders
+WHERE id = 1001 AND status = 'shipped'
+-- with parameters
+DELETE FROM orders
+WHERE id = @p0 AND status = @p1
+-- p0 int64 = 1001
+-- p1 string(20,ansi) = 'shipped'
+-- run (Affected, 1 row)
+DELETE FROM orders
+WHERE id = @p0 AND status = @p1
+-- p0 int64 = 1001
+-- p1 string(20,ansi) = 'shipped'

@@ -1,0 +1,37 @@
+-- shop (SQL Server)
+INSERT INTO customers (name, city)
+VALUES (N'Delta Ltd', N'Durban');
+
+INSERT INTO orders (id, customer_id, total, order_date, placed_at, mood)
+VALUES (2001, 4, 12.50, CAST('2026-03-01' AS date), CAST('2026-03-01 10:30:00+02:00' AS datetimeoffset), N'happy');
+
+INSERT INTO order_lines (order_id, line_no, qty, price)
+VALUES (2001, 1, 2, 6.25);
+
+INSERT INTO notes
+DEFAULT VALUES;
+
+UPDATE orders
+SET status = 'shipped', logged = CAST('2026-03-02 09:00:00.123' AS datetime)
+WHERE id = 1001 AND customer_id IS NULL AND status = 'open' AND total = 250.00 AND placed_at = CAST('2026-01-05 08:30:00+00:00' AS datetimeoffset) AND logged = CAST('2026-01-05 08:30:00.333' AS datetime) AND mood = N'calm';
+
+UPDATE orders
+SET total = 99.00
+WHERE id = 1002 AND version = 0x00000000000007D1;
+
+UPDATE customers
+SET city = N'Cape Town'
+WHERE id = 3 AND name = N'Gamma Inc' AND city IS NULL AND credit_limit IS NULL;
+
+UPDATE contacts
+SET [Display Name] = N'Ann'
+WHERE id = CAST('2f1c0000-0000-4000-8000-000000000001' AS uniqueidentifier);
+
+DELETE FROM contacts
+WHERE id = CAST('2f1c0000-0000-4000-8000-000000000001' AS uniqueidentifier) AND email = N'ann@acme.test' AND [Display Name] = N'Ann';
+
+DELETE FROM order_lines
+WHERE order_id = 1001 AND line_no = 2 AND qty = 1 AND price = 50.00 AND amount = 50.00;
+
+DELETE FROM orders
+WHERE id = 1001 AND status = 'shipped';

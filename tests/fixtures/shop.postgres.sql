@@ -87,6 +87,8 @@ INSERT INTO order_lines (order_id, line_no, product_code, qty, price) VALUES
    (1002, 1, 'P-100', 1, 99.50),
    (1003, 1, 'P-300', 5, 2.45);
 INSERT INTO employees (id, name, manager_id) VALUES (1, 'Ann', NULL), (2, 'Ben', 1), (3, 'Cal', 1);
+-- The identity goes on from the customers given their ids.
+SELECT setval(pg_get_serial_sequence('customers', 'id'), 3);
 INSERT INTO crm.contacts VALUES ('2f1c0000-0000-4000-8000-000000000001', 1, 'ann@acme.test', 'Ann at Acme');
 -- A foreign key added NOT VALID isn't checked against the rows already there.
 ALTER TABLE employees ADD CONSTRAINT employees_manager_id_fkey FOREIGN KEY (manager_id) REFERENCES employees(id) NOT VALID;
