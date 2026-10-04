@@ -1,0 +1,124 @@
+@let d = draft();
+@for (group of d.kind.groups; track group.key) {
+  @if (group.collapsed) {
+    <mat-expansion-panel class="group" [expanded]="openAtFirst().has(group.key)">
+      <mat-expansion-panel-header>
+        <mat-panel-title>{{ group.label }}</mat-panel-title>
+      </mat-expansion-panel-header>
+      <ng-container *ngTemplateOutlet="fields; context: { $implicit: group }" />
+    </mat-expansion-panel>
+  } @else {
+    <fieldset class="group">
+      <legend>{{ group.label }}</legend>
+      <ng-container *ngTemplateOutlet="fields; context: { $implicit: group }" />
+    </fieldset>
+  }
+}
+
+<ng-template #fields let-group>
+  @for (field of d.fieldsIn(group); track field.key) {
+    @if (d.visible(field)) {
+      @switch (field.type) {
+        @case ('password') {
+          <gd-secret-field
+            [secret]="d.form.secrets[field.key]"
+            [label]="field.label"
+            [help]="field.help"
+          />
+        }
+        @case ('bool') {
+          <div class="toggle">
+            <mat-slide-toggle
+              [checked]="d.flag(field)"
+              [aria-describedby]="field.help ? helpId(field) : ''"
+              (change)="d.setFlag(field, $event.checked)"
+            >
+              {{ field.label }}
+            </mat-slide-toggle>
+            @if (field.help) {
+              <p class="help" [id]="helpId(field)">{{ field.help }}</p>
+            }
+          </div>
+        }
+        @case ('select') {
+          <mat-form-field class="field">
+            <mat-label>{{ field.label }}</mat-label>
+            <mat-select [formField]="d.form.settings[field.key]">
+              @for (choice of choices(field); track choice.value) {
+                <mat-option [value]="choice.value">{{ choice.label }}</mat-option>
+              }
+            </mat-select>
+            @if (field.help) {
+              <mat-hint>{{ field.help }}</mat-hint>
+            }
+            <mat-error>{{ d.form.settings[field.key]().errors()[0]?.message }}</mat-error>
+          </mat-form-field>
+        }
+        @case ('keyValues') {
+          <div class="others" role="group" [attr.aria-label]="field.label">
+            <div class="others-title">{{ field.label }}</div>
+            @if (field.help) {
+              <p class="help">{{ field.help }}</p>
+            }
+            @for (other of d.model().others; track $index; let i = $index) {
+              <div class="other">
+                <mat-form-field class="key">
+                  <mat-label>Keyword</mat-label>
+                  <input matInput [formField]="d.form.others[i].key" spellcheck="false" />
+                  <mat-error>{{ d.form.others[i].key().errors()[0]?.message }}</mat-error>
+                </mat-form-field>
+                <mat-form-field class="value">
+                  <mat-label>Value</mat-label>
+                  <input
+                    matInput
+                    [formField]="d.form.others[i].value"
+                    [type]="isSecret(other.key) ? 'password' : 'text'"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                  @if (isSecret(other.key)) {
+                    <mat-hint>Kept as a secret</mat-hint>
+                  }
+                </mat-form-field>
+                <button
+                  matIconButton
+                  type="button"
+                  [attr.aria-label]="'Remove ' + (other.key || 'the setting')"
+                  (click)="removeOther(i)"
+                >
+                  <mat-icon>delete</mat-icon>
+                </button>
+              </div>
+            }
+            @for (key of d.otherSecrets(); track key) {
+              <gd-secret-field [secret]="d.form.secrets[key]" [label]="key" />
+            }
+            <button matButton class="add-other" type="button" (click)="d.addOther()">
+              <mat-icon>add</mat-icon>
+              Add a setting
+            </button>
+          </div>
+        }
+        @default {
+          <mat-form-field class="field">
+            <mat-label>{{ field.label }}</mat-label>
+            <input
+              matInput
+              [formField]="d.form.settings[field.key]"
+              [placeholder]="placeholder(field)"
+              [attr.inputmode]="field.type === 'number' ? 'numeric' : null"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            @if (field.type === 'filePath' || field.type === 'folderPath') {
+              <mat-hint>{{ pathHint(field) }}</mat-hint>
+            } @else if (field.help) {
+              <mat-hint>{{ field.help }}</mat-hint>
+            }
+            <mat-error>{{ d.form.settings[field.key]().errors()[0]?.message }}</mat-error>
+          </mat-form-field>
+        }
+      }
+    }
+  }
+</ng-template>

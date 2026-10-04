@@ -3,7 +3,13 @@ import { Component, computed, inject, linkedSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { MatButton, MatIconButton } from '@angular/material/button';
 import { MatIcon } from '@angular/material/icon';
-import { MatListItem, MatListItemIcon, MatListItemTitle, MatNavList } from '@angular/material/list';
+import {
+  MatListItem,
+  MatListItemIcon,
+  MatListItemTitle,
+  MatListSubheaderCssMatStyler,
+  MatNavList,
+} from '@angular/material/list';
 import { MatSidenav, MatSidenavContainer, MatSidenavContent } from '@angular/material/sidenav';
 import { MatToolbar } from '@angular/material/toolbar';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
@@ -27,6 +33,7 @@ export const wideScreen = '(min-width: 960px)';
     MatListItem,
     MatListItemIcon,
     MatListItemTitle,
+    MatListSubheaderCssMatStyler,
     MatNavList,
     MatSidenav,
     MatSidenavContainer,
@@ -43,7 +50,7 @@ export const wideScreen = '(min-width: 960px)';
 export class Shell {
   private readonly auth = inject(AuthStore);
 
-  protected readonly items = computed(() => navItemsFor(this.auth.permissions()));
+  protected readonly sections = computed(() => navItemsFor(this.auth.permissions()));
   protected readonly wide = toSignal(
     inject(BreakpointObserver)
       .observe(wideScreen)

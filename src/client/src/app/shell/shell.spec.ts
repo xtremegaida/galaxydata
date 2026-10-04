@@ -74,10 +74,12 @@ describe('Shell', () => {
   });
 
   it('leads to the pages, the one open marked', async () => {
-    const { loader, page } = await open();
+    const { loader, page } = await open(sessionOf('read'));
     const items = await (await loader.getHarness(MatNavListHarness)).getItems();
     expect(await Promise.all(items.map((item) => item.getTitle()))).toEqual(['Start']);
     expect(await (await items[0].host()).getAttribute('aria-current')).toBe('page');
+    const groups = [...page.querySelectorAll('[role=navigation] [role=group]')];
+    expect(groups.map((group) => group.getAttribute('aria-labelledby'))).toEqual([null]);
     const landmarks = page.querySelectorAll('nav, [role=navigation]');
     expect([...landmarks].map((landmark) => landmark.getAttribute('aria-label'))).toEqual([
       'Pages',
@@ -154,25 +156,75 @@ describe('Shell', () => {
   });
 });
 
+describe('Shell, as the screen changes width', () => {
+  const wide = new BehaviorSubject<BreakpointState>({ matches: true, breakpoints: {} });
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([{ path: '', component: Shell, children: [{ path: '', component: Start }] }]),
+        fakeBrowserProviders(),
+        { provide: BreakpointObserver, useValue: { observe: () => wide } },
+      ],
+    });
+  });
+
+  it('moves the navigation over the page when the screen narrows, and back when it widens', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    const loaded = TestBed.inject(AuthStore).ensure();
+    http.expectOne('/api/auth/session').flush(sessionOf());
+    await loaded;
+    const harness = await RouterTestingHarness.create('/');
+    const navigation = await TestbedHarnessEnvironment.loader(harness.fixture).getHarness(
+      MatSidenavHarness,
+    );
+    expect([await navigation.getMode(), await navigation.isOpen()]).toEqual(['side', true]);
+    wide.next({ matches: false, breakpoints: {} });
+    expect([await navigation.getMode(), await navigation.isOpen()]).toEqual(['over', false]);
+    wide.next({ matches: true, breakpoints: {} });
+    expect([await navigation.getMode(), await navigation.isOpen()]).toEqual(['side', true]);
+    const content = harness.fixture.nativeElement.querySelector(
+      'mat-sidenav-content',
+    ) as HTMLElement;
+    wide.next({ matches: false, breakpoints: {} });
+    await navigation.getMode();
+    expect(content.style.marginLeft).toBe('');
+  });
+});
+
 describe('navItemsFor', () => {
   const items: NavItem[] = [
     { label: 'Start', icon: 'home', link: '/' },
     { label: 'Changes', icon: 'edit', link: '/changes', needs: 'canEditData' },
-    { label: 'Users', icon: 'group', link: '/admin/users', needs: 'canAdmin' },
+    { label: 'Users', icon: 'group', link: '/admin/users', needs: 'canAdmin', section: 'Admin' },
+    { label: 'Audit', icon: 'history', link: '/admin/audit', needs: 'canAdmin', section: 'Admin' },
   ];
 
-  it('gives the pages a user may open', () => {
-    const labels = (permissions: Parameters<typeof navItemsFor>[0]) =>
-      navItemsFor(permissions, items).map((item) => item.label);
-    expect(labels({ canRead: true, canEditData: false, canAdmin: false })).toEqual(['Start']);
-    expect(labels({ canRead: true, canEditData: true, canAdmin: false })).toEqual([
-      'Start',
-      'Changes',
+  const shown = (permissions: Parameters<typeof navItemsFor>[0]) =>
+    navItemsFor(permissions, items).map((section) => [
+      section.label,
+      section.items.map((item) => item.label),
     ]);
-    expect(labels({ canRead: true, canEditData: true, canAdmin: true })).toEqual([
-      'Start',
-      'Changes',
-      'Users',
+
+  it('gives the pages a user may open, by section', () => {
+    expect(shown({ canRead: true, canEditData: false, canAdmin: false })).toEqual([
+      [null, ['Start']],
     ]);
+    expect(shown({ canRead: true, canEditData: true, canAdmin: false })).toEqual([
+      [null, ['Start', 'Changes']],
+    ]);
+    expect(shown({ canRead: true, canEditData: true, canAdmin: true })).toEqual([
+      [null, ['Start', 'Changes']],
+      ['Admin', ['Users', 'Audit']],
+    ]);
+  });
+
+  it("puts administrators' pages under their heading", () => {
+    expect(navItemsFor({ canRead: true, canEditData: true, canAdmin: true }).at(-1)).toMatchObject({
+      label: 'Administration',
+      items: [{ label: 'Users' }, { label: 'Connections' }],
+    });
   });
 });

@@ -201,7 +201,7 @@ public static partial class ConnectionEndpoints
       ConnectionKind kind = KindOf(connection, kinds);
       Dictionary<string, string>? stored = secrets.Unprotect(connection.Alias, connection.ProtectedSecrets);
       ConnectionResolution resolved = ConnectionInputs.Resolve(kind, request.Connection, stored ?? NoSecrets.ToDictionary(), roots);
-      if (stored == null) { Unreadable(request.Connection, resolved); }
+      if (stored == null) { Unreadable(kind, request.Connection, resolved); }
       if (!resolved.IsValid) { return ApiProblems.Invalid(resolved.Errors); }
 
       Dictionary<string, object?> changes = [];
@@ -322,18 +322,37 @@ public static partial class ConnectionEndpoints
          alias = connection.Alias;
       }
       ConnectionResolution resolved = ConnectionInputs.Resolve(kind, request.Connection, stored ?? NoSecrets.ToDictionary(), roots);
-      if (stored == null) { Unreadable(request.Connection, resolved); }
+      if (stored == null) { Unreadable(kind, request.Connection, resolved); }
       if (!resolved.IsValid) { return ApiProblems.Invalid(resolved.Errors); }
       return TypedResults.Ok(await tester.TestAsync(alias, kind, resolved, cancellationToken));
    }
 
    /// <summary>Secrets kept when the stored ones can't be read are problems: they must be entered again.</summary>
-   private static void Unreadable(ConnectionInput input, ConnectionResolution resolved)
+   private static void Unreadable(ConnectionKind kind, ConnectionInput input, ConnectionResolution resolved)
    {
       bool keeps = input.Mode == ConnectionMode.Raw
-         ? input.ConnectionString?.Contains(ConnectionStrings.Mask, StringComparison.Ordinal) == true
+         ? MasksKept(kind, input)
          : input.Secrets?.Values.Any(s => s.Action == SecretAction.Keep) == true;
       if (keeps) { resolved.Error(input.Mode == ConnectionMode.Raw ? "connectionString" : "secrets", StoredConnections.UnreadableSecrets); }
+   }
+
+   /// <summary>
+   /// Whether a connection string keeps a stored secret: writes <c>********</c> for one that its secrets don't set
+   /// (as the form does when it was converted into the string).
+   /// </summary>
+   private static bool MasksKept(ConnectionKind kind, ConnectionInput input)
+   {
+      if (input.ConnectionString?.Contains(ConnectionStrings.Mask, StringComparison.Ordinal) != true) { return false; }
+      Dictionary<string, SecretInput> given = new(input.Secrets ?? [], StringComparer.OrdinalIgnoreCase);
+      try
+      {
+         return kind.Parse(input.ConnectionString).Any(p => kind.IsSecret(p.Key) && p.Value == ConnectionStrings.Mask
+            && !(given.TryGetValue(p.Key, out SecretInput? action) && action.Action == SecretAction.Set && !string.IsNullOrEmpty(action.Value)));
+      }
+      catch (Exception e) when (e is ArgumentException or FormatException or InvalidCastException or OverflowException or KeyNotFoundException)
+      {
+         return true;
+      }
    }
 
    internal static ConnectionDto Dto(SourceConnection connection, ConnectionKinds kinds, ConnectionSecrets secrets) =>

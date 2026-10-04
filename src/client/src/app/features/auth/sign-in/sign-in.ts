@@ -13,6 +13,7 @@ import { MatInput } from '@angular/material/input';
 import { ProblemCode, problemMessage, problemOf, type Problem } from '../../../core/api/problem';
 import { AuthStore } from '../../../core/auth/auth-store';
 import { fieldErrors, focusFirstInvalid } from '../../../core/forms/server-errors';
+import { Message } from '../../../core/ui/message';
 import { AuthLayout } from '../auth-layout';
 
 interface SignInModel {
@@ -25,6 +26,7 @@ interface SignInModel {
   selector: 'gd-sign-in',
   imports: [
     AuthLayout,
+    Message,
     FormField,
     FormRoot,
     MatButton,

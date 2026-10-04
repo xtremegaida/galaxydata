@@ -36,6 +36,10 @@ export const ProblemCode = {
   wrongPassword: 'wrong-password',
   weakPassword: 'weak-password',
   tooManyRequests: 'too-many-requests',
+  notFound: 'not-found',
+  concurrencyConflict: 'concurrency-conflict',
+  userNameTaken: 'user-name-taken',
+  aliasTaken: 'alias-taken',
 } as const;
 
 /** The codes the API gives problems without codes of their own, by status. */
@@ -52,8 +56,14 @@ const statusCodes: Readonly<Record<number, string>> = {
   500: 'internal-error',
 };
 
-/** The problem an error is: an answer of the API's, an answer of something else's, or no answer. */
+/**
+ * The problem an error is: an answer of the API's, an answer of something else's, or no answer. A resource's error
+ * wraps the answer (its `cause`).
+ */
 export function problemOf(error: unknown): Problem {
+  if (error instanceof Error && error.cause instanceof HttpErrorResponse) {
+    error = error.cause;
+  }
   if (!(error instanceof HttpErrorResponse)) {
     return {
       status: 0,

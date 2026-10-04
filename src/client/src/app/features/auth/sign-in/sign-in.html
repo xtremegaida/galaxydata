@@ -1,21 +1,17 @@
 <gd-auth-layout heading="Sign in to GalaxyData">
   <div role="status">
     @if (notice(); as notice) {
-      <div class="message notice">
-        <mat-icon>schedule</mat-icon>
-        <p class="text">{{ notice }}</p>
-      </div>
+      <gd-message kind="notice" icon="schedule">{{ notice }}</gd-message>
     }
   </div>
   <div role="alert">
     @if (problem(); as problem) {
-      <div class="message problem">
-        <mat-icon>error</mat-icon>
-        <p class="text">{{ message(problem) }}</p>
+      <gd-message kind="problem">
+        {{ message(problem) }}
         @if (problem.code === unreachable) {
-          <button matButton type="button" (click)="tryAgain()">Try again</button>
+          <button gdMessageAction matButton type="button" (click)="tryAgain()">Try again</button>
         }
-      </div>
+      </gd-message>
     }
   </div>
   <form class="form" [formRoot]="form">

@@ -32,20 +32,31 @@
   >
     <!-- The list is the navigation (its role). -->
     <mat-nav-list aria-label="Pages">
-      @for (item of items(); track item.link) {
-        <a
-          mat-list-item
-          [routerLink]="item.link"
-          routerLinkActive
-          #active="routerLinkActive"
-          [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
-          ariaCurrentWhenActive="page"
-          [activated]="active.isActive"
-          (click)="chosen()"
+      @for (section of sections(); track section.label; let s = $index) {
+        @if (section.label) {
+          <div mat-subheader [id]="'gd-nav-section-' + s">{{ section.label }}</div>
+        }
+        <div
+          role="group"
+          [attr.aria-labelledby]="section.label ? 'gd-nav-section-' + s : null"
+          class="nav-section"
         >
-          <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
-          <span matListItemTitle>{{ item.label }}</span>
-        </a>
+          @for (item of section.items; track item.link) {
+            <a
+              mat-list-item
+              [routerLink]="item.link"
+              routerLinkActive
+              #active="routerLinkActive"
+              [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
+              ariaCurrentWhenActive="page"
+              [activated]="active.isActive"
+              (click)="chosen()"
+            >
+              <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
+              <span matListItemTitle>{{ item.label }}</span>
+            </a>
+          }
+        </div>
       }
     </mat-nav-list>
   </mat-sidenav>

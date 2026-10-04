@@ -1,0 +1,128 @@
+<div class="admin-page">
+  <a class="back" matButton routerLink="/admin/users">
+    <mat-icon>arrow_back</mat-icon>
+    Users
+  </a>
+
+  @if (user.isLoading()) {
+    <mat-progress-bar mode="indeterminate" aria-label="Loading the user" />
+  }
+  <div role="alert">
+    @if (loadProblem(); as problem) {
+      <gd-message kind="problem">
+        {{ message(problem) }}
+        <button gdMessageAction matButton type="button" (click)="reload()">Try again</button>
+      </gd-message>
+    }
+  </div>
+
+  @if (shown(); as shown) {
+    <header class="page-header">
+      <h1>{{ label(shown) }}</h1>
+      <div class="subtitle">
+        {{ shown.userName }}
+        <ul class="badges" aria-label="State">
+          @for (state of states(shown); track state) {
+            <li class="badge" [class.warn]="state !== 'Password to change'">{{ state }}</li>
+          }
+        </ul>
+      </div>
+    </header>
+
+    <div role="alert">
+      @if (problem(); as problem) {
+        <gd-message kind="problem">
+          {{ message(problem) }}
+          @if (stale(problem)) {
+            <button gdMessageAction matButton type="button" (click)="reload()">
+              Read it again
+            </button>
+          }
+        </gd-message>
+      }
+    </div>
+
+    <section class="section" aria-labelledby="gd-user-details">
+      <h2 id="gd-user-details">Details</h2>
+      <form class="form" [formRoot]="form">
+        <mat-form-field>
+          <mat-label>Name</mat-label>
+          <input matInput [formField]="form.displayName" autocomplete="off" />
+          <mat-hint>How the application shows them; their user name when empty</mat-hint>
+          <mat-error>{{ form.displayName().errors()[0]?.message }}</mat-error>
+        </mat-form-field>
+        <mat-form-field>
+          <mat-label>Role</mat-label>
+          <mat-select [formField]="form.role">
+            @for (role of roles; track role[0]) {
+              <mat-option [value]="role[0]">{{ role[1] }}</mat-option>
+            }
+          </mat-select>
+          <mat-hint>
+            @if (isSelf()) {
+              You can't change your own role; another administrator can.
+            } @else {
+              Readers browse and query; data managers also change data; administrators also look
+              after users, connections and the catalog.
+            }
+          </mat-hint>
+        </mat-form-field>
+        <mat-slide-toggle [formField]="form.isDisabled">Disabled: can't sign in</mat-slide-toggle>
+        <div class="actions">
+          <button matButton="filled" type="submit" [disabled]="!dirty() || form().submitting()">
+            Save
+          </button>
+          <button matButton type="button" [disabled]="!dirty()" (click)="undo()">
+            Undo the changes
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <section class="section" aria-labelledby="gd-user-facts">
+      <h2 id="gd-user-facts" tabindex="-1">Account</h2>
+      <dl class="facts">
+        <dt>Made</dt>
+        <dd>{{ shown.createdAt | date: 'medium' }}</dd>
+        <dt>Last signed in</dt>
+        <dd>{{ shown.lastSignInAt ? (shown.lastSignInAt | date: 'medium') : 'Never' }}</dd>
+        <dt>Password set</dt>
+        <dd>
+          {{ shown.passwordChangedAt | date: 'medium' }}
+          @if (shown.mustChangePassword) {
+            (to be changed at the next sign-in)
+          }
+        </dd>
+        @if (shown.lockedOutUntil) {
+          <dt>Locked out until</dt>
+          <dd>{{ shown.lockedOutUntil | date: 'medium' }}</dd>
+        }
+      </dl>
+      <div class="actions">
+        @if (!isSelf()) {
+          <button
+            matButton="outlined"
+            type="button"
+            [disabled]="busy()"
+            (click)="resetPassword(shown)"
+          >
+            <mat-icon>lock_reset</mat-icon>
+            Reset the password
+          </button>
+        }
+        @if (shown.lockedOutUntil) {
+          <button matButton="outlined" type="button" [disabled]="busy()" (click)="unlock(shown)">
+            <mat-icon>lock_open</mat-icon>
+            Unlock
+          </button>
+        }
+        @if (!isSelf()) {
+          <button matButton="outlined" type="button" [disabled]="busy()" (click)="delete(shown)">
+            <mat-icon>delete</mat-icon>
+            Delete
+          </button>
+        }
+      </div>
+    </section>
+  }
+</div>

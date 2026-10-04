@@ -56,7 +56,10 @@ describe('ChangePassword', () => {
     http.expectOne('/api/auth/session').flush(session);
     await loaded;
     const harness = await RouterTestingHarness.create('/change-password?returnUrl=%2Fquery%2F7');
-    http.expectOne('/api/auth/password-policy').flush({ minimumLength: 12, maximumLength: 256 });
+    (await requestTo(http, '/api/auth/password-policy')).flush({
+      minimumLength: 12,
+      maximumLength: 256,
+    });
     harness.detectChanges();
     const loader = TestbedHarnessEnvironment.loader(harness.fixture);
     return { harness, loader, page: harness.routeNativeElement as HTMLElement };
@@ -83,7 +86,7 @@ describe('ChangePassword', () => {
     expect(page.querySelector('h1')?.textContent).toBe('Choose a new password');
     expect(page.textContent).toContain('Choose one of your own before you go on.');
     const [, next] = await loader.getAllHarnesses(MatFormFieldHarness);
-    expect(await next.getTextHints()).toEqual(['At least 12 characters, without your user name']);
+    expect(await next.getTextHints()).toEqual(['At least 12 characters, without the user name']);
     expect(await loader.getHarnessOrNull(MatButtonHarness.with({ text: 'Cancel' }))).toBeNull();
     expect(await loader.getHarness(MatButtonHarness.with({ text: 'Sign out' }))).toBeTruthy();
   });

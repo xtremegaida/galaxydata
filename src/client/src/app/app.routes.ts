@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { passwordGuard, signedInGuard, signedOutGuard } from './core/auth/guards';
+import { allowedTo, passwordGuard, signedInGuard, signedOutGuard } from './core/auth/guards';
 import { Start } from './features/start/start';
 import { Shell } from './shell/shell';
 
@@ -23,7 +23,14 @@ export const routes: Routes = [
     component: Shell,
     canActivate: [signedInGuard],
     canActivateChild: [signedInGuard],
-    children: [{ path: '', title: 'Start', component: Start }],
+    children: [
+      { path: '', title: 'Start', component: Start },
+      {
+        path: 'admin',
+        canMatch: [allowedTo('canAdmin')],
+        loadChildren: () => import('./features/admin/admin.routes').then((m) => m.adminRoutes),
+      },
+    ],
   },
   // An address the client doesn't know (an old link) goes to the start.
   { path: '**', redirectTo: '' },

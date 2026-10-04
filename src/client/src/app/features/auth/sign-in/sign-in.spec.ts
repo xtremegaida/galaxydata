@@ -111,8 +111,8 @@ describe('SignIn', () => {
       { status: 401, statusText: 'Unauthorized' },
     );
     await settle();
-    expect(page.querySelector('[role=alert]')?.textContent?.trim()).toBe(
-      "errorThe user name or password isn't right.",
+    expect(page.querySelector('[role=alert]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      "error The user name or password isn't right.",
     );
   });
 

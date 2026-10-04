@@ -1,0 +1,264 @@
+<div class="admin-page">
+  <a class="back" matButton routerLink="/admin/connections">
+    <mat-icon>arrow_back</mat-icon>
+    Connections
+  </a>
+
+  @if (connection.isLoading() || kinds.isLoading()) {
+    <mat-progress-bar mode="indeterminate" aria-label="Loading the connection" />
+  }
+  <div role="alert">
+    @if (loadProblem(); as problem) {
+      <gd-message kind="problem">
+        {{ message(problem) }}
+        <button gdMessageAction matButton type="button" (click)="reload(); kinds.reload()">
+          Try again
+        </button>
+      </gd-message>
+    }
+  </div>
+
+  <header class="page-header">
+    <h1>{{ stored()?.alias ?? (id() ? 'Connection' : 'New connection') }}</h1>
+    @if (kind(); as kind) {
+      <p class="subtitle">
+        {{ kind.displayName }}
+        @if (stored()?.displayName; as name) {
+          · {{ name }}
+        }
+      </p>
+    }
+  </header>
+
+  <div role="alert">
+    @if (problem(); as problem) {
+      <gd-message kind="problem">
+        {{ message(problem) }}
+        @if (unplaced().length > 0) {
+          <ul class="unplaced">
+            @for (text of unplaced(); track $index) {
+              <li>{{ text }}</li>
+            }
+          </ul>
+        }
+        @if (stale(problem)) {
+          <button gdMessageAction matButton type="button" (click)="reload()">Read it again</button>
+        }
+      </gd-message>
+    }
+  </div>
+
+  @if (!id() && kinds.hasValue()) {
+    <mat-form-field class="kind">
+      <mat-label>Kind of source</mat-label>
+      <mat-select
+        #kindSelect
+        [value]="chosenKind()"
+        (selectionChange)="choose($event.value, kindSelect)"
+      >
+        @for (kind of kindList(); track kind.id) {
+          <mat-option [value]="kind.id">{{ kind.displayName }}</mat-option>
+        }
+      </mat-select>
+      @if (!chosenKind()) {
+        <mat-hint>What the connection reaches: a server, a database file, or a folder</mat-hint>
+      }
+    </mat-form-field>
+  }
+
+  @if (draft(); as draft) {
+    @if (stored()?.secretsUnreadable) {
+      <gd-message kind="warning">
+        Its secrets can't be read: the keys that protected them are gone. Give them again, and save.
+      </gd-message>
+    }
+    <div role="status">
+      @if (changedElsewhere()) {
+        <gd-message kind="warning">
+          Someone else changed it since it was read.
+          <button gdMessageAction matButton type="button" (click)="reload()">Read it again</button>
+        </gd-message>
+      }
+    </div>
+
+    <form class="connection-form" novalidate (submit)="save(draft, $event)">
+      @if (draft.isNew) {
+        <mat-form-field class="field">
+          <mat-label>Alias</mat-label>
+          <input
+            matInput
+            [formField]="draft.form.alias"
+            autocomplete="off"
+            autocapitalize="none"
+            spellcheck="false"
+          />
+          <mat-hint>How queries name it (shop.customers); it can't change later</mat-hint>
+          <mat-error>{{ draft.form.alias().errors()[0]?.message }}</mat-error>
+        </mat-form-field>
+      }
+      <mat-form-field class="field">
+        <mat-label>Name</mat-label>
+        <input matInput [formField]="draft.form.displayName" autocomplete="off" />
+        <mat-hint>How the application shows it; its alias when empty</mat-hint>
+        <mat-error>{{ draft.form.displayName().errors()[0]?.message }}</mat-error>
+      </mat-form-field>
+
+      @if (draft.kind.supportsRaw) {
+        <mat-button-toggle-group
+          #modes="matButtonToggleGroup"
+          class="modes"
+          [value]="draft.model().mode"
+          [disabled]="working()"
+          (change)="switchMode(draft, $event.value, modes)"
+          aria-label="How the settings are given"
+        >
+          <mat-button-toggle value="form">Field by field</mat-button-toggle>
+          <mat-button-toggle value="raw">Connection string</mat-button-toggle>
+        </mat-button-toggle-group>
+      }
+
+      @if (draft.model().mode === 'form') {
+        <gd-connection-fields [draft]="draft" />
+      } @else {
+        <mat-form-field class="field">
+          <mat-label>Connection string</mat-label>
+          <textarea
+            matInput
+            class="code"
+            rows="4"
+            [formField]="draft.form.connectionString"
+            [placeholder]="draft.kind.rawExample ?? ''"
+            spellcheck="false"
+          ></textarea>
+          <mat-hint>
+            Secrets show as ********, which keeps them. Write one out to change it; leave it out to
+            clear it.
+          </mat-hint>
+          <mat-error>{{ draft.form.connectionString().errors()[0]?.message }}</mat-error>
+        </mat-form-field>
+      }
+
+      <fieldset class="group">
+        <legend>Reading and changing</legend>
+        <mat-slide-toggle
+          [checked]="draft.model().isReadOnly || draft.kind.alwaysReadOnly"
+          [disabled]="draft.kind.alwaysReadOnly"
+          (change)="draft.setReadOnly($event.checked)"
+        >
+          Read-only
+        </mat-slide-toggle>
+        <p class="help">
+          @if (draft.kind.alwaysReadOnly) {
+            {{ draft.kind.displayName }} connections are always read-only.
+          } @else {
+            Data managers can change the data of connections that aren't.
+          }
+        </p>
+        @for (option of draft.kind.options; track option.key) {
+          @if (option.type === 'bool') {
+            <mat-slide-toggle
+              [checked]="draft.optionFlag(option)"
+              (change)="draft.setOptionFlag(option, $event.checked)"
+            >
+              {{ option.label }}
+            </mat-slide-toggle>
+            @if (option.help) {
+              <p class="help">{{ option.help }}</p>
+            }
+          } @else {
+            <mat-form-field class="field">
+              <mat-label>{{ option.label }}</mat-label>
+              <mat-select [formField]="draft.form.options[option.key]">
+                @for (choice of optionChoices(option); track choice.value) {
+                  <mat-option [value]="choice.value">{{ choice.label }}</mat-option>
+                }
+              </mat-select>
+              @if (option.help) {
+                <mat-hint>{{ option.help }}</mat-hint>
+              }
+              <mat-error>{{ draft.form.options[option.key]().errors()[0]?.message }}</mat-error>
+            </mat-form-field>
+          }
+        }
+      </fieldset>
+
+      <div class="actions">
+        <button matButton="filled" type="submit" [disabled]="working()">
+          {{ draft.isNew ? 'Make the connection' : 'Save' }}
+        </button>
+        <button matButton="outlined" type="button" [disabled]="working()" (click)="test(draft)">
+          <mat-icon>bolt</mat-icon>
+          Try it
+        </button>
+        @if (!draft.isNew) {
+          <button
+            matButton
+            type="button"
+            [disabled]="!draft.dirty() || draft.form().submitting()"
+            (click)="undo()"
+          >
+            Undo the changes
+          </button>
+        }
+      </div>
+      <div class="test-result" role="status">
+        @if (testing()) {
+          <p class="trying">
+            <mat-progress-spinner mode="indeterminate" diameter="18" aria-hidden="true" />
+            Trying it…
+          </p>
+        }
+        @if (testResult(); as result) {
+          <gd-message [kind]="result.ok ? 'success' : 'problem'">
+            {{ result.ok ? 'It works.' : "It doesn't work." }} {{ result.message }} ({{
+              result.elapsedMs | number: '1.0-0'
+            }}
+            ms)
+          </gd-message>
+        }
+      </div>
+    </form>
+
+    @if (current(); as current) {
+      <section class="section" aria-labelledby="gd-connection-schema">
+        <h2 id="gd-connection-schema">Schema</h2>
+        <p role="status">
+          <gd-schema-status
+            [status]="current.schemaStatus"
+            [error]="current.schemaError"
+            [refreshedAt]="current.schemaRefreshedAt"
+            [detailed]="true"
+          />
+        </p>
+        <div class="actions">
+          <button
+            matButton="outlined"
+            type="button"
+            [disabled]="reading(current) || working()"
+            (click)="refresh(current)"
+          >
+            <mat-icon>refresh</mat-icon>
+            Read it again
+          </button>
+        </div>
+        <h3 class="readings-title">Its last readings</h3>
+        <gd-connection-snapshots
+          [connectionId]="current.id"
+          [refreshedAt]="current.schemaRefreshedAt"
+        />
+      </section>
+
+      <section class="section" aria-labelledby="gd-connection-delete">
+        <h2 id="gd-connection-delete">Deleting it</h2>
+        <p class="help">
+          Queries naming {{ current.alias }} stop working, and every user's pending changes to it
+          go.
+        </p>
+        <button matButton="outlined" type="button" [disabled]="working()" (click)="delete(current)">
+          <mat-icon>delete</mat-icon>
+          Delete {{ current.alias }}
+        </button>
+      </section>
+    }
+  }
+</div>

@@ -300,6 +300,16 @@ public sealed class ConnectionApiTests
 
       var keep = new { settings = new { Host = "127.0.0.1", Database = "shop" }, secrets = new { Password = new { action = "keep" } } };
       await (await again.PutAsync("/api/connections/1", new { version = 0, connection = keep })).ProblemAsync(400, ProblemCodes.InvalidRequest);
+      var masked = new { mode = "raw", connectionString = "Host=127.0.0.1;Database=shop;Password=********" };
+      await (await again.PostAsync("/api/connections/test", new { kind = "postgres", connectionId = 1, connection = masked })).ProblemAsync(400, ProblemCodes.InvalidRequest);
+      // A secret entered in the form, then converted into the string (masked there), is set, not kept.
+      var entered = new
+      {
+         mode = "raw",
+         connectionString = "Host=127.0.0.1;Database=shop;Password=********",
+         secrets = new { Password = new { action = "set", value = "entered-again" } },
+      };
+      (await again.PostAsync("/api/connections/test", new { kind = "postgres", connectionId = 1, connection = entered })).StatusCode.ShouldBe(HttpStatusCode.OK);
       var set = new { settings = new { Host = "127.0.0.1", Database = "shop" }, secrets = new { Password = new { action = "set", value = "entered-again" } } };
       connection = await (await again.PutAsync("/api/connections/1", new { version = 0, connection = set })).JsonAsync(HttpStatusCode.OK);
       connection.GetProperty("secretsUnreadable").GetBoolean().ShouldBeFalse();

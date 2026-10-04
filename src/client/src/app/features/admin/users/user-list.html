@@ -1,0 +1,78 @@
+<div class="admin-page">
+  <header class="page-header">
+    <h1>Users</h1>
+    <mat-form-field subscriptSizing="dynamic">
+      <mat-icon matPrefix>search</mat-icon>
+      <mat-label>Find a user</mat-label>
+      <input matInput #findInput [value]="find()" (input)="find.set(findInput.value)" />
+    </mat-form-field>
+    <a matButton="filled" routerLink="new">
+      <mat-icon>person_add</mat-icon>
+      New user
+    </a>
+  </header>
+
+  @if (users.isLoading()) {
+    <mat-progress-bar mode="indeterminate" aria-label="Loading the users" />
+  }
+  <div role="alert">
+    @if (problem(); as problem) {
+      <gd-message kind="problem">
+        {{ message(problem) }}
+        <button gdMessageAction matButton type="button" (click)="users.reload()">Try again</button>
+      </gd-message>
+    }
+  </div>
+
+  @if (users.hasValue()) {
+    <div class="table-wrap">
+      <table
+        mat-table
+        [dataSource]="rows()"
+        matSort
+        [matSortActive]="sort().active"
+        [matSortDirection]="sort().direction"
+        (matSortChange)="sort.set($event)"
+        aria-label="Users"
+      >
+        <ng-container matColumnDef="userName">
+          <th mat-header-cell *matHeaderCellDef mat-sort-header>User name</th>
+          <td mat-cell *matCellDef="let user">
+            <a [routerLink]="[user.id]">{{ user.userName }}</a>
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="displayName">
+          <th mat-header-cell *matHeaderCellDef mat-sort-header>Name</th>
+          <td mat-cell *matCellDef="let user">{{ user.displayName }}</td>
+        </ng-container>
+        <ng-container matColumnDef="role">
+          <th mat-header-cell *matHeaderCellDef mat-sort-header>Role</th>
+          <td mat-cell *matCellDef="let user">{{ roleOf(user) }}</td>
+        </ng-container>
+        <ng-container matColumnDef="state">
+          <th mat-header-cell *matHeaderCellDef>State</th>
+          <td mat-cell *matCellDef="let user">
+            <ul class="badges">
+              @for (state of states(user); track state) {
+                <li class="badge" [class.warn]="state !== 'Password to change'">{{ state }}</li>
+              }
+            </ul>
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="lastSignInAt">
+          <th mat-header-cell *matHeaderCellDef mat-sort-header>Last signed in</th>
+          <td mat-cell *matCellDef="let user">
+            {{ user.lastSignInAt ? (user.lastSignInAt | date: 'medium') : 'Never' }}
+          </td>
+        </ng-container>
+        <tr mat-header-row *matHeaderRowDef="columns"></tr>
+        <tr mat-row *matRowDef="let row; columns: columns"></tr>
+      </table>
+    </div>
+    <div role="status">
+      @if (rows().length === 0) {
+        <p class="empty">No user's name has "{{ find() }}".</p>
+      }
+    </div>
+  }
+</div>

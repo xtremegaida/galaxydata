@@ -263,7 +263,8 @@ settings, protected with the application's data protection keys, for that connec
 - **Never logged.** Secrets aren't in the audit, which names them only, nor in the log. A database's answer that
   repeats one has it masked.
 - **Lost keys.** If the data protection keys are lost, connections say `secretsUnreadable` and their secrets must
-  be entered again.
+  be entered again. Keeping one is refused: a "keep" in the form, or a `********` in a connection string that the
+  request's secrets don't set (one set in the form, then converted into the string, is set, not kept).
 
 **Its schema** is read when it is made, when its settings, secrets or options change, and when an administrator
 asks: see [Schemas and the catalog](#schemas-and-the-catalog).

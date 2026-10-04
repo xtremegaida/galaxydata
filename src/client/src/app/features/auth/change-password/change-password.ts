@@ -7,13 +7,10 @@ import {
   input,
   signal,
 } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
 import {
   FormField,
   FormRoot,
   form,
-  maxLength,
-  minLength,
   required,
   validate,
   type TreeValidationResult,
@@ -22,16 +19,15 @@ import {
 import { MatButton } from '@angular/material/button';
 import { MatCheckbox } from '@angular/material/checkbox';
 import { MatError, MatFormField, MatHint, MatLabel } from '@angular/material/form-field';
-import { MatIcon } from '@angular/material/icon';
 import { MatInput } from '@angular/material/input';
 import { Router } from '@angular/router';
-import { catchError, of } from 'rxjs';
-import { ApiClient } from '../../../core/api/api-client';
 import { ProblemCode, problemMessage, problemOf, type Problem } from '../../../core/api/problem';
 import { AuthStore } from '../../../core/auth/auth-store';
+import { PasswordPolicy, passwordRules } from '../../../core/auth/password-policy';
 import { safeReturnUrl } from '../../../core/auth/return-url';
 import { fieldErrors, focusFirstInvalid } from '../../../core/forms/server-errors';
 import { Notifier } from '../../../core/notify/notifier';
+import { Message } from '../../../core/ui/message';
 import { AuthLayout } from '../auth-layout';
 
 interface PasswordModel {
@@ -48,6 +44,7 @@ interface PasswordModel {
   selector: 'gd-change-password',
   imports: [
     AuthLayout,
+    Message,
     FormField,
     FormRoot,
     MatButton,
@@ -55,7 +52,6 @@ interface PasswordModel {
     MatError,
     MatFormField,
     MatHint,
-    MatIcon,
     MatInput,
     MatLabel,
   ],
@@ -74,16 +70,7 @@ export class ChangePassword {
   protected readonly user = this.auth.user;
   /** Whether the password must be changed before anything else. */
   protected readonly mustChange = computed(() => this.user()?.mustChangePassword ?? false);
-  protected readonly policy = toSignal(
-    inject(ApiClient)
-      .get('/api/auth/password-policy')
-      .pipe(catchError(() => of(null))),
-    { initialValue: null },
-  );
-  protected readonly hint = computed(() => {
-    const policy = this.policy();
-    return policy ? `At least ${policy.minimumLength} characters, without your user name` : '';
-  });
+  protected readonly policy = inject(PasswordPolicy);
   protected readonly problem = signal<Problem | null>(null);
   protected readonly passwordsShown = signal(false);
   protected readonly message = problemMessage;
@@ -99,18 +86,7 @@ export class ChangePassword {
     (path) => {
       required(path.currentPassword, { message: 'Enter your current password' });
       required(path.newPassword, { message: 'Enter a new password' });
-      minLength(path.newPassword, () => this.policy()?.minimumLength, {
-        message: () => `A password needs at least ${this.policy()?.minimumLength} characters`,
-      });
-      maxLength(path.newPassword, () => this.policy()?.maximumLength, {
-        message: () => `A password may have at most ${this.policy()?.maximumLength} characters`,
-      });
-      validate(path.newPassword, ({ value }) => {
-        const userName = this.user()?.userName.toLowerCase();
-        return userName && value().toLowerCase().includes(userName)
-          ? { kind: 'holdsUserName', message: 'A password may not hold the user name' }
-          : null;
-      });
+      passwordRules(path.newPassword, this.policy, () => this.user()?.userName);
       validate(path.newPassword, ({ value, valueOf }) =>
         value() !== '' && value() === valueOf(path.currentPassword)
           ? { kind: 'unchanged', message: 'It must differ from the current one' }
@@ -130,6 +106,10 @@ export class ChangePassword {
       },
     },
   );
+
+  constructor() {
+    this.policy.ensure();
+  }
 
   protected async cancel(): Promise<void> {
     await this.router.navigateByUrl(safeReturnUrl(this.returnUrl()));

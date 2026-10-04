@@ -964,6 +964,35 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
   - tabs back from the back-forward cache or into view didn't ask again;
   - smaller: the same user with fewer permissions kept what they could see before; a tab on the forced password page stayed after the password was changed in another; the password page's return address was lost when the session ended there; a navigation's target was lost to `router.url`; live regions weren't announced; focus didn't move; no banner or skip link; the password-policy endpoint didn't declare its 401; the shell's return test started at `/`.
 
+**Built in F2**
+- **Routes:** `/admin` (lazy, `allowedTo('canAdmin')` as `canMatch`): `users`, `users/new`, `users/:id`, `connections`, `connections/new`, `connections/:id`; the record pages with `unsavedChangesGuard` (and `warnBeforeUnload`). The navigation has an "Administration" section (`NavItem.section`, labelled groups).
+- **Shared** (`core/ui`, `core/api`, `core/auth`): `Confirmer` (Material dialog, `alertdialog` described by its message, the safer choice first and focused), `Message` (problem, warning, notice, success; live regions around it), `pollWhile` (reloads a resource while it is pending; after a failure, waits twice as long each time, to 30 s; `POLL_INTERVAL`, 2 s, 1 ms in tests), `PasswordPolicy` and `passwordRules` (the policy asked for once; `ensure()` asks again after a failure), `problemOf` unwrapping a resource's error (`cause`).
+- **Users:** the list (found by name, sorted by column, states as a list: disabled, locked out, a password to change); a user's page (name, role, disabled, saved to the version read; a conflict says so, with "Read it again", which asks when changes would be lost; reset password in a dialog that can't be closed while the reset is asked; unlock; delete after confirming; changes not saved stay through unlock and reset; an administrator's own page offers no demotion, disabling, reset or delete); a new user (pattern and policy checked before sending; a first password made up on asking (20 characters with no look-alikes), shown and copied; name taken and weak passwords on their fields).
+- **Connections:**
+  - **The list:** kind, read-only, secrets to enter again, the schema's state; followed while a schema is read, keeping its rows through a failed look.
+  - **The form**, from the kind's descriptor (`ConnectionDraft`, `ConnectionFields`, `SecretField`): groups (collapsed ones open when holding values, worked out per draft and mode, not as values change); text, number (whole, min and max), select (the provider's default first), bool (a switch, unset at its default, written as the default is: `True` for SQL Server), file and folder paths, passwords, other settings (keywords named like secrets sent as secrets); `visibleWhen` (hidden settings not sent; a hidden stored secret cleared, as the server would keep it).
+  - **Secrets:** kept, changed or cleared when stored; set by typing when not; a keep sent for each stored secret so conversions mask them; focus follows the control's buttons.
+  - **Conversions** through the server, stateless: to the string, stored and set secrets masked (and sent while masked); back to the form, the string decides (masked kept, written set, stored ones left out cleared); a refusal says why and stays.
+  - **Actions:** try (`POST /api/connections/test`, with the stored secrets), save (`submit()`), undo, read again (asks), refresh with the schema followed (looks begun before a save or reading again left aside; retried after failures, waiting longer), the last readings with their changes in words, delete after confirming. Server errors by field on their fields (`settings.X`, `secrets.X`, `options.x`, `alias`), the rest listed above the form.
+- **Server:** with unreadable secrets, a `********` in a connection string that the request's secrets set (a password typed in the form, then converted) is a set, not a keep (`MasksKept`).
+- **Bundle:** the administrators' pages are a lazy chunk of 284 kB (52 kB compressed); the first load grew to 671 kB (156 kB compressed), as the features use more of Angular's core (resources, linked signals, render hooks) and of the CDK overlay, which every page shares.
+- **Tests** (183 Vitest, 6 node): the draft with the server's own kind descriptors (its tests' snapshot): new and stored connections, secrets in every mode and transition, hidden fields, bools, Excel, conversions, rules, error fields; the pages through the router and Material's harnesses (`pageProviders`, `openPage`; Material's animations off, as jsdom ends none; plain clicks where a request or a navigation keeps the application busy): users (list, page, conflicts, own account, unlock keeping edits, reset and its refusal, delete, leaving), new users, connections (list and its polling, making with a try, an alias taken, conversions both ways and refused, server errors, polling races and failures, kinds, groups, focus, unreadable secrets, Excel, undo and leaving, delete). Mutations of the review's fixes and the key rules fail tests.
+- **Checked by hand** against the server: users made, edited, conflicting, reset, own account, leaving; a SQLite connection checked, refused outside the allowed folder, tried, converted both ways, made, its schema read again with the changes listed; a PostgreSQL connection with a wrong password (conditional fields, the refusal, the stored secret, masked in the string, removed from the string and cleared); a SQL Server connection whose password was cleared once Windows authentication was on.
+- **Found while checking:** the policy's request was never sent (`inject()` in a resource's loader, outside the injection context); state badges read as one word; dialogs never closed in tests; the browser pane doesn't send resize events when its viewport is changed (a unit test switches the navigation's mode instead).
+- **Found by the review**, fixed:
+  - back from the string, a stored secret removed from it (or cleared before) was kept;
+  - a password typed for a secret not stored could be dropped (a "keep" of nothing);
+  - a hidden stored secret was kept, and connected with;
+  - a refused conversion from the string said nothing;
+  - a new user's page asked to leave after the user was made (`made` wasn't a signal);
+  - a look at the schema begun before a save brought back the old version, with a lasting "changed elsewhere";
+  - one failed look stopped following the schema for good (the list hid its rows);
+  - cancelling a change of kind left the other kind shown;
+  - a collapsed group folded while its values were typed;
+  - with unreadable secrets, a password typed in the form and saved as a string was refused (server);
+  - focus was lost after Change, Clear, Keep it, Unlock and removing a setting;
+  - smaller: secrets sent with a string that no longer masked them; reading again dropped changes without asking; unlocking dropped changes; the reset dialog closed while resetting; actions stayed enabled while converting; focus didn't reach options' and other settings' errors; the policy never asked again; password managers offered to keep administrators' passwords for others; live regions inserted with their messages; an empty title while loading; a heading out of order; the confirmation not described; toggles' help not tied to them; the navigation's section not a group; tests named for more than they tested.
+
 ---
 
 ## 7. Milestones (each ends green and demonstrable)
@@ -1005,7 +1034,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 |---|---|
 | F0 | Workspace, theme, generated types, Vitest (see "Built in F0" in §6) |
 | F1 | Auth, guards, interceptors, shell (see "Built in F1" in §6) |
-| F2 | Admin users and connections (dynamic form) |
+| F2 | Admin users and connections (dynamic form) (see "Built in F2" in §6) |
 | F3 | Tree and search |
 | F4 | Read-only browse: URL codec, AG adapter, datasource, URL sync, lineage inspector |
 | F5 | Reference cells and breadcrumb |

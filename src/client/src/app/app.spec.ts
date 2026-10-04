@@ -74,6 +74,27 @@ describe('App', () => {
     );
   });
 
+  it("keeps the administrators' pages from others", async () => {
+    TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const navigating = router.navigateByUrl('/admin/users');
+    (await requestTo(http, '/api/auth/session')).flush(sessionOf('dataManager'));
+    await navigating;
+    expect(router.url).toBe('/');
+  });
+
+  it("loads the administrators' pages for administrators", async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const navigating = router.navigateByUrl('/admin/users');
+    (await requestTo(http, '/api/auth/session')).flush(sessionOf('admin'));
+    await navigating;
+    expect(router.url).toBe('/admin/users');
+    (await requestTo(http, '/api/users')).flush([]);
+    await fixture.whenStable();
+    expect((fixture.nativeElement as HTMLElement).querySelector('h1')?.textContent).toBe('Users');
+  });
+
   it("goes to the start from an address it doesn't know", async () => {
     TestBed.createComponent(App);
     const router = TestBed.inject(Router);

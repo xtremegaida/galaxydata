@@ -142,11 +142,70 @@ Pages for the signed-in are in the shell (`src/app/shell`), which has:
 - **The bar at the top:** the navigation's button, the application's name, the color scheme, and the user's
   menu (who they are, changing the password, signing out).
 - **The navigation.** `navItems` lists the pages, each with what the user must be allowed to do (`needs:
-  'canAdmin'`); the navigation shows those the user may open. Below 960 pixels it opens over the page, and closes
-  once a page is chosen; on wider screens it is beside the page, and may be closed.
+  'canAdmin'`) and the section it is shown under (`section: 'Administration'`); the navigation shows those the user
+  may open. Below 960 pixels it opens over the page, and closes once a page is chosen; on wider screens it is
+  beside the page, and may be closed.
 - **The page.**
 
 A route's `title` is shown with the application's name after it: "Sign in · GalaxyData".
+
+## Administration
+
+Administrators' pages are under `/admin` (`features/admin`). They are loaded when one is opened, and only for
+administrators (`allowedTo('canAdmin')` as a `canMatch` guard).
+
+**Users** (`/admin/users`):
+
+- **The list:** found by name, sorted by column, with each user's role and state (disabled, locked out, a password
+  to change).
+- **A user's page:** their name, role and whether they are disabled, saved to the version read. When someone else
+  saved in between, the page says so, with "Read it again" (which asks first, as the changes made would be lost).
+  From it, the administrator can reset the password (one made up, or their own, to pass on), unlock, and delete;
+  changes not saved stay through unlocking and resetting. Administrators can't demote, disable, reset or delete
+  themselves; their own page doesn't offer it.
+- **A new user** (`/admin/users/new`) gets a first password, made up on asking, which they must change at their
+  first sign-in.
+- **Passwords:** `PasswordPolicy` asks the server once what a password must be; `passwordRules` puts it in a
+  form's schema, with the server's messages.
+
+**Connections** (`/admin/connections`):
+
+- **The list:** each connection's kind, whether it is read-only, whether its secrets must be entered again, and its
+  schema's state. The list looks again every two seconds while a schema is being read.
+- **The form** is the one the connection's kind describes (`GET /api/connection-kinds`). `ConnectionDraft` holds
+  it, and gives what the API takes; `ConnectionFields` shows it:
+  - **Groups.** Fields come in their groups. Groups the kind collapses (the advanced settings) are folded unless
+    they hold a value.
+  - **Field types.** Each field shows as its type: text, number, select (with the provider's default first), bool
+    (a switch), file or folder path (a full path in a folder connections may use), password, and the other
+    settings.
+  - **Conditional fields.** A field shows only while the setting it depends on has one of its values
+    (`visibleWhen`). Hidden settings aren't sent; a hidden secret that is stored is cleared (the server would keep
+    a stored secret it isn't told about, and connect with it: a SQL Server password once Windows authentication
+    is on).
+  - **Empty means the default.** Settings left empty, and bools set back to their default, aren't sent, so the
+    provider's defaults apply.
+  - **Other settings** are keyword and value pairs. A keyword named like a secret (`token`, `secret`) is sent as a
+    secret, and its value typed as a password.
+  - **Secrets** are kept, changed or cleared (`SecretField`): they are never sent back, only whether one is stored.
+    One not stored is set by typing it. When the stored secrets can't be read (the keys that protected them are
+    gone), the page says so, and they are typed again.
+- **Field by field, or as a connection string.** The two convert into each other through the server
+  (`POST /api/connection-kinds/{kind}/convert`), which keeps nothing between conversions:
+  - **To the string:** the form sends a "keep" for each stored secret, so the string shows it as `********`.
+    A secret set in the form is masked too, and sent with the string while it masks it.
+  - **Back to the form:** the string decides the secrets. One it masks is kept, one it writes out is set, and a
+    stored one it leaves out is cleared.
+  - **A refused conversion** stays in the mode it was in, and says why above the form.
+- **Trying it** (`POST /api/connections/test`) tries the settings as they are, before they are saved, with the
+  stored secrets.
+- **The schema.** It is read when the connection is saved, and again on asking. The page follows the reading,
+  then lists the last readings and what changed at each.
+- **Leaving.** A page with changes not saved asks before it is left (`unsavedChangesGuard`), and the browser asks
+  before the tab is closed or reloaded (`warnBeforeUnload`). Reading the page's record again asks too.
+- **Following what changes.** Looks at a schema being read stop when it is read. After one that fails, the page
+  looks again later, waiting twice as long each time (up to 30 seconds); the list keeps the connections it showed.
+  A look begun before the connection was saved, or read again, is left aside.
 
 ## Forms
 
@@ -154,8 +213,10 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
 
 - **Rules** go in the form's schema (`required`, `minLength`, `validate`), with messages as the server writes
   them.
-- **Submitting** goes through the form's `submission.action`, with `<form [formRoot]="form">`. The action sends
-  the request, and gives back the server's errors for fields; each field shows its error until its value changes.
+- **Submitting** goes through the form's `submission.action`, with `<form [formRoot]="form">`, or through
+  `submit(form, { action })` where one form has two actions (the connection page's Save and Try it). The action
+  sends the request, and gives back the server's errors for fields; each field shows its error until its value
+  changes.
   `fieldErrors(problem, fields)` puts a problem's errors by field (`invalid-request`) on the form's fields, named as
   the API names them, and gives back the messages of the fields the form hasn't.
 - **Problems with the whole form** (wrong credentials, the server out of reach) are shown above it, with
@@ -167,8 +228,11 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
 
 - **Another page opened:** focus goes to the page (`main`), as it would to a page loaded. A page's own changes of
   address (its filters, its rows) leave focus where it is.
-- **Live regions** that a page has as it opens are filled once it shows, so that screen readers announce them (the
-  sign-in page's notice that the session ended, and its problem).
+- **Live regions** are in the page before what they announce: an alert or status region is always there, and its
+  message is put in it (problems, a schema's state, the list's "no user has…"). Those a page has as it opens are
+  filled once it shows (the sign-in page's notice that the session ended).
+- **Focus** moves to what takes the place of a button that goes (a secret's Change, Clear and Keep it; Unlock; a
+  removed setting's button), so it isn't lost to the page.
 - **The shell:** its bar is the banner, with "Skip to the page" first for keyboards; the navigation is a landmark
   of its own (Material's navigation list is one).
 - **Lint:** ESLint's template rules include Angular's accessibility checks.
@@ -204,23 +268,36 @@ policy refuses:
 This is why the build doesn't inline critical CSS (`inlineCritical: false` in `angular.json`). Angular would load
 the rest of the stylesheet with an inline script, which the policy refuses.
 
-**Size.** The first load holds the framework, the Material parts of the shell, and the shell: about 600 kB, 135 kB
-compressed. Pages not needed at first are loaded when opened (lazy routes): the sign-in and password pages, and
-the features' pages as they come. The build warns above 700 kB and fails above 1 MB (`budgets` in
-`angular.json`).
+**Size.** The first load holds the framework, the Material parts of the shell, and the shell: about 670 kB, 156 kB
+compressed. It grows as the features use more of Angular's core (resources, for one), which every page shares.
+Pages not needed at first are loaded when opened (lazy routes): the sign-in and password pages, the
+administrators' pages (about 330 kB), and the features' pages as they come. The build warns above 700 kB and fails
+above 1 MB (`budgets` in `angular.json`).
 
 ## Conventions
 
 - **Angular 22:** standalone components, zoneless change detection, OnPush by default, and signals.
+- **Data:** what a page reads comes from `rxResource` (stable in Angular 22), read again after a change or on
+  asking. Its loader runs outside the injection context, so it uses fields `inject()` filled, never `inject()`
+  itself. `pollWhile` loads a resource again while what it holds is still changing, every `POLL_INTERVAL`
+  milliseconds (two seconds; tests make it one).
 - **Names:** the selector prefix is `gd`. File names have no type suffix (`color-scheme.ts`), as Angular's
   current style guide has it.
 - **Format:** Prettier, with 2-space indentation and lines of up to 100 characters.
 - **Tests:** beside their code (`*.spec.ts`), run by Vitest in jsdom. The test build type-checks the tests, so
   `expectTypeOf` and `@ts-expect-error` check types. Pages are tested through the router (`RouterTestingHarness`)
-  and Material's harnesses, with the API answered by `HttpTestingController`.
+  and Material's harnesses, with the API answered by `HttpTestingController` (`pageProviders`, `openPage` in
+  `src/testing/pages.ts`).
+  - **Material's animations are off** in pages' tests: jsdom ends no animation, so a dialog would never close.
+  - **Harnesses wait until the application is stable.** A request the test hasn't answered, or a navigation
+    waiting for a dialog, keeps it busy, so a harness click that starts one would never return. Such clicks are
+    plain clicks (`clickButton`); the test then answers the request.
+  - **Connections' forms are tested with the server's own descriptors** (the snapshot its tests keep), so a change
+    to a kind's form shows in the client's tests too.
 - **Layout:**
-  - `src/app/core` holds what the whole application uses: the API, problems, the session, the theme, and forms'
-    helpers;
+  - `src/app/core` holds what the whole application uses: the API, problems, the session, the theme, forms'
+    helpers, and the pieces pages share (`core/ui`: messages, the confirmation dialog, the unsaved-changes
+    guard);
   - `src/app/shell` holds the shell;
   - `src/app/features` holds the pages, by feature;
   - `src/testing` holds the tests' helpers (sessions, and fakes of the page and the other tabs), outside the
