@@ -11,6 +11,7 @@ using GalaxyData.Query.Sql;
 using GalaxyData.Query.Types;
 using GalaxyData.Web.Auth;
 using GalaxyData.Web.Catalog;
+using GalaxyData.Web.Hosting;
 using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Overlay;
 using GalaxyData.Web.Problems;
@@ -103,9 +104,11 @@ public static class CatalogEndpoints
          .ProducesProblem(StatusCodes.Status404NotFound);
       catalog.MapGet("/tree/search", SearchAsync).WithName("SearchTree")
          .WithSummary("Nodes whose names (or paths, or columns) have the text in them")
+         .RequiresQuery("text")
          .ProducesValidationProblem();
       catalog.MapGet("/entity", EntityAsync).WithName("GetEntity")
          .WithSummary("An entity, by its name as queries write it")
+         .RequiresQuery("name")
          .ProducesValidationProblem()
          .ProducesProblem(StatusCodes.Status404NotFound);
       return api;

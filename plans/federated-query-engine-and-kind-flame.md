@@ -845,7 +845,7 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
   - An entry with a secret goes on with its values (its template too) masked, and its exception as masked text.
 - **Publish** (`GalaxyData.Web.csproj`, `PublishClient`): `npm ci` and `npm run build` in `src/client` (or `-p:ClientRoot`, relative to the project), publishing `dist/browser` as `wwwroot`. Skipped with `-p:SkipClientBuild=true` or without a client. A `ClientRoot` without one, or a project `wwwroot`, is an error. Checked with a stand-in client.
 - **Found by the review**, fixed:
-  - publishing the client with a `wwwroot` in the project crashed MSBuild (a stack overflow in the static web assets' pipeline) and hung; it is an error now;
+  - a `wwwroot` in the project was published mixed with the client's build, the client's files replacing its own of the same names without a word; it is an error now. (B8 took this for a crash of MSBuild, which F0 found was Microsoft Defender's, whatever is published: see "Built in F0".)
   - `-p:ClientRoot` without a trailing slash skipped the client without a word;
   - secrets added at once could drop one from those masked (8 threads: one in seven rounds);
   - the secret-setting pattern was quadratic: 100 KB took 16 s; patterns are non-backtracking now;
@@ -910,6 +910,29 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 - **Dynamic connection form:** typed `FormRecord` built from the descriptor, with `visibleWhen`, a secret keep/set/clear control, a raw-mode toggle, Test, and polling of the schema status.
 - **Overlay admin:** relation editor (entity autocomplete plus column pickers), virtual-entity editor (Monaco, validate, preview), entity settings, and the issues list.
 
+**Built in F0**
+- **Workspace** (`src/client`, `ng new` of Angular 22.2): standalone, zoneless and OnPush by default (Angular 22's defaults), strict templates, SCSS, routing, no SSR, prefix `gd`; TypeScript 6; Material and CDK 22.2. ESLint (angular-eslint 22, with the template accessibility rules) and Prettier (`endOfLine: auto`, as Windows checkouts have CRLF). CLI analytics off.
+  - `angular.json`: `outputPath: dist` (the publish target takes `dist/browser`); the production build doesn't inline critical CSS (Angular 22 loads the rest of the stylesheet with an inline script); `ng serve` passes `/api` to `http://localhost:5180` (`proxy.conf.json`).
+  - `package.json`: Node `^22.22.3 || ^24.15.0 || >=26` (the CLI's), enforced by `engine-strict` (`.npmrc`). `build` checks the API's types, builds, and checks the CSP; `test` checks the types, runs the scripts' tests (`node --test`) and the unit tests once (`test:watch` watches); `lint`, `format`, `api`. The checks are chained into the scripts, not `pre`/`post` scripts, which `ignore-scripts` skips.
+  - The publish target runs `npm ci --include=dev` (the build's tools, whatever `NODE_ENV` says).
+- **CSP check** (`scripts/csp.mjs`, `check-csp.mjs`, after each build): `index.html` with an inline script (data blocks aside), an event handler attribute (written with spaces or slashes), a `javascript:` URL, or a resource from another origin, and stylesheets with URLs or imports from another origin, fail the build. Tested (`csp.test.mjs`), and seen failing a build with critical CSS inlined.
+- **Generated types** (`scripts/api-types.mjs`, `npm run api`): openapi-typescript 7.13 from the server tests' OpenAPI snapshot, into `src/app/core/api/schema.d.ts`; schemas as types of their own (`UserDto`), open objects as `Record<string, unknown>`. Checked by `build` and `test` (`--check`; line endings aside; seen failing).
+  - openapi-typescript asks for TypeScript 5 as a peer; an npm `overrides` entry gives it the workspace's 6 (it uses the compiler API's factory and printer, which 6 keeps).
+  - **Server:** the query parameters the catalog's search (`text`) and entity (`name`) need are required in the document (`OpenApiConventions.RequiresQuery`, an operation transformer); their handlers take them as nullable, to answer a problem by field.
+- **`ApiClient`** (`core/api/api-client.ts`): `get`, `post`, `put` and `delete` of the document's paths, with `{path, query, body}` as the operation takes them (the argument required when something in it is), answering the operation's success type (`void` for 204). Path values are encoded as one segment each (a missing one throws, and so do `''`, `.` and `..`, which URLs read as steps, encoded or not); query values without a value are left out, and lists are sent value by value. Also `Schema<'Name'>`, `ApiPath<M>`, `RequestBody`, `ResponseBody`, `RequestOptions`. Checked against every operation by the review: `HttpParams` and ASP.NET Core's query parsing agree on `+ & = ; # % [ ] "`, spaces and non-ASCII.
+- **Theme** (`src/styles.scss`): `mat.theme` (azure and blue, Roboto, density 0) on `html`, with `color-scheme: light dark`.
+  - `ColorScheme` (`core/theme`) sets the page's `color-scheme` to the choice (system, light or dark), keeps it in `localStorage` (`gd.colorScheme`), and gives `dark` (the system's resolved by `prefers-color-scheme`, as it changes) for the grid and the editor. It is created at startup (`provideAppInitializer`).
+  - Fonts served with the client: `@fontsource-variable/roboto`, `roboto-mono` (`--gd-code-font-family`), and `@material-symbols/font-400` outlined: `MatIconRegistry`'s default font set (with `mat-ligature-font`, so `fontIcon` works too). An SVG favicon of its own.
+- **App:** a toolbar with the name and the color scheme menu, and the router's outlet; unknown addresses go to the start. F1 makes the shell.
+- **Tests** (Vitest 5 in jsdom; the test build type-checks, so `expectTypeOf` and `@ts-expect-error` check types):
+  - `ApiClient`'s requests: methods, bodies, path values, encoded queries, lists, missing values, steps refused;
+  - its types, with calls the document doesn't describe refused (a required query among them);
+  - `ColorScheme`: the system's and its changes, choices, kept and unknown values, storage refused, no `matchMedia`;
+  - the app's menu (Material's harnesses), and icons by text and `fontIcon` with the app's providers.
+- **Checked by hand:** the application published with its client (`dotnet publish -r win-x64`, 57 MB), under the server's headers, in a browser: no console errors (no CSP violations), Roboto and the symbols loaded, the scheme switched and kept across a reload, a deep address (`/browse/shop.customers;f=country:eq:ZA/orders`) served the client. `ng serve` passed `/api/health` to the server.
+- **Publishing crashed, whatever was published** (found here; B8's publishes had crashed too): MSBuild printed `Stack overflow.` after copying the files, and hung. A dump showed Microsoft Defender's copy accelerator (`MpDetoursCopyAccelerator`, which Defender loads into processes that copy files) loading `MpClient` on one of MSBuild's copying threads, whose small stack overflowed; the runtime's handler then waited for the loader lock that thread held. A console app with Npgsql or SqlClient alone crashed the same way. `MSBUILDCOPYTASKPARALLELISM=1` copies on one thread and avoids it (server.md says so). With it, publishing takes 15 s.
+- **Docs:** `docs/client.md` (developing, the API's types, the theme, building and the CSP, conventions); `server.md` links it, and its publishing section has the Node version, the Defender workaround, and what a project `wwwroot` would do.
+
 ---
 
 ## 7. Milestones (each ends green and demonstrable)
@@ -949,7 +972,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 
 | # | Scope |
 |---|---|
-| F0 | Workspace, theme, generated types, Vitest. The build's `outputPath` is `dist` (the publish target takes `dist/browser`), and `inlineCritical: false`, as the CSP refuses the inline loader of critical CSS |
+| F0 | Workspace, theme, generated types, Vitest (see "Built in F0" in §6) |
 | F1 | Auth, guards, interceptors, shell |
 | F2 | Admin users and connections (dynamic form) |
 | F3 | Tree and search |

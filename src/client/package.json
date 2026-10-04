@@ -1,0 +1,54 @@
+{
+  "name": "galaxydata",
+  "version": "0.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "node scripts/api-types.mjs --check && ng build && node scripts/check-csp.mjs",
+    "watch": "ng build --watch --configuration development",
+    "test": "node scripts/api-types.mjs --check && node --test \"scripts/*.test.mjs\" && ng test --watch=false",
+    "test:watch": "ng test",
+    "lint": "ng lint",
+    "format": "prettier --write .",
+    "api": "node scripts/api-types.mjs"
+  },
+  "private": true,
+  "packageManager": "npm@11.16.0",
+  "dependencies": {
+    "@angular/cdk": "^22.2.1",
+    "@angular/common": "^22.2.0",
+    "@angular/compiler": "^22.2.0",
+    "@angular/core": "^22.2.0",
+    "@angular/forms": "^22.2.0",
+    "@angular/material": "^22.2.1",
+    "@angular/platform-browser": "^22.2.0",
+    "@angular/router": "^22.2.0",
+    "@fontsource-variable/roboto": "^5.3.0",
+    "@fontsource-variable/roboto-mono": "^5.3.0",
+    "@material-symbols/font-400": "^0.47.6",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^22.2.1",
+    "@angular/cli": "^22.2.1",
+    "@angular/compiler-cli": "^22.2.0",
+    "@eslint/js": "^10.0.1",
+    "angular-eslint": "22.5.0",
+    "eslint": "^10.9.1",
+    "jsdom": "^30.0.0",
+    "openapi-typescript": "^7.13.0",
+    "prettier": "^3.8.1",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "8.69.0",
+    "vitest": "^5.0.0"
+  },
+  "overrides": {
+    "openapi-typescript": {
+      "typescript": "$typescript"
+    }
+  },
+  "engines": {
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
+  }
+}

@@ -43,14 +43,15 @@
   </Target>
 
   <Target Name="PublishClient" AfterTargets="ComputeFilesToPublish" Condition="'$(SkipClientBuild)' != 'true' And Exists('$(ClientDirectory)package.json')">
-    <!-- A wwwroot of the project's own would be published over the client's (and the static web assets' pipeline fails with both). -->
+    <!-- A wwwroot of the project's own would be published with the client's, its files of the same names replaced without a word. -->
     <Error Condition="Exists('$(MSBuildProjectDirectory)\wwwroot')"
            Text="$(MSBuildProjectDirectory)\wwwroot would be published with the client's build: remove it (the client's build is published as wwwroot), or publish it as it is with -p:SkipClientBuild=true." />
     <Exec Command="npm --version" ContinueOnError="true" StandardOutputImportance="low">
       <Output TaskParameter="ExitCode" PropertyName="NpmExitCode" />
     </Exec>
     <Error Condition="'$(NpmExitCode)' != '0'" Text="Node.js and npm build the client ($(ClientDirectory)) as the application is published: install them, or publish with -p:SkipClientBuild=true." />
-    <Exec WorkingDirectory="$(ClientDirectory)" Command="npm ci" />
+    <!-- The build's tools are development packages: installed whatever NODE_ENV or npm's omit setting say. -->
+    <Exec WorkingDirectory="$(ClientDirectory)" Command="npm ci --include=dev" />
     <Exec WorkingDirectory="$(ClientDirectory)" Command="npm run build" />
     <ItemGroup>
       <ClientFile Include="$(ClientDist)**" />

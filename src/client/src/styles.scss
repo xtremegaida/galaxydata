@@ -1,0 +1,40 @@
+@use '@angular/material' as mat;
+
+// The theme: Material 3's system variables (--mat-sys-*), light or dark as the page's color-scheme says (the
+// ColorScheme service sets it; by default the system's). Fonts are served with the client (angular.json's styles):
+// Roboto, Roboto Mono for code, and Material Symbols for icons.
+$text-font-family: ('Roboto Variable', Roboto, sans-serif);
+
+html {
+  height: 100%;
+  color-scheme: light dark;
+
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$azure-palette,
+        tertiary: mat.$blue-palette,
+      ),
+      typography: $text-font-family,
+      density: 0,
+    )
+  );
+
+  // The font for code: queries, SQL, values in the grid where they line up.
+  --gd-code-font-family: 'Roboto Mono Variable', 'Roboto Mono', monospace;
+}
+
+body {
+  height: 100%;
+  margin: 0;
+  background-color: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-medium);
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--gd-code-font-family);
+}

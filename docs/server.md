@@ -2,7 +2,7 @@
 
 `GalaxyData.Web` is the application: an API under `/api`, and the client (the Angular app, built into `wwwroot`)
 for every other path. This guide covers running and configuring it, and how its API behaves. The query language
-is in [language.md](language.md).
+is in [language.md](language.md), and developing the client in [client.md](client.md).
 
 ## Running
 
@@ -13,6 +13,9 @@ dotnet run --project src/GalaxyData.Web
 In development it listens on `http://localhost:5180` (`Properties/launchSettings.json`). Elsewhere, set the
 address with `ASPNETCORE_URLS` or Kestrel's settings as for any ASP.NET Core application.
 
+**The client, in development**, runs on a development server of its own (`npm start` in `src/client`, at
+`http://localhost:4200`), which passes `/api` on to this one. See [client.md](client.md).
+
 **Publishing.**
 
 ```bash
@@ -20,13 +23,19 @@ dotnet publish src/GalaxyData.Web -c Release -o out
 ```
 
 - **The client is built as it is published.** `npm ci` and `npm run build` run in `src/client`, and what the build
-  leaves in `src/client/dist/browser` is published as `wwwroot`. This needs Node.js.
+  leaves in `src/client/dist/browser` is published as `wwwroot`. This needs Node.js 24.15 or later (or 22.22.3 or
+  later).
 - **Skipping it.** `-p:SkipClientBuild=true` publishes the server alone; so does a checkout without the client.
   `-p:ClientRoot=<folder>` (relative to `src/GalaxyData.Web`) builds a client from elsewhere, and fails when there
-  is none there. A `wwwroot` in `src/GalaxyData.Web` would be published over the client's build, so publishing the
-  client fails while there is one.
+  is none there. A `wwwroot` in `src/GalaxyData.Web` would be published mixed with the client's build, the
+  client's files replacing its files of the same names without a word. Publishing the client therefore fails
+  while there is one.
+- **Microsoft Defender on Windows** may crash the build as it copies files. MSBuild prints `Stack overflow.`, then
+  hangs. Defender's copy accelerator, which it loads into processes that copy files, overflows the small stacks of
+  MSBuild's copying threads. Copying on one thread avoids it: set `MSBUILDCOPYTASKPARALLELISM=1` in the
+  environment of the build or publish.
 - **One platform.** Without a runtime, the databases' native libraries come for every platform (about 370 MB).
-  `-r linux-x64` (or `win-x64`, ...) publishes that platform's alone.
+  `-r linux-x64` (or `win-x64`, ...) publishes that platform's alone (about 60 MB).
 - **Running it.** The published folder runs with `dotnet GalaxyData.Web.dll`, or the executable. Its data directory
   (`data`, beside it, unless configured) must be writable, and backed up with its `keys`.
 - **In front of it.** Serve it over HTTPS: set Kestrel's certificate, or put a reverse proxy in front (see
@@ -732,7 +741,7 @@ logs should hold a secret in the first place: this is the last line.
 - **OpenAPI:** the API is described at `/api/openapi/v1.json` (OpenAPI 3.1), for signed-in users.
   - The test `HostTests.TheOpenApiDocumentDescribesTheApi` keeps a reviewed copy in
     `tests/GalaxyData.Web.Tests/Hosting/Snapshots/`, so a change to the API shows in review.
-  - The client's types are made from it.
+  - The client's types are made from it (`npm run api` in `src/client`; see [client.md](client.md#the-apis-types)).
 
 ### Problems
 

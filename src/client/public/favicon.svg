@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <style>
+    .orbit { fill: none; stroke: #005cbb; stroke-width: 2.5; }
+    .body { fill: #005cbb; }
+    @media (prefers-color-scheme: dark) {
+      .orbit { stroke: #abc7ff; }
+      .body { fill: #abc7ff; }
+    }
+  </style>
+  <ellipse class="orbit" cx="16" cy="16" rx="14" ry="6.5" transform="rotate(-30 16 16)"/>
+  <circle class="body" cx="16" cy="16" r="5"/>
+  <circle class="body" cx="28.1" cy="9" r="2.2"/>
+</svg>
