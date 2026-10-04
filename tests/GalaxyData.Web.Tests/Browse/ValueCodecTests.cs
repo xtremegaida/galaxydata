@@ -43,6 +43,8 @@ public sealed class ValueCodecTests
 
    [Theory]
    [InlineData("true", "boolean", true)]
+   [InlineData("\"true\"", "boolean", true)]
+   [InlineData("\"False\"", "boolean", false)]
    [InlineData("7", "int16", (short)7)]
    [InlineData("\"7\"", "int32", 7)]
    [InlineData("\"9007199254740993\"", "int64", 9_007_199_254_740_993L)]

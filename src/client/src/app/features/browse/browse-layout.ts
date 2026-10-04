@@ -17,6 +17,7 @@ import { MatIcon } from '@angular/material/icon';
 import { MatSidenav, MatSidenavContainer, MatSidenavContent } from '@angular/material/sidenav';
 import { ActivatedRoute, NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
+import { readStored, storageOf, writeStored } from '../../core/browser/stored';
 import { CatalogTreeStore } from '../../core/catalog/catalog-tree-store';
 import { CatalogPanel } from './catalog-panel';
 
@@ -232,32 +233,23 @@ export class BrowseLayout {
 
   private resize(width: number): void {
     this.width.set(clampWidth(width));
-    try {
-      this.storage?.setItem(BrowseLayout.storageKey, String(this.width()));
-    } catch {
-      // Storage full or refused: the width holds until the page is left.
-    }
+    writeStored(this.storage, BrowseLayout.storageKey, String(this.width()));
   }
 
   private storedWidth(): number {
-    let stored: string | null = null;
-    try {
-      stored = this.storage?.getItem(BrowseLayout.storageKey) ?? null;
-    } catch {
-      // Storage refused: the width at first.
-    }
+    const stored = readStored(this.storage, BrowseLayout.storageKey);
     const width = Number(stored);
     return stored && Number.isFinite(width) ? clampWidth(width) : catalogWidths.initial;
   }
 }
 
-/** The entity whose page is open under browsing's route, as each navigation leaves it. */
+/** The entity browsing starts from (the address's first segment), as each navigation leaves it. */
 function entityShown(router: Router, route: ActivatedRoute) {
   return toSignal(
     router.events.pipe(
       filter((event) => event instanceof NavigationEnd),
       startWith(null),
-      map(() => route.snapshot.firstChild?.paramMap.get('entity') ?? null),
+      map(() => route.snapshot.firstChild?.url[0]?.path ?? null),
     ),
     { initialValue: null },
   );
@@ -265,12 +257,4 @@ function entityShown(router: Router, route: ActivatedRoute) {
 
 function clampWidth(width: number): number {
   return Math.round(Math.min(Math.max(width, catalogWidths.min), catalogWidths.max));
-}
-
-function storageOf(document: Document): Storage | undefined {
-  try {
-    return document.defaultView?.localStorage;
-  } catch {
-    return undefined;
-  }
 }

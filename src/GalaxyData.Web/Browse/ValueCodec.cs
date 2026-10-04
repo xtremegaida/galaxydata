@@ -63,7 +63,8 @@ public static class ValueCodec
 
    /// <summary>
    /// A value sent for <paramref name="type"/>, as the CLR value queries take: as <see cref="Encode"/> writes it,
-   /// and for numbers a JSON number too. <see cref="ValueFormatException"/> when it isn't one.
+   /// for numbers a JSON number too, and for booleans the text <c>true</c> or <c>false</c> too (as an address holds
+   /// them). <see cref="ValueFormatException"/> when it isn't one.
    /// </summary>
    public static object? Decode(JsonElement value, ScalarType type)
    {
@@ -76,6 +77,8 @@ public static class ValueCodec
             {
                JsonValueKind.True => true,
                JsonValueKind.False => false,
+               JsonValueKind.String when string.Equals(value.GetString(), "true", StringComparison.OrdinalIgnoreCase) => true,
+               JsonValueKind.String when string.Equals(value.GetString(), "false", StringComparison.OrdinalIgnoreCase) => false,
                _ => throw Wrong(value, type),
             },
             ScalarKind.Int16 => checked((short)Whole(value, type)),

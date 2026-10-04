@@ -1,19 +1,22 @@
-import type { ResolveFn, Routes } from '@angular/router';
+import type { Routes } from '@angular/router';
 import { BrowseLayout } from './browse-layout';
+import { BrowsePage, browseMatcher, browseTitle } from './browse-page';
 import { CatalogOverview } from './catalog-overview';
-import { EntityPage } from './entity-page';
 
-/** An entity's page is titled by its name. */
-const entityTitle: ResolveFn<string> = (route) => route.paramMap.get('entity') ?? 'Entity';
-
-/** Browsing: the catalog beside the start of browsing, or an entity's page. */
+/** Browsing: the catalog beside the start of browsing, or a path through the data (its address's segments). */
 export const browseRoutes: Routes = [
   {
     path: '',
     component: BrowseLayout,
     children: [
       { path: '', title: 'Browse', component: CatalogOverview },
-      { path: ':entity', title: entityTitle, component: EntityPage },
+      {
+        matcher: browseMatcher,
+        title: browseTitle,
+        component: BrowsePage,
+        // The title names the crumb shown, which `?at=` says.
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
+      },
     ],
   },
 ];

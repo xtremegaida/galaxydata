@@ -1,0 +1,132 @@
+<div class="toolbar">
+  <form class="where" (submit)="applyWhere($event)">
+    <mat-form-field class="where-field" subscriptSizing="dynamic">
+      <mat-label>Where</mat-label>
+      <input
+        #whereField
+        matInput
+        class="code"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="total > 100 and customer.city == 'Cape Town'"
+        aria-describedby="gd-where-help gd-where-problems"
+        [attr.aria-invalid]="whereProblems().length > 0"
+        [value]="whereText()"
+        (input)="typed($event)"
+        (keydown.enter)="applyWhere($event)"
+      />
+    </mat-form-field>
+    <button
+      matButton="tonal"
+      type="submit"
+      disabledInteractive
+      [disabled]="!whereEdited() || !made()"
+    >
+      Apply
+    </button>
+    @if (whereText() || appliedWhere()) {
+      <button
+        matIconButton
+        type="button"
+        aria-label="Clear the condition"
+        matTooltip="Clear the condition"
+        [disabled]="!made()"
+        (click)="clearWhere()"
+      >
+        <mat-icon>close</mat-icon>
+      </button>
+    }
+  </form>
+  <span class="count" role="status">{{ countText() }}</span>
+  <button
+    matIconButton
+    type="button"
+    aria-controls="gd-inspector"
+    [attr.aria-pressed]="inspecting()"
+    [matTooltip]="inspecting() ? 'Hide the inspector' : 'Show the inspector'"
+    [attr.aria-label]="'Inspector'"
+    (click)="toggleInspector()"
+  >
+    <mat-icon>info</mat-icon>
+  </button>
+</div>
+<p id="gd-where-help" class="cdk-visually-hidden">
+  A condition in the query language over the rows; navigations may be used. Enter applies it.
+</p>
+
+<div id="gd-where-problems" class="where-problems" role="alert">
+  @if (whereProblems().length > 0) {
+    <gd-message kind="problem">
+      The condition can't be used:
+      <ul class="plain">
+        @for (problem of whereProblems(); track $index) {
+          <li>
+            {{ problem.message }}
+            @if (problem.start !== null && appliedWhere(); as where) {
+              <span class="placed">
+                (at
+                <code>{{
+                  where.slice(problem.start, problem.end ?? problem.start + 1) || '…'
+                }}</code
+                >, from character {{ problem.start + 1 }})
+              </span>
+            }
+          </li>
+        }
+      </ul>
+    </gd-message>
+  }
+</div>
+
+<div role="alert">
+  @if (primeProblem(); as problem) {
+    <gd-message kind="problem">
+      Couldn't read the rows: {{ message(problem) }}
+      <button gdMessageAction matButton type="button" (click)="primed.reload()">Try again</button>
+    </gd-message>
+  } @else if (problem(); as problem) {
+    <gd-message kind="problem">
+      Couldn't read the rows: {{ message(problem) }}
+      <button gdMessageAction matButton type="button" (click)="retry()">Try again</button>
+    </gd-message>
+  }
+</div>
+
+@if (made(); as made) {
+  @if (made.left.length > 0) {
+    <gd-message kind="warning">
+      The address asked for what the grid can't show:
+      <ul class="plain">
+        @for (left of made.left; track $index) {
+          <li>{{ left }}</li>
+        }
+      </ul>
+    </gd-message>
+  }
+} @else if (primed.isLoading()) {
+  <mat-progress-bar mode="indeterminate" aria-label="Loading the rows" />
+}
+
+<div class="body">
+  @if (made(); as made) {
+    @for (grid of [made]; track grid.key) {
+      <ag-grid-angular
+        class="grid"
+        [gridOptions]="grid.options"
+        [modules]="modules"
+        (gridReady)="gridReady($event, grid)"
+        (sortChanged)="changed()"
+        (filterChanged)="changed()"
+        (paginationChanged)="paged()"
+        (selectionChanged)="chosen($event)"
+        (cellFocused)="cellFocused($event)"
+      />
+    }
+  }
+  <gd-grid-inspector
+    id="gd-inspector"
+    class="inspector"
+    [hidden]="!inspecting()"
+    [inspected]="inspected()"
+  />
+</div>

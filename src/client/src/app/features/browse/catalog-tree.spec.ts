@@ -13,6 +13,7 @@ import {
   viewportsFor,
 } from '../../../testing/catalog';
 import { problemBody, sessionOf } from '../../../testing/auth';
+import { answerGrid } from '../../../testing/browse';
 import { requestTo, settle } from '../../../testing/http';
 import { alertsOf, clickButton, openPage, pageProviders, textOf } from '../../../testing/pages';
 import { POLL_INTERVAL } from '../../core/api/poll';
@@ -228,6 +229,7 @@ describe('CatalogTree', () => {
     });
     await answerChildren(http, 'shop', [sales, orders]);
     (await requestTo(http, '/api/catalog/entity?name=shop.orders')).flush(entityOf());
+    await answerGrid(http);
     await shown();
     harness.detectChanges();
     expect(active()).toBe('orders');
@@ -253,11 +255,14 @@ describe('CatalogTree', () => {
     await answerChildren(http, 'shop', [sales, orders]);
     await press('End');
     const router = TestBed.inject(Router);
-    const navigate = vi.spyOn(router, 'navigate');
+    const navigate = vi.spyOn(router, 'navigateByUrl');
     // The page's request keeps the application busy: the key is pressed without waiting for it.
     tree.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    expect(navigate).toHaveBeenCalledWith(['/browse', 'shop.orders'], { state: keepFocus });
+    expect(navigate.mock.calls.map(([url, extras]) => [String(url), extras])).toEqual([
+      ['/browse/shop.orders', { state: keepFocus }],
+    ]);
     (await requestTo(http, '/api/catalog/entity?name=shop.orders')).flush(entityOf());
+    await answerGrid(http);
     await shown();
     expect(router.url).toBe('/browse/shop.orders');
     expect(document.activeElement).toBe(tree);
@@ -305,6 +310,7 @@ describe('CatalogTree', () => {
     expect(items().length).toBe(4);
     (items()[3].querySelector('.kind') as HTMLElement).click();
     (await requestTo(http, '/api/catalog/entity?name=shop.orders')).flush(entityOf());
+    await answerGrid(http);
     await shown();
     expect(TestBed.inject(Router).url).toBe('/browse/shop.orders');
     (items()[1].querySelector('.twisty') as HTMLElement).click();

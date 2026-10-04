@@ -24,6 +24,7 @@ import { Router } from '@angular/router';
 import { ApiClient, type Schema } from '../../core/api/api-client';
 import { isSessionProblem, problemMessage, problemOf } from '../../core/api/problem';
 import { keepFocus } from '../../core/browser/keep-focus';
+import { entityUrl } from '../../core/browse/browse-url';
 import { CatalogTreeStore, type TreeNode } from '../../core/catalog/catalog-tree-store';
 import { debounced } from '../../core/ui/debounced';
 import { Message } from '../../core/ui/message';
@@ -209,7 +210,7 @@ export class CatalogPanel {
     const entity = isEntity(hit.node);
     const revealing = this.store.reveal(hit.node.id, hit.path);
     if (entity) {
-      void this.router.navigate(['/browse', hit.node.id], {
+      void this.router.navigateByUrl(entityUrl(hit.node.id), {
         state: this.keepFocus() ? keepFocus : undefined,
       });
       this.chosen.emit(hit.node);

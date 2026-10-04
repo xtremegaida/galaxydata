@@ -419,6 +419,7 @@ anti-forgery token.
   date-times (ISO 8601; offsets in UTC), guids, binary (base64) and doubles that aren't numbers (`NaN`) are text.
   Values sent (keys, filter values) are read the same way; numbers may also be JSON numbers.
   - Decimals have a point, and no thousands separators.
+  - Booleans may also be the text `true` or `false` (in any case), as an address holds them.
   - Date-times with an offset end with it, with `Z`, or with neither (UTC).
 - **`schema`** (with `includeSchema`):
   - the columns, with their types, whether each is part of the key, whether the user may change it and give it a

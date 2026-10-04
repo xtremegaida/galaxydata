@@ -71,7 +71,7 @@
       <a
         class="name"
         tabindex="-1"
-        [routerLink]="['/browse', row.node.id]"
+        [routerLink]="entityUrl(row.node.id)"
         [state]="navigationState()"
         >{{ row.node.name }}</a
       >

@@ -1,71 +1,53 @@
-// What browsing's pages share: the page's width, its header, its sections and their tables.
+// The page fills its place: the grid takes the height the header and the tabs leave.
 
-.browse-page {
-  max-width: 1200px;
-  padding: 16px 24px 32px;
+:host {
+  display: block;
+  height: 100%;
+  min-height: 480px;
+}
+
+.browse-entity {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 24px 16px;
   box-sizing: border-box;
 }
 
 .page-header {
-  margin-bottom: 16px;
-
-  h1 {
-    margin: 0;
-    font: var(--mat-sys-headline-small);
-    overflow-wrap: anywhere;
-    outline: none;
-  }
-
-  .subtitle {
-    margin: 4px 0 0;
-    font: var(--mat-sys-body-medium);
-    color: var(--mat-sys-on-surface-variant);
-  }
+  flex: none;
+  margin-bottom: 8px;
 }
 
-.section {
-  margin: 0 0 24px;
-
-  h2 {
-    margin: 0 0 12px;
-    font: var(--mat-sys-title-medium);
-  }
-}
-
-.table-wrap {
-  overflow-x: auto;
-}
-
-.empty {
-  margin: 0;
-  padding: 8px 0;
+.path {
+  margin: 0 0 2px;
   color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-label-large);
+  overflow-wrap: anywhere;
 }
 
-.badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+.plain {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.badge {
-  padding: 2px 8px;
-  border-radius: var(--mat-sys-corner-small);
-  background: var(--mat-sys-surface-container-highest);
-  color: var(--mat-sys-on-surface-variant);
-  font: var(--mat-sys-label-medium);
-  white-space: nowrap;
+.tabs {
+  flex: 1;
+  min-height: 0;
 
-  &.warn {
-    background: var(--mat-sys-error-container);
-    color: var(--mat-sys-on-error-container);
+  ::ng-deep .mat-mdc-tab-body-wrapper {
+    flex: 1;
   }
 }
 
-code,
-pre {
-  font-family: var(--gd-code-font-family);
+.rows {
+  height: 100%;
+  padding-top: 12px;
+  box-sizing: border-box;
+}
+
+.structure {
+  max-width: 1200px;
+  padding-top: 16px;
 }

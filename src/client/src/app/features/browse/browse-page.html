@@ -1,0 +1,65 @@
+<div class="browse-entity">
+  @if ((described.isLoading() || trail.isLoading()) && !shown()) {
+    <mat-progress-bar mode="indeterminate" aria-label="Loading the entity" />
+  }
+  <div role="alert">
+    @if (problem(); as problem) {
+      @if (notFound()) {
+        <gd-message kind="problem">
+          There is no {{ crumb().name }} in the catalog (any more). Find it in the catalog, or
+          choose another.
+        </gd-message>
+      } @else {
+        <gd-message kind="problem">
+          Couldn't read {{ path() }}: {{ message(problem) }}
+          <button gdMessageAction matButton type="button" (click)="reload()">Try again</button>
+        </gd-message>
+      }
+    } @else if (trailProblem(); as trailProblem) {
+      <gd-message kind="problem"> Can't follow {{ path() }}: {{ trailProblem }} </gd-message>
+    }
+  </div>
+  @if (addressProblems().length > 0) {
+    <gd-message kind="warning">
+      <ul class="plain">
+        @for (problem of addressProblems(); track $index) {
+          <li>{{ problem }}</li>
+        }
+      </ul>
+    </gd-message>
+  }
+
+  @if (shown(); as shown) {
+    <header class="page-header">
+      @if (pathShown()) {
+        <p class="path">{{ path() }}</p>
+      }
+      <h1 #heading tabindex="-1">{{ shown.entity.name }}</h1>
+      <p class="subtitle">{{ describe(shown.entity) }}</p>
+    </header>
+  }
+
+  @if (!notFound() && !trailProblem()) {
+    <mat-tab-group class="tabs" mat-stretch-tabs="false" animationDuration="0ms" preserveContent>
+      <mat-tab label="Rows">
+        @if (source(); as source) {
+          <gd-browse-grid
+            class="rows"
+            [source]="source"
+            [crumb]="crumb()"
+            (crumbChange)="update($event)"
+          />
+        }
+      </mat-tab>
+      <mat-tab label="Structure">
+        <ng-template matTabContent>
+          @if (shown(); as shown) {
+            <div class="structure">
+              <gd-entity-structure [entity]="shown.entity" />
+            </div>
+          }
+        </ng-template>
+      </mat-tab>
+    </mat-tab-group>
+  }
+</div>

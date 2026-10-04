@@ -241,12 +241,16 @@ describe('CatalogPanel', () => {
 
   it('opens an entity leaving focus in the catalog beside the page, and not over it', async () => {
     const { http, type, options, shown } = await open();
-    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
+    const lastNavigation = () => {
+      const [url, extras] = navigate.mock.lastCall ?? [];
+      return [String(url), extras];
+    };
     await type('ord');
     (await requestTo(http, searchUrl('ord'))).flush(found('ord'));
     await shown();
     options()[0].click();
-    expect(navigate).toHaveBeenLastCalledWith(['/browse', 'shop.orders'], { state: keepFocus });
+    expect(lastNavigation()).toEqual(['/browse/shop.orders', { state: keepFocus }]);
     (await requestTo(http, '/api/catalog/entity?name=shop.orders')).flush(entityOf());
     await answerChildren(http, 'shop', [sales, orders]);
     await shown();
@@ -257,9 +261,7 @@ describe('CatalogPanel', () => {
     (await requestTo(http, searchUrl('inv'))).flush(found('inv'));
     await shown();
     options()[1].click();
-    expect(navigate).toHaveBeenLastCalledWith(['/browse', 'shop.sales.invoices'], {
-      state: undefined,
-    });
+    expect(lastNavigation()).toEqual(['/browse/shop.sales.invoices', { state: undefined }]);
   });
 
   it("says why it couldn't search, and searches again", async () => {

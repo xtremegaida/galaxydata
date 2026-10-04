@@ -1,0 +1,114 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  container-type: inline-size;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  // Room for the last button's touch target, which is wider than it.
+  padding-inline-end: 4px;
+}
+
+.where {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.where-field {
+  flex: 1;
+  min-width: 160px;
+}
+
+.code {
+  font-family: var(--gd-code-font-family);
+}
+
+.count {
+  flex: none;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-medium);
+  white-space: nowrap;
+}
+
+.plain {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.placed {
+  color: inherit;
+  opacity: 0.85;
+
+  code {
+    font-family: var(--gd-code-font-family);
+  }
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-height: 0;
+}
+
+.grid {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.inspector {
+  flex: none;
+  width: 260px;
+}
+
+// Narrow, the inspector goes under the grid.
+@container (max-width: 760px) {
+  .body {
+    flex-direction: column;
+  }
+
+  .grid {
+    height: auto;
+    min-height: 240px;
+  }
+
+  .inspector {
+    width: auto;
+    max-height: 40%;
+    border-left: none;
+    border-top: 1px solid var(--mat-sys-outline-variant);
+  }
+}
+
+// What the grid's cells add to its theme: numbers to the right, nulls set apart, the key's headers marked.
+:host ::ng-deep {
+  .gd-number {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .gd-null {
+    color: var(--mat-sys-on-surface-variant);
+    font-style: italic;
+  }
+
+  .gd-key-column .ag-header-cell-text::before {
+    content: 'key';
+    margin-inline-end: 4px;
+    font-family: 'Material Symbols Outlined';
+    font-size: 16px;
+    font-style: normal;
+    vertical-align: -3px;
+    color: var(--mat-sys-primary);
+  }
+}

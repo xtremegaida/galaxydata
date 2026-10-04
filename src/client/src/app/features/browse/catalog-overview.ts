@@ -124,7 +124,7 @@ function reading(source: CatalogSource): boolean {
       }
     </div>
   `,
-  styleUrl: './browse-page.scss',
+  styleUrl: './browse-shared.scss',
   styles: `
     .sources {
       border-collapse: collapse;

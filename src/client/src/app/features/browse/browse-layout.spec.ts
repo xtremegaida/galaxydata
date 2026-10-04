@@ -12,6 +12,7 @@ import {
   tableNode,
   viewportsFor,
 } from '../../../testing/catalog';
+import { answerGrid } from '../../../testing/browse';
 import { requestTo, settle } from '../../../testing/http';
 import { clickButton, openPage, pageProviders } from '../../../testing/pages';
 import { POLL_INTERVAL } from '../../core/api/poll';
@@ -52,6 +53,7 @@ describe('BrowseLayout', () => {
         more: false,
       });
       (await requestTo(opened.http, `/api/catalog/entity?name=${name}`)).flush(entityOf());
+      await answerGrid(opened.http);
     }
     const page = opened.harness.fixture.nativeElement as HTMLElement;
     const shown = async () => {
@@ -138,6 +140,7 @@ describe('BrowseLayout', () => {
     await shown();
     (page.querySelectorAll('[role=treeitem]')[1] as HTMLElement).click();
     (await requestTo(http, '/api/catalog/entity?name=shop.orders')).flush(entityOf());
+    await answerGrid(http);
     await shown();
     expect(TestBed.inject(Router).url).toBe('/browse/shop.orders');
     expect(await catalog.isOpen()).toBe(false);

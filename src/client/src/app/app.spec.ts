@@ -9,8 +9,10 @@ import { Router } from '@angular/router';
 import { firstValueFrom, of } from 'rxjs';
 import { fakeBrowserProviders, problemBody, sessionOf, signedOut } from '../testing/auth';
 import { answerChildren, catalogOf, entityOf, searchUrl, sourceNode } from '../testing/catalog';
+import { answerGrid } from '../testing/browse';
 import { requestTo, settle } from '../testing/http';
 import { App } from './app';
+import { BrowseGrid } from './features/browse/grid/browse-grid';
 import { appConfig } from './app.config';
 import { ApiClient } from './core/api/api-client';
 import { keepFocus } from './core/browser/keep-focus';
@@ -123,6 +125,8 @@ describe('App, browsing', () => {
         },
       ],
     });
+    // The grid has tests of its own; in the whole application, jsdom takes seconds to work out its styles.
+    TestBed.overrideComponent(BrowseGrid, { set: { template: '', imports: [] } });
     http = TestBed.inject(HttpTestingController);
   });
 
@@ -149,6 +153,7 @@ describe('App, browsing', () => {
       more: false,
     });
     (await requestTo(http, '/api/catalog/entity?name=shop.orders')).flush(entityOf());
+    await answerGrid(http);
     expect(await opening).toBe(true);
     await settle();
     await fixture.whenStable();

@@ -1026,6 +1026,42 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
   - entities whose names end as files do (`geo.map`) were 404s when their address was reloaded (server);
   - untested rules (mutations that passed): an earlier answer clearing a load under way, the entity selected last, page keys, `*`, modifiers, a space typed in a name, the link's choice closing the catalog, new results and new text in the search, the search's focus state, another entity not shown under the old one's address, focus left in the tree, dragging with another button.
 
+**Built in F4**
+- **Packages:** AG Grid Community 36.2 and its Angular wrapper, and fast-check 4.10 for property tests (all MIT; the user agreed to the downloads, 2026-10-04).
+- **The spike** (AG Grid's infinite row model with pages when the total isn't known): it pages with "of more" until the last page; `initialState.pagination` opens the grid at the address's page, fetching only it; a query changed is a datasource of its own, and asks of the one before fail without fetching. AG Grid counts a datasource's asks until each ends (two at once), so an ask left unanswered stalls the grid. Material's paginator wasn't needed.
+- **Addresses** (`core/browse/browse-url.ts`, the only place the grammar lives): crumbs (an entity, then navigations from the row chosen in the crumb before), each with matrix parameters `f` (filters: `column:op:value`, conditions in a row, `or` between those any of which will do), `w` (a condition in the query language), `sort` (`-` for descending), `page` (from 1) and `row` (the key, `~` between its values); names and values that are empty or hold `, : ~ '` (and sorted names starting with `-`) are quoted, a quote doubled; `?at=` names the crumb shown when it isn't the last. What can't be read is left out and said. A property test reads back what it writes through Angular's own URL serializer.
+- **Routes:** every address under `/browse` with segments is `BrowsePage` (a `UrlMatcher`), titled by the path to the crumb shown (the title follows `?at=`).
+- **The page** (`BrowsePage`): the crumb's entity as its heading, and tabs for its rows and its structure (F3's entity page, now `EntityStructure`), the grid kept while the other tab shows. Navigations' crumbs are followed through `POST /api/browse/trail`: their rows are `{from: {entity, key}, navigation}` from the entity the crumb before reaches; a crumb that can't be followed says why. The grid's changes replace the address in the history; a row chosen anew in a crumb lets go of the crumbs after it.
+- **The grid** (`BrowseGrid`, `BrowseDatasource`, `grid-columns.ts`): AG Grid's infinite row model with pages of 100, the modules it needs registered for the grid (and its validation in development), its theme on Material's system tokens (light or dark with the page).
+  - **First,** the schema, the address's page and the count in one request; when the address's state can't be asked for (400, 422), the schema alone, and the grid's own asks say what's wrong. The first page answers the grid's first ask.
+  - **Pages:** a datasource for each query, counted with its first page ("At least n rows" and "of more" when counting takes too long; a page past the rows' end takes the total, and the grid goes to the last page, the address following); asks of a page under way share its request; a datasource retired lets go of its asks under way, failing them for the grid's loader.
+  - **The grid's first asks:** AG Grid sets an initial state's filters (asking for its first page) before its page, so page loads wait 10 ms (`blockLoadDebounceMillis`) and the grid's cache is purged once it is ready: only the page shown is fetched.
+  - **Columns** by place (names may be any text): NULL set apart, the key marked, numbers on the right, date-times with a space, binary as hexadecimal; a header's tooltip says its type and lineage. Filters by type: text; numbers; int64 (AG Grid's bigint filter, exact); decimals, times and intervals as text with comparison options of our own; dates (a day in date-times); booleans; guids; presence. Two conditions, Apply and Reset. Mapped both ways with the address's filters; what the grid can't hold is left out and said, and the address says what it shows.
+  - **Where:** applied on Enter (the field's own, as implicit submission can't be relied on), cleared; the server's diagnostics placed under it.
+  - **Choosing a row** (single; entities without a key, none) puts its key in the address; the address's row is chosen when its page comes.
+  - **Following the address:** another page or row of the same query in place; another query makes the grid anew in the address's state.
+  - **Following the catalog:** the schema read again; the same columns keep the grid, which fetches its rows again.
+  - **Failures:** said above the grid with "Try again" (the query asked anew from its page) and over it (an overlay, its text through `overlayComponentParams`); a first page that fails shows no rows, not a page of blank ones.
+- **The inspector** (`GridInspector`): the cell the keyboard or the pointer is on, whole (NULL, a text's length, a binary value's bytes), its column (type, key) and its lineage (kind, the tables' columns through which navigations, the expression); hidden on asking and kept so (`gd.inspector`); under the grid when the page is narrow (a container query).
+- **Server:** booleans may be sent as the text `true` or `false` (`ValueCodec.Decode`), so keys and filter values from an address are always text.
+- **Shared:** `core/browser/stored.ts` (the browser's storage, for the colour scheme, the catalog's width and the inspector).
+- **Bundle:** the first load is unchanged (690 kB, 160 kB compressed); browsing's chunk is 1.23 MB (277 kB compressed), nearly all AG Grid.
+- **Tests** (341 Vitest, 6 node; the server's value codec): the codec (examples, quoting, problems, the crumb shown, a property round trip through Angular's serializer); the columns (defs, filters per type, both ways, what's left out, sort, words); the datasource (requests, counting, the first page, shared asks, retiring, failures, queries told apart); the grid in jsdom (the first request, sorting, filters, pages, counts, choosing rows, following the address in place and anew, the condition and its problems, failures and Try again, the schema alone, what's left out, the catalog, pages let go, the inspector, keyless rows, a page past the end); the page (structure, problems, catalog changes, focus, the grid's state in the address, crumbs through the trail, at three crumbs, truncation, crumbs that can't be followed, titles, the address's problems). Mutations of the key rules and of the review's fixes fail tests (56 tried; one equivalent: the selection's source, which the grid's own guard covers too).
+- **Checked by hand** against the server (a SQLite source of 1,234 rows made for it): sorting, filters of each kind from the grid and the address, the condition and its placed problems, pages, a page past the end, back to a page in another entity, choosing rows (by click and Space), header keys (Ctrl+Enter opens the filter), crumbs, truncation, the structure tab keeping the grid, the inspector by keyboard, narrow screens, light and dark; and published, under its content security policy (AG Grid's styles are inline styles, which it allows): one request for a page with its state, no errors.
+- **Found by the review**, fixed:
+  - "Try again" on a later page went to the first, and a grid opened at a page gave later queries as many pages (a new cache starts with the rows the grid was made with: the grid now sets them, `setRowCount`, and purges the pages asked for on the way);
+  - a first page that failed cleared the address's page, and stopped the rows being counted;
+  - a page past the rows' end without a total went back a request a page (without end for a page number large enough): the first page, counted anew;
+  - a first page fetched ahead answered a grid made later for the same state again (old rows and count);
+  - a catalog change fetched the rows but not their count (the page read with the schema answers the grid now);
+  - a row the address chose that wasn't loaded left the one before chosen;
+  - a row chosen in an earlier crumb that isn't among its rows went unsaid;
+  - an address that went elsewhere as the grid was made was written over by the grid; a grid of another crumb could write into the address (crumbs are checked by name);
+  - accessibility: clearing the condition and Apply lost the keyboard; the inspector's button controlled nothing while it was hidden; the keyboard was lost when a grid was made anew;
+  - the docs said what the code didn't (64-bit filters, tooltips on focus, the inspector on pointing, "Try again", the catalog's count);
+  - smaller: links into browsing now come from the codec (`entityUrl`); "is left out"; "Worked out." without an expression; Enter on an unchanged condition asked again.
+- **Found while checking:** AG Grid needs `GridStateModule`, `LocaleModule` and `RowApiModule` for what the grid uses (its validation said); options of our own need a predicate; Enter in the condition didn't submit in the browser pane; a first page that failed showed 100 blank rows; provided overlays take their text from `overlayComponentParams`; the inspector took the grid's room on narrow pages; switching tabs made the grid anew (`preserveContent`); the grid's first asks fetched a page twice (above); the whole application's test took 9 s in jsdom resolving the styles AG Grid reads (the grid is left out of it).
+
 ---
 
 ## 7. Milestones (each ends green and demonstrable)
@@ -1069,7 +1105,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | F1 | Auth, guards, interceptors, shell (see "Built in F1" in §6) |
 | F2 | Admin users and connections (dynamic form) (see "Built in F2" in §6) |
 | F3 | Tree and search (see "Built in F3" in §6) |
-| F4 | Read-only browse: URL codec, AG adapter, datasource, URL sync, lineage inspector |
+| F4 | Read-only browse: URL codec, AG adapter, datasource, URL sync, lineage inspector (see "Built in F4" in §6) |
 | F5 | Reference cells and breadcrumb |
 | F6 | Pending changes: store, dirty overlay, editors, delete, insert rows, nav picker, drawer |
 | F7 | SQL preview and commit dialog, audit pages |
@@ -1113,6 +1149,6 @@ Engine work starts at **M0**. The first commit goes on a new branch off `master`
 - **DuckDB extensions offline:** none are needed. The Excel folder reads its cells itself (M8), and ICU (time zones) is built into DuckDB.NET's native library. The merge engine downloads none unless allowed, and looks for others in `ExtensionDirectory` (M11).
 - **Group-key matching complexity:** a large table of positive and negative binder tests.
 - **Reserved words** (`and`, `or`, `not`, `in`, `if`, `for`): escape with `it["in"]`. The app quotes names through `QueryText`.
-- **AG Grid Community's infinite model with pagination when the total is unknown:** spike this early in F4. The fallback is `MatPaginator` driving the datasource; the URL format doesn't change.
+- **AG Grid Community's infinite model with pagination when the total is unknown:** settled in F4: it pages with "of more" until the last page (see "Built in F4").
 - **Partial commits across connections:** the preview warning, audit statuses and a per-connection result view. Deferred constraints are checked before the first commit.
 - **Losing Data Protection keys loses stored secrets:** document that the keys directory must be backed up. The UI shows "re-enter secret" for affected connections.

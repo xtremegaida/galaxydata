@@ -1,0 +1,186 @@
+@let described = entity();
+@if (described.comment) {
+  <p class="comment">{{ described.comment }}</p>
+}
+@if (described.problem) {
+  <gd-message kind="problem">This virtual entity doesn't work: {{ described.problem }}</gd-message>
+}
+
+<dl class="facts">
+  @if (described.qualifiedName !== described.name) {
+    <dt>Full name</dt>
+    <dd>
+      <code>{{ described.qualifiedName }}</code>
+    </dd>
+  }
+  @if (described.rowCountEstimate !== null) {
+    <dt>Rows</dt>
+    <dd>{{ rows(described.rowCountEstimate) }}</dd>
+  }
+  <dt>Key</dt>
+  <dd>
+    @if (described.key) {
+      <code>{{ described.key.columns.join(', ') }}</code>
+      @if (described.key.isDeclared) {
+        <span class="aside">declared in the catalog, for navigation</span>
+      }
+    } @else {
+      None
+    }
+  </dd>
+  @if (described.uniqueKeys.length > 0) {
+    <dt>Unique</dt>
+    <dd>
+      <ul class="plain">
+        @for (key of described.uniqueKeys; track $index) {
+          <li>
+            <code>{{ key.columns.join(', ') }}</code>
+          </li>
+        }
+      </ul>
+    </dd>
+  }
+  @if (described.displayColumn) {
+    <dt>Shown by</dt>
+    <dd>
+      <code>{{ described.displayColumn }}</code>
+      <span class="aside">where other rows refer to its rows</span>
+    </dd>
+  }
+  @if (described.hasTriggers) {
+    <dt>Triggers</dt>
+    <dd>Changes to its rows set off triggers</dd>
+  }
+  <dt>Changes</dt>
+  <dd>
+    @for (sentence of changes(); track $index) {
+      <span class="sentence">{{ sentence }}</span>
+    }
+  </dd>
+</dl>
+
+<section class="section" aria-labelledby="gd-entity-columns">
+  <h2 id="gd-entity-columns">Columns ({{ described.columns.length }})</h2>
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Type</th>
+          <th scope="col">Properties</th>
+          @if (editable()) {
+            <th scope="col">Changes</th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (column of described.columns; track column.ordinal) {
+          <tr [class.hidden-column]="column.hidden">
+            <th scope="row">
+              <span class="column-name">
+                @if (column.isKey) {
+                  <mat-icon class="key">key</mat-icon>
+                  <span class="cdk-visually-hidden">Key:</span>
+                }
+                <code>{{ column.name }}</code>
+              </span>
+              @if (column.label) {
+                <span class="aside">{{ column.label }}</span>
+              }
+              @if (column.comment) {
+                <span class="aside">{{ column.comment }}</span>
+              }
+            </th>
+            <td>
+              <code>{{ column.type.text }}</code>
+              @if (column.nativeType) {
+                <span class="aside">{{ column.nativeType }}</span>
+              }
+            </td>
+            <td>
+              @if (flagsOf(column); as flags) {
+                @if (flags.length > 0) {
+                  <ul class="badges">
+                    @for (flag of flags; track flag) {
+                      <li class="badge">{{ flag }}</li>
+                    }
+                  </ul>
+                }
+              }
+            </td>
+            @if (editable()) {
+              <td>
+                @if (described.capabilities.canUpdate) {
+                  <span class="sentence">{{
+                    column.canUpdate ? 'Can be changed' : 'Read-only'
+                  }}</span>
+                }
+                @if (column.readOnlyReason) {
+                  <span class="aside">{{ column.readOnlyReason }}</span>
+                }
+                @if (described.capabilities.canInsert && insertOf(column); as insert) {
+                  <span class="aside">{{ insert }}</span>
+                }
+              </td>
+            }
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="gd-entity-navigations">
+  <h2 id="gd-entity-navigations">Navigations ({{ described.navigations.length }})</h2>
+  @if (described.navigations.length === 0) {
+    <p class="empty">Its rows aren't linked to other rows.</p>
+  } @else {
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">To</th>
+            <th scope="col">Rows</th>
+            <th scope="col">Through</th>
+            <th scope="col">Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (navigation of described.navigations; track navigation.name) {
+            <tr>
+              <th scope="row">
+                <code>{{ navigation.name }}</code>
+              </th>
+              <td>
+                <a [routerLink]="entityUrl(navigation.target)">{{ navigation.target }}</a>
+              </td>
+              <td>{{ multiplicities[navigation.multiplicity] }}</td>
+              <td>
+                <code>{{ throughOf(navigation) }}</code>
+              </td>
+              <td>
+                @if (notesOf(navigation); as notes) {
+                  @if (notes.length > 0) {
+                    <ul class="badges">
+                      @for (note of notes; track note) {
+                        <li class="badge">{{ note }}</li>
+                      }
+                    </ul>
+                  }
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>
+
+@if (described.query) {
+  <section class="section" aria-labelledby="gd-entity-query">
+    <h2 id="gd-entity-query">Query</h2>
+    <pre class="query"><code>{{ described.query }}</code></pre>
+  </section>
+}

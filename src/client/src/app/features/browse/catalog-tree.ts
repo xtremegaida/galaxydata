@@ -28,6 +28,7 @@ import { POLL_INTERVAL } from '../../core/api/poll';
 import { isSessionProblem, problemMessage } from '../../core/api/problem';
 import { AuthStore } from '../../core/auth/auth-store';
 import { keepFocus } from '../../core/browser/keep-focus';
+import { entityUrl } from '../../core/browse/browse-url';
 import {
   CatalogTreeStore,
   beingRead,
@@ -112,6 +113,7 @@ export class CatalogTree {
   protected readonly iconOf = iconOf;
   protected readonly kindOf = kindOf;
   protected readonly isEntity = isEntity;
+  protected readonly entityUrl = entityUrl;
 
   constructor() {
     void this.store.start();
@@ -308,7 +310,7 @@ export class CatalogTree {
   }
 
   private open(node: TreeNode): void {
-    void this.router.navigate(['/browse', node.id], { state: this.navigationState() });
+    void this.router.navigateByUrl(entityUrl(node.id), { state: this.navigationState() });
     this.chosen.emit(node);
   }
 

@@ -1,5 +1,6 @@
 import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { readStored, storageOf, writeStored } from '../browser/stored';
 
 /** The color scheme chosen: the system's (light or dark, as it is set), light, or dark. */
 export type ColorSchemeChoice = 'system' | 'light' | 'dark';
@@ -45,11 +46,7 @@ export class ColorScheme {
   /** Shows the application in a scheme, and keeps the choice. */
   choose(choice: ColorSchemeChoice): void {
     this.chosen.set(choice);
-    try {
-      this.storage?.setItem(ColorScheme.storageKey, choice);
-    } catch {
-      // Storage full or refused: the choice holds until the page is left.
-    }
+    writeStored(this.storage, ColorScheme.storageKey, choice);
     this.apply();
   }
 
@@ -59,20 +56,7 @@ export class ColorScheme {
   }
 
   private stored(): ColorSchemeChoice {
-    let value: string | null = null;
-    try {
-      value = this.storage?.getItem(ColorScheme.storageKey) ?? null;
-    } catch {
-      // Storage refused: the system's.
-    }
+    const value = readStored(this.storage, ColorScheme.storageKey);
     return choices.find((choice) => choice === value) ?? 'system';
-  }
-}
-
-function storageOf(document: Document): Storage | undefined {
-  try {
-    return document.defaultView?.localStorage;
-  } catch {
-    return undefined;
   }
 }

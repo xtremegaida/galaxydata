@@ -185,13 +185,72 @@ chosen in it.
     the page's). "Show more" leaves focus in the field, as it goes once more are found.
   - The node chosen is shown in the tree, its ancestors opened (search gives their ids), and an entity's page
     opens.
-- **The address** is the entity's name as queries write it: `/browse/shop.orders`. The tree shows the entity the
-  address names, opening its ancestors; when it isn't loaded, searching for its name finds where it is. (F4 adds
-  the grid's state, and navigations, to the address.)
+- **The address** is a path through the data, and the grid's state at each step (`core/browse/browse-url.ts`, the
+  only place its grammar lives):
+  `/browse/shop.customers;f=country:eq:ZA;row=42/orders;sort=-placed_at;page=2/lines?at=1`.
+  - The first segment is an entity, as queries write its name; each after it a navigation from the row chosen in the
+    one before. Each is a crumb.
+  - A crumb's state is in its segment's matrix parameters: `f` filters (`column:op:value`, conditions after one
+    another, `or` between those any of which will do, `,` between filters), `w` a condition in the query language,
+    `sort` (`-` for descending, `,` between columns), `page` (from 1), and `row`, the key of the row chosen (`~`
+    between its values). Names and values with `,`, `:`, `~` or `'` in them, or empty, are quoted (`'a,b'`, a quote
+    doubled). `?at=` says which crumb is shown, from 0, when it isn't the last.
+  - What can't be read (a page that isn't one, an operation that isn't) is left out, and the page says so.
+  - The grid's changes replace the address in the history (sorting, filtering, paging and choosing a row aren't
+    steps back); a crumb that goes elsewhere is a step. Choosing another row in a crumb lets go of those after it.
+  - The tree shows the first crumb's entity, opening its ancestors; when it isn't loaded, searching for its name
+    finds where it is.
 - **The start of browsing** (`/browse`) lists the connections, with how their schemas stand (followed while they are
   read), and what building the catalog found wrong (`GET /api/catalog`).
-- **An entity's page** (`GET /api/catalog/entity`) says:
-  - what the entity is: its full name, rows, key, unique keys, the column that shows its rows where others refer to
+- **A path's page** (`BrowsePage`) has the entity of the crumb shown as its heading, and two tabs: its rows, and
+  what it is. A navigation's crumb is followed through the API's trail (`POST /api/browse/trail`), which says what
+  entity each crumb reaches; its rows are those the navigation leads to from the row chosen in the crumb before
+  (`{from: {entity, key}, navigation}`). A crumb that can't be followed (no row chosen before it, a row chosen that
+  isn't among its crumb's rows, a navigation the entity hasn't) says why. The grid stays as it was while the other
+  tab is shown.
+- **The grid** (`BrowseGrid`, AG Grid Community's infinite row model with pages of 100 rows) shows the rows a page at
+  a time from `POST /api/browse/page`:
+  - **First,** the rows' schema (their columns) and the page the address names, counted, in one request. When the
+    address's state can't be asked for (a column gone, a wrong condition), the schema alone, and the grid says
+    what's wrong.
+  - **Pages** are asked for as the grid shows them; the rows are counted with the first page of each query
+    ("1,234 rows"), or, when counting takes too long, the grid says how many it has seen ("At least 101 rows", and
+    "of more" in its pages). A query changed (sorted, filtered) is a datasource of its own: pages of the one before
+    that are under way are let go. An address's page past the rows' end shows the last page (the first, when they
+    weren't counted), and the address follows. A first page fetched ahead answers one grid only.
+  - **Columns** are named by their places (names may be any text), the key's marked, numbers on the right, NULL set
+    apart; date-times read with a space, binary values as hexadecimal. A column's header, pointed at, says its type
+    and where its values come from.
+  - **Filters** follow each column's type: text (contains, starts and ends with, equals); numbers; 64-bit whole
+    numbers (AG Grid's filter for them, which holds them as text, so those past 2^53 stay exact); decimals, times and
+    intervals in text fields, with comparisons of our own (the server reads the text as the column's type); dates (a
+    date stands for its day in a date-time); booleans (true or false); guids (equal or not); and the rest, blank or
+    not. A filter holds two conditions, all or any of which a row must meet. The server's operations are the
+    address's.
+  - **Where:** a condition in the query language over the rows, navigations included (`customer.city == 'Cape
+    Town'`), applied on Enter (an unchanged one isn't asked for again). What's wrong with it is said under it,
+    placed in it.
+  - **Sorting** by the headers (by all but binary, JSON and unknown values); the server adds the key after.
+  - **Choosing a row** (clicking it, or Space) puts its key in the address, and the address's row is chosen when
+    its page comes. Rows of entities without a key aren't chosen.
+  - **Following the address:** back, forward or a link to another page or row of the same query shows it in place
+    (a page past those the grid knows of makes it anew); another query makes the grid anew in the address's state,
+    and the keyboard, if it was in the grid, goes to the new one's first header. An address that goes elsewhere as
+    a grid is made is followed once it is ready.
+  - **Following the catalog:** the schema is read again when the catalog changes, with the page shown and the
+    count; the same columns keep the grid, which shows them.
+  - **Problems:** rows that couldn't be read are said above the grid ("Try again" asks for the same page anew), and
+    over it. A first page that failed leaves the address's page as it was.
+  - **The theme** is Material's: the grid's colours are its system tokens, so it is light or dark as the page is.
+  - **What it leaves out** of an address it can't hold (a column it hasn't, a second filter on a column, a third
+    condition, an operation a column's filter doesn't offer) is said, and the address says what the grid shows.
+- **The inspector,** beside the grid (under it when narrow), shows the cell the keyboard is on (a click puts it
+  there) whole: its column (type, key), its value (NULL, a text's length, a binary value's bytes), and where the
+  column's values come from: read from a column, worked out, aggregated, a constant or put together; the tables'
+  columns they come from, through which navigations, and the expression. It can be hidden, and stays as the user
+  left it.
+- **What an entity is** (the Structure tab, `EntityStructure`, from `GET /api/catalog/entity`):
+  - its facts: its full name, rows, key, unique keys, the column that shows its rows where others refer to
     them, triggers, and what the user may do with its rows (and why not);
   - its columns: types as the language and the database write them, keys, identity, computed, defaults, row
     versions, hidden; and, when its rows may be changed, what may be done with each;
@@ -291,7 +350,16 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
   Going back or forward doesn't leave focus where it is, though the browser gives such a navigation its state again.
 - **Another entity shown in place of one** moves focus to its page's heading: after a link followed in the page
   (the link is gone), or an entity chosen in the catalog over the page (which gives focus back to its button).
-  Focus in the catalog beside the page (its tree, its search) stays.
+  Focus in the catalog beside the page (its tree, its search) stays. The grid's changes of the address leave focus
+  where it is.
+- **The grid** is AG Grid's ARIA grid: its cells and headers are reached by the arrow keys (Enter on a header sorts,
+  Shift+Enter adds it to the sort, Ctrl+Enter opens its filter), Space chooses the row the keyboard is on, and its
+  pages have buttons of their own. Its rows are in the page in their order (`ensureDomOrder`). Headers' tooltips
+  (type, lineage) show when pointed at; for the keyboard, the inspector says the same of the column of the cell it
+  is on, in a region of its own (hidden, not removed, so its button always controls it). The condition's field is
+  labelled and described, and its problems are an alert tied to it (`aria-describedby`, `aria-invalid`); Apply
+  stays focusable when there is nothing to apply (`disabledInteractive`), and clearing the condition leaves the
+  keyboard in its field. The count is a status.
 - **The catalog's tree** is a tree as WAI-ARIA describes one. It is one stop in the tab order.
   - The arrow keys move through it, and Right and Left open and close. Home, End, Page Up and Page Down go further;
     `*` opens a node's siblings.
@@ -345,9 +413,11 @@ the rest of the stylesheet with an inline script, which the policy refuses.
 compressed. It grows as the features use more of Angular's core (resources, for one), which every page shares, and
 of modules the shell uses: the CDK's virtual scrolling is in the module of the scrolling the shell's navigation
 uses, so it loads at first though only browsing uses it. Pages not needed at first are loaded when opened (lazy
-routes): the sign-in and password pages, the administrators' pages (about 260 kB), browsing (about 50 kB), and the
-features' pages as they come. The build warns above 700 kB and fails above 1 MB (`budgets` in `angular.json`).
-GalaxyData isn't meant for slow networks, so these can be raised when a feature needs it.
+routes): the sign-in and password pages, the administrators' pages (about 260 kB), browsing (about 1.2 MB, 277 kB
+compressed), and the features' pages as they come. Browsing's chunk is nearly all AG Grid: its core and the modules
+the grid registers (its infinite row model, pages, filters, choosing rows, tooltips, its state and words). The build
+warns above 700 kB and fails above 1 MB for the first load (`budgets` in `angular.json`). GalaxyData isn't meant
+for slow networks, so these can be raised when a feature needs it.
 
 ## Conventions
 
@@ -371,10 +441,17 @@ GalaxyData isn't meant for slow networks, so these can be raised when a feature 
     to a kind's form shows in the client's tests too.
   - **The catalog's tree is given a height** (`viewportsFor` in `src/testing/catalog.ts`): jsdom lays nothing out,
     so a virtual scroll viewport would render a few rows. The search's wait is `SEARCH_WAIT` (none in tests).
+  - **The grid renders in jsdom**, a few rows at a time (`gridCells`, `gridHeaders` in `src/testing/browse.ts`);
+    pages have 3 rows in its tests (`BROWSE_PAGE_SIZE`). The grid waits 10 ms before it fetches a page it asks for
+    (`blockLoadDebounceMillis`), so tests wait for it (`pagesFetched`). An entity's page asks for its grid's first
+    page: tests that open one answer it (`answerGrid`), or a harness would wait for it. The whole application's test
+    leaves the grid out: with every stylesheet in the page, jsdom takes seconds to resolve the styles AG Grid reads
+    as it starts.
 - **Layout:**
   - `src/app/core` holds what the whole application uses: the API, problems, the session, the theme, forms'
-    helpers, the catalog (its version, the tree's state, following it), and the pieces pages share (`core/ui`:
-    messages, the confirmation dialog, the unsaved-changes guard, `debounced`);
+    helpers, the catalog (its version, the tree's state, following it), browsing's addresses (`core/browse`), the
+    browser's storage (`core/browser/stored.ts`), and the pieces pages share (`core/ui`: messages, the confirmation
+    dialog, the unsaved-changes guard, `debounced`);
   - `src/app/shell` holds the shell;
   - `src/app/features` holds the pages, by feature;
   - `src/testing` holds the tests' helpers (sessions, and fakes of the page and the other tabs), outside the
