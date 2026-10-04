@@ -869,7 +869,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 - `features/`: auth, tree, browse (grid, renderers, editors, nav-picker, inspector/lineage, breadcrumb), changes (drawer, SQL preview dialog), query, editor (Monaco + `gdq` Monarch grammar), admin (users, connections with a dynamic form, overlay, audit).
 
 **Routes**
-- `/login` and `/change-password`.
+- `/sign-in` (named as the API names it) and `/change-password`.
 - `/browse/**`, using a custom UrlMatcher.
 - `/query` and `/query/:id`, lazy-loaded.
 - `/changes`.
@@ -933,6 +933,37 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 - **Publishing crashed, whatever was published** (found here; B8's publishes had crashed too): MSBuild printed `Stack overflow.` after copying the files, and hung. A dump showed Microsoft Defender's copy accelerator (`MpDetoursCopyAccelerator`, which Defender loads into processes that copy files) loading `MpClient` on one of MSBuild's copying threads, whose small stack overflowed; the runtime's handler then waited for the loader lock that thread held. A console app with Npgsql or SqlClient alone crashed the same way. `MSBUILDCOPYTASKPARALLELISM=1` copies on one thread and avoids it (server.md says so). With it, publishing takes 15 s.
 - **Docs:** `docs/client.md` (developing, the API's types, the theme, building and the CSP, conventions); `server.md` links it, and its publishing section has the Node version, the Defender workaround, and what a project `wwwroot` would do.
 
+**Built in F1**
+- **Server:** `GET /api/auth/password-policy` (signed in, even with a password to change): the lengths a password must have (`PasswordPolicyDto`), for forms to say before a password is sent.
+- **Session** (`core/auth/AuthStore`): the session as the server gives it, asked for once at a time; signing in, signing out and changing the password; `ended()` (a 401) and `passwordChangeRequired()` (a 403) for what requests meet.
+  - **Memory and users:** the application holds what its user could see. When someone else is signed in, or the same user may now see less (fewer permissions after signing in again), it is loaded anew (`PageLoader`): another user at `/`, the same user where they were going; signing out loads `/sign-in`. The same user signing in again after a session ended goes on with what the root services hold.
+  - **Asking again** (`load()`): finding someone else signed in is as if they had signed in here; finding no one, while signed in, is the session ending. Every change of session bumps an `epoch`; answers to questions asked before the latest change are left aside.
+  - **Tabs** tell each other who is signed in (`SessionChannel`, a `BroadcastChannel`): another user, or signing out, loads a tab anew; the same user (signed in again, or a new password) is read again; a tab that held no one's reloads where it is. A tab back from the back-forward cache, or coming into view 30 s after it last asked, asks again.
+- **Routes:** `/sign-in` and `/change-password`, lazy, with `returnUrl` (`safeReturnUrl`: a path read as browsers read it, so tabs, line breaks and `\` don't lead to another site; not these pages; the start otherwise; from the password page, its own `returnUrl`); the shell at `''`, with `signedInGuard` as `canActivate` and `canActivateChild`; unknown addresses to the start. `allowedTo(permission)` sends the signed-out and those with a password to change on, with the return address, as a `canMatch` guard too (it runs before its parents' guards). The return address of a navigation under way is its target (`navigationTarget`). Titles "Page · GalaxyData" (`PageTitles`); route inputs (`withComponentInputBinding`).
+- **Interceptors:**
+  - `sessionInterceptor`: 401 `unauthenticated` signs in again, with a notice and the return address; 403 `password-change-required` goes to its page; 400 `xsrf-token-invalid` asks for the session (a new token) and resends once, setting the header itself (Angular's XSRF interceptor runs before the others and doesn't set one twice), with the resent request's problems handled too. Session problems of requests sent under an older epoch are left alone. 403 `forbidden` is the caller's (a role change ends sessions, a 401).
+  - `catalogVersionInterceptor`: `CatalogVersion` keeps the last `X-Catalog-Version` (for F3).
+- **Problems** (`core/api/problem.ts`): `problemOf` (the API's problems; no answer, or a proxy's 502 to 504, is `unreachable`; codes by status for answers without a problem; `Retry-After`), `problemMessage`, `isSessionProblem`; `Notifier` (a snack bar; the session's problems left out).
+- **Forms:** signal forms (stable in Angular 22; Material's inputs take `[formField]`), submitted through `submission.action` with `<form [formRoot]>`; `fieldErrors` puts `invalid-request` errors on fields by their JSON names; `focusFirstInvalid` after a refused submission.
+- **Pages:**
+  - **Sign-in:** user name and password (shown on asking), the session-ended notice, refusals as the server says them, "Try again" when the server couldn't be reached.
+  - **Change password:** forced (an explanation, and Sign out) or chosen (Cancel); the policy's hint; checks before sending (length, the user name, unchanged, confirmation); wrong and weak passwords on their fields; a hidden user name field for password managers.
+- **Shell:** the bar (a banner, with "Skip to the page"): navigation button, name, color scheme menu, user menu (name, user name and role; change password; sign out); the navigation from `navItems`, filtered by `needs`, beside the page from 960 px and over it below (closing once a page is chosen); the start page greets the user and says what they may do.
+- **Accessibility:** focus goes to `main` when another page opens (not on a page's own address changes); live regions a page opens with are filled after it shows; one navigation landmark (`mat-nav-list` is one).
+- **Bundle:** the auth pages are lazy; the first load is 597 kB (136 kB compressed), Angular and the shell's Material parts. The warning budget is 700 kB (Angular's 500 kB is for a new app); the error stays at 1 MB.
+- **Tests** (109 Vitest, 6 node): problems; return addresses; the page loader; the store (once at a time, failures, sign-in, another user, fewer permissions, sign-out, ended, the password page's return address, a navigation's target, stale answers, asking again finding another user or no one, tabs, coming back); the interceptor (each problem, resending once, the resent request's problems, stale epochs); guards (as `canMatch` and `canActivateChild` too); the catalog version; field errors; the sign-in and password pages through the router and Material's harnesses (focus included); the shell (navigation, user menu, sign-out, narrow screens, banner and skip link); the whole application from the start through signing in to a session ending. Mutations of the key rules (resending once, stale epochs, another user, fewer permissions, other origins, password first, the `canMatch` return address, tabs, focus) fail tests.
+- **Checked by hand** (`ng serve` with the server, then published): wrong credentials; the first administrator's forced change (checks before sending, the wrong current password on its field, the change); a session ended behind the client's back (the 401 brought sign-in with its notice; the same user went on); two tabs following each other's sign-out and sign-in; the narrow layout; the published application under its CSP with no console messages, the lazy pages included.
+- **Found while checking:** a session ending on the password page left the user there; nested navigation landmarks; publishing runs `npm ci`, which fails (`EBUSY`) with `node_modules` half removed while `ng serve` runs (documented in both guides).
+- **Found by the review**, fixed:
+  - asking for the session again could change who was signed in without loading anew, find no one without asking to sign in again, or overwrite a newer session with an older answer (now `found()`, epochs, `canActivateChild`);
+  - a slow request's 401 from before signing in again threw the user out again (stale epochs left alone);
+  - `allowedTo` as `canMatch` lost the return address of the signed-out and of those with a password to change;
+  - `/\t/evil.example` passed as a return address, and a tab reloading at its own address could leave the site (addresses parsed; the page loader refuses other origins; tabs reload in place);
+  - a stale "Can't reach the server" stayed after the session ended;
+  - another user was taken to the previous user's address (now the start);
+  - tabs back from the back-forward cache or into view didn't ask again;
+  - smaller: the same user with fewer permissions kept what they could see before; a tab on the forced password page stayed after the password was changed in another; the password page's return address was lost when the session ended there; a navigation's target was lost to `router.url`; live regions weren't announced; focus didn't move; no banner or skip link; the password-policy endpoint didn't declare its 401; the shell's return test started at `/`.
+
 ---
 
 ## 7. Milestones (each ends green and demonstrable)
@@ -973,7 +1004,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | # | Scope |
 |---|---|
 | F0 | Workspace, theme, generated types, Vitest (see "Built in F0" in §6) |
-| F1 | Auth, guards, interceptors, shell |
+| F1 | Auth, guards, interceptors, shell (see "Built in F1" in §6) |
 | F2 | Admin users and connections (dynamic form) |
 | F3 | Tree and search |
 | F4 | Read-only browse: URL codec, AG adapter, datasource, URL sync, lineage inspector |

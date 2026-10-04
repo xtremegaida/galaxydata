@@ -1,0 +1,57 @@
+<header class="header">
+  <button class="skip" matButton="filled" type="button" (click)="page.focus()">
+    Skip to the page
+  </button>
+  <mat-toolbar class="bar">
+    <button
+      matIconButton
+      aria-label="Navigation"
+      aria-controls="gd-navigation"
+      [attr.aria-expanded]="navOpen()"
+      (click)="navOpen.set(!navOpen())"
+    >
+      <mat-icon>menu</mat-icon>
+    </button>
+    <a class="brand" routerLink="/">
+      <img src="favicon.svg" alt="" width="28" height="28" />
+      <span>GalaxyData</span>
+    </a>
+    <span class="spacer"></span>
+    <gd-color-scheme-menu />
+    <gd-user-menu />
+  </mat-toolbar>
+</header>
+
+<mat-sidenav-container class="container">
+  <mat-sidenav
+    id="gd-navigation"
+    class="navigation"
+    [mode]="wide() ? 'side' : 'over'"
+    [opened]="navOpen()"
+    (openedChange)="navOpen.set($event)"
+  >
+    <!-- The list is the navigation (its role). -->
+    <mat-nav-list aria-label="Pages">
+      @for (item of items(); track item.link) {
+        <a
+          mat-list-item
+          [routerLink]="item.link"
+          routerLinkActive
+          #active="routerLinkActive"
+          [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
+          ariaCurrentWhenActive="page"
+          [activated]="active.isActive"
+          (click)="chosen()"
+        >
+          <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
+          <span matListItemTitle>{{ item.label }}</span>
+        </a>
+      }
+    </mat-nav-list>
+  </mat-sidenav>
+  <mat-sidenav-content>
+    <main class="page" tabindex="-1" #page>
+      <router-outlet />
+    </main>
+  </mat-sidenav-content>
+</mat-sidenav-container>

@@ -90,6 +90,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/password-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What a password must be, for forms to say before it is sent */
+        get: operations["GetPasswordPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users": {
         parameters: {
             query?: never;
@@ -1625,6 +1642,12 @@ export interface components {
             key?: null | string[];
             description?: null | string;
         };
+        PasswordPolicyDto: {
+            /** Format: int32 */
+            minimumLength: number;
+            /** Format: int32 */
+            maximumLength: number;
+        };
         PendingChangeDto: {
             /** Format: int64 */
             id: number;
@@ -2218,6 +2241,7 @@ export type OverlayItemKind = components['schemas']['OverlayItemKind'];
 export type OverlayNavigation = components['schemas']['OverlayNavigation'];
 export type OverlayRelation = components['schemas']['OverlayRelation'];
 export type OverlayVirtualEntity = components['schemas']['OverlayVirtualEntity'];
+export type PasswordPolicyDto = components['schemas']['PasswordPolicyDto'];
 export type PendingChangeDto = components['schemas']['PendingChangeDto'];
 export type PendingChangeKind = components['schemas']['PendingChangeKind'];
 export type PermissionsDto = components['schemas']['PermissionsDto'];
@@ -2506,6 +2530,53 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    GetPasswordPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordPolicyDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1,0 +1,57 @@
+<gd-auth-layout heading="Sign in to GalaxyData">
+  <div role="status">
+    @if (notice(); as notice) {
+      <div class="message notice">
+        <mat-icon>schedule</mat-icon>
+        <p class="text">{{ notice }}</p>
+      </div>
+    }
+  </div>
+  <div role="alert">
+    @if (problem(); as problem) {
+      <div class="message problem">
+        <mat-icon>error</mat-icon>
+        <p class="text">{{ message(problem) }}</p>
+        @if (problem.code === unreachable) {
+          <button matButton type="button" (click)="tryAgain()">Try again</button>
+        }
+      </div>
+    }
+  </div>
+  <form class="form" [formRoot]="form">
+    <mat-form-field>
+      <mat-label>User name</mat-label>
+      <input
+        matInput
+        [formField]="form.userName"
+        autocomplete="username"
+        autocapitalize="none"
+        spellcheck="false"
+      />
+      <mat-error>{{ form.userName().errors()[0]?.message }}</mat-error>
+    </mat-form-field>
+    <mat-form-field>
+      <mat-label>Password</mat-label>
+      <input
+        matInput
+        [formField]="form.password"
+        [type]="passwordShown() ? 'text' : 'password'"
+        autocomplete="current-password"
+      />
+      <button
+        matIconButton
+        matSuffix
+        type="button"
+        aria-label="Show password"
+        [attr.aria-pressed]="passwordShown()"
+        (click)="passwordShown.set(!passwordShown())"
+      >
+        <mat-icon>{{ passwordShown() ? 'visibility_off' : 'visibility' }}</mat-icon>
+      </button>
+      <mat-error>{{ form.password().errors()[0]?.message }}</mat-error>
+    </mat-form-field>
+    <div class="actions">
+      <button matButton="filled" type="submit" [disabled]="form().submitting()">Sign in</button>
+    </div>
+  </form>
+</gd-auth-layout>

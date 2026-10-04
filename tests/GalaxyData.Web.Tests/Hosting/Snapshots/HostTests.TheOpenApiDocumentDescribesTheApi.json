@@ -282,6 +282,57 @@
         }
       }
     },
+    "/api/auth/password-policy": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "What a password must be, for forms to say before it is sent",
+        "operationId": "GetPasswordPolicy",
+        "responses": {
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordPolicyDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/users": {
       "get": {
         "tags": [
@@ -9217,6 +9268,23 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "PasswordPolicyDto": {
+        "required": [
+          "minimumLength",
+          "maximumLength"
+        ],
+        "type": "object",
+        "properties": {
+          "minimumLength": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maximumLength": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },

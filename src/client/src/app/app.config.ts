@@ -1,4 +1,4 @@
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withInterceptors, withXsrfConfiguration } from '@angular/common/http';
 import {
   ApplicationConfig,
   inject,
@@ -6,15 +6,22 @@ import {
   provideBrowserGlobalErrorListeners,
 } from '@angular/core';
 import { MatIconRegistry } from '@angular/material/icon';
-import { provideRouter } from '@angular/router';
+import { TitleStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
 import { routes } from './app.routes';
+import { sessionInterceptor, xsrfCookie, xsrfHeader } from './core/auth/session.interceptor';
+import { catalogVersionInterceptor } from './core/catalog/catalog-version';
+import { PageTitles } from './core/page-titles';
 import { ColorScheme } from './core/theme/color-scheme';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideRouter(routes),
-    provideHttpClient(),
+    provideRouter(routes, withComponentInputBinding()),
+    { provide: TitleStrategy, useClass: PageTitles },
+    provideHttpClient(
+      withXsrfConfiguration({ cookieName: xsrfCookie, headerName: xsrfHeader }),
+      withInterceptors([catalogVersionInterceptor, sessionInterceptor]),
+    ),
     provideAppInitializer(() => {
       // Icons are Material Symbols, served with the client, by name (as text or fontIcon).
       inject(MatIconRegistry).setDefaultFontSetClass(

@@ -22,6 +22,8 @@ public sealed class PasswordTests
       JsonElement session = await (await carol.SignInAsync("carol", "first-password-of-a-user")).JsonAsync(HttpStatusCode.OK);
       session.GetProperty("user").GetProperty("mustChangePassword").GetBoolean().ShouldBeTrue();
       session.GetProperty("user").GetProperty("permissions").GetRawText().ShouldBe("""{"canRead":false,"canEditData":false,"canAdmin":false}""");
+      (await (await carol.GetAsync("/api/auth/password-policy")).JsonAsync(HttpStatusCode.OK)).GetRawText()
+         .ShouldBe("""{"minimumLength":12,"maximumLength":256}""", "the form says what a password must be");
       JsonElement refused = await (await carol.GetAsync("/api/openapi/v1.json")).ProblemAsync(403, ProblemCodes.PasswordChangeRequired);
       refused.GetProperty("detail").GetString()!.ShouldContain("/api/auth/change-password");
 

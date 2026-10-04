@@ -9,12 +9,15 @@ public sealed class PasswordPolicy(IOptions<GalaxyDataOptions> options)
 {
    public const int MaximumLength = 256;
 
+   /// <summary>How many characters a password needs at least.</summary>
+   public int MinimumLength => options.Value.Auth.MinimumPasswordLength;
+
    /// <summary>What is wrong with <paramref name="password"/> for <paramref name="userName"/>; null when nothing is.</summary>
    public string? Problem(string password, string userName)
    {
       ArgumentNullException.ThrowIfNull(password);
       ArgumentNullException.ThrowIfNull(userName);
-      int minimum = options.Value.Auth.MinimumPasswordLength;
+      int minimum = MinimumLength;
       if (password.Length < minimum) { return $"A password needs at least {minimum} characters"; }
       if (password.Length > MaximumLength) { return $"A password may have at most {MaximumLength} characters"; }
       if (password.Contains(userName, StringComparison.OrdinalIgnoreCase)) { return "A password may not hold the user name"; }

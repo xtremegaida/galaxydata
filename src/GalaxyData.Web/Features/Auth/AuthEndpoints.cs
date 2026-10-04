@@ -34,6 +34,9 @@ public sealed record SignInRequest([Required] string UserName, [Required] string
 
 public sealed record ChangePasswordRequest([Required] string CurrentPassword, [Required] string NewPassword);
 
+/// <summary>What a password must be: as long as these say, and not holding the user's name.</summary>
+public sealed record PasswordPolicyDto(int MinimumLength, int MaximumLength);
+
 /// <summary>
 /// Signing in and out, and changing one's own password. The session (anyone may ask) gives the anti-forgery token
 /// every request that changes anything needs, sign-in included.
@@ -72,6 +75,11 @@ public static partial class AuthEndpoints
          .ProducesProblem(StatusCodes.Status429TooManyRequests)
          .RequireAuthorization(Policies.SignedIn)
          .RequireRateLimiting(AuthSetup.SignInLimit);
+      auth.MapGet("/password-policy", GetPasswordPolicy)
+         .WithName("GetPasswordPolicy")
+         .WithSummary("What a password must be, for forms to say before it is sent")
+         .ProducesProblem(StatusCodes.Status401Unauthorized)
+         .RequireAuthorization(Policies.SignedIn);
       return api;
    }
 
@@ -144,6 +152,9 @@ public static partial class AuthEndpoints
       Xsrf.Issue(context, antiforgery, new ClaimsPrincipal(new ClaimsIdentity()));
       return TypedResults.Ok(SignedOut);
    }
+
+   private static Ok<PasswordPolicyDto> GetPasswordPolicy(PasswordPolicy policy) =>
+      TypedResults.Ok(new PasswordPolicyDto(policy.MinimumLength, PasswordPolicy.MaximumLength));
 
    private static async Task<Results<Ok<SessionDto>, ProblemHttpResult>> ChangePasswordAsync(ChangePasswordRequest request, HttpContext context, MetadataDb db,
       IPasswordHasher<AppUser> hasher, PasswordPolicy policy, SessionValidator sessions, IAntiforgery antiforgery, TimeProvider clock, ILoggerFactory logging,

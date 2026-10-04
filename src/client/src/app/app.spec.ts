@@ -1,53 +1,85 @@
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { MatMenuHarness } from '@angular/material/menu/testing';
-import { provideRouter } from '@angular/router';
+import { MatButtonHarness } from '@angular/material/button/testing';
+import { MatInputHarness } from '@angular/material/input/testing';
+import { Title } from '@angular/platform-browser';
+import { Router } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
+import { fakeBrowserProviders, problemBody, sessionOf, signedOut } from '../testing/auth';
+import { requestTo, settle } from '../testing/http';
 import { App } from './app';
-import { ColorScheme } from './core/theme/color-scheme';
+import { appConfig } from './app.config';
+import { ApiClient } from './core/api/api-client';
+import { CatalogVersion } from './core/catalog/catalog-version';
 
 describe('App', () => {
-  beforeEach(async () => {
-    await TestBed.configureTestingModule({
-      imports: [App],
-      providers: [provideRouter([])],
-    }).compileComponents();
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [...appConfig.providers, provideHttpClientTesting(), fakeBrowserProviders()],
+    });
+    http = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => {
-    localStorage.clear();
-    document.documentElement.style.colorScheme = '';
-  });
+  afterEach(() => http.verify());
 
-  it('names the application', async () => {
+  it('signs in, shows the start, and asks to sign in again once the session ends', async () => {
     const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const title = TestBed.inject(Title);
+    const loader = TestbedHarnessEnvironment.loader(fixture);
+    const page = fixture.nativeElement as HTMLElement;
+
+    const starting = router.navigateByUrl('/');
+    (await requestTo(http, '/api/auth/session')).flush(signedOut);
+    await starting;
     await fixture.whenStable();
-    const page = fixture.nativeElement as HTMLElement;
-    expect(page.querySelector('h1')?.textContent).toBe('GalaxyData');
+    expect(router.url).toBe('/sign-in');
+    expect(title.getTitle()).toBe('Sign in · GalaxyData');
+    expect(document.activeElement).toBe(document.body);
+
+    await (
+      await loader.getHarness(MatInputHarness.with({ selector: '[autocomplete=username]' }))
+    ).setValue('ada');
+    await (
+      await loader.getHarness(MatInputHarness.with({ selector: '[autocomplete=current-password]' }))
+    ).setValue('a password long enough');
+    await (await loader.getHarness(MatButtonHarness.with({ text: 'Sign in' }))).click();
+    (await requestTo(http, '/api/auth/sign-in', 'POST')).flush(sessionOf(), {
+      headers: { 'X-Catalog-Version': 'v1' },
+    });
+    await settle();
+    await fixture.whenStable();
+    expect(router.url).toBe('/');
+    expect(title.getTitle()).toBe('Start · GalaxyData');
+    expect(page.querySelector('h1')?.textContent).toBe('Welcome, Ada Lovelace');
+    expect(document.activeElement).toBe(page.querySelector('gd-shell main'));
+    expect(TestBed.inject(CatalogVersion).version()).toBe('v1');
+
+    const refused = firstValueFrom(TestBed.inject(ApiClient).get('/api/catalog')).catch(
+      (error: unknown) => error,
+    );
+    (await requestTo(http, '/api/catalog')).flush(problemBody('unauthenticated', 'Unauthorized'), {
+      status: 401,
+      statusText: 'Unauthorized',
+    });
+    expect(await refused).toMatchObject({ status: 401 });
+    await settle();
+    await fixture.whenStable();
+    expect(router.url).toBe('/sign-in');
+    expect(page.querySelector('[role=status]')?.textContent).toContain(
+      'Your session has ended. Sign in again to go on.',
+    );
   });
 
-  it('shows the color scheme chosen from its menu', async () => {
-    const fixture = TestBed.createComponent(App);
-    const menu = await TestbedHarnessEnvironment.loader(fixture).getHarness(MatMenuHarness);
-    await menu.open();
-    const items = await menu.getItems();
-    expect(await Promise.all(items.map((item) => item.getText()))).toEqual([
-      'brightness_autoSystem',
-      'light_modeLight',
-      'dark_modeDark',
-    ]);
-
-    await menu.clickItem({ text: /Dark$/ });
-    expect(TestBed.inject(ColorScheme).choice()).toBe('dark');
-    expect(document.documentElement.style.colorScheme).toBe('dark');
-    const page = fixture.nativeElement as HTMLElement;
-    expect(page.querySelector('[aria-label="Color scheme"] mat-icon')?.textContent?.trim()).toBe(
-      'dark_mode',
-    );
-
-    await menu.open();
-    const checked = await Promise.all(
-      (await menu.getItems()).map(async (item) => (await item.host()).getAttribute('aria-checked')),
-    );
-    expect(checked).toEqual(['false', 'false', 'true']);
+  it("goes to the start from an address it doesn't know", async () => {
+    TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const navigating = router.navigateByUrl('/no/such/page');
+    (await requestTo(http, '/api/auth/session')).flush(sessionOf('read'));
+    await navigating;
+    expect(router.url).toBe('/');
   });
 });

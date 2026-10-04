@@ -1,44 +1,46 @@
-import { Component, computed, inject } from '@angular/core';
-import { MatIconButton } from '@angular/material/button';
-import { MatIcon } from '@angular/material/icon';
-import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
-import { MatToolbar } from '@angular/material/toolbar';
-import { MatTooltip } from '@angular/material/tooltip';
-import { RouterOutlet } from '@angular/router';
-import { ColorScheme, type ColorSchemeChoice } from './core/theme/color-scheme';
+import { DOCUMENT } from '@angular/common';
+import { Component, Injector, afterNextRender, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterOutlet, type Route } from '@angular/router';
+import { filter } from 'rxjs';
 
-interface SchemeOption {
-  readonly choice: ColorSchemeChoice;
-  readonly label: string;
-  readonly icon: string;
-}
-
+/** The application: its pages, the shell's or those of signing in. */
 @Component({
   selector: 'gd-root',
-  imports: [
-    RouterOutlet,
-    MatToolbar,
-    MatIconButton,
-    MatIcon,
-    MatMenu,
-    MatMenuItem,
-    MatMenuTrigger,
-    MatTooltip,
-  ],
-  templateUrl: './app.html',
-  styleUrl: './app.scss',
+  imports: [RouterOutlet],
+  template: '<router-outlet />',
+  styles: `
+    :host {
+      display: block;
+      height: 100%;
+    }
+  `,
 })
 export class App {
-  protected readonly colorScheme = inject(ColorScheme);
-
-  protected readonly schemes: readonly SchemeOption[] = [
-    { choice: 'system', label: 'System', icon: 'brightness_auto' },
-    { choice: 'light', label: 'Light', icon: 'light_mode' },
-    { choice: 'dark', label: 'Dark', icon: 'dark_mode' },
-  ];
-
-  protected readonly scheme = computed(
-    () =>
-      this.schemes.find((option) => option.choice === this.colorScheme.choice()) ?? this.schemes[0],
-  );
+  constructor() {
+    // Another page opened: focus goes to it, as it would to a page loaded, for keyboards and screen readers. A
+    // page's own changes of address (its filters, its rows) leave focus where it is.
+    const router = inject(Router);
+    const document = inject(DOCUMENT);
+    const injector = inject(Injector);
+    let shown: Route | null | undefined;
+    router.events
+      .pipe(
+        filter((event) => event instanceof NavigationEnd),
+        takeUntilDestroyed(),
+      )
+      .subscribe(() => {
+        let route = router.routerState.snapshot.root;
+        while (route.firstChild) {
+          route = route.firstChild;
+        }
+        if (shown !== undefined && route.routeConfig !== shown) {
+          afterNextRender(
+            () => document.querySelector<HTMLElement>('main')?.focus({ preventScroll: true }),
+            { injector },
+          );
+        }
+        shown = route.routeConfig;
+      });
+  }
 }

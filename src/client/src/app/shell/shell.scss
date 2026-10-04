@@ -1,0 +1,64 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.header {
+  position: relative;
+  flex: none;
+}
+
+// Out of sight until focused, the first thing on the page for keyboards.
+.skip {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  transform: translateY(-200%);
+
+  &:focus {
+    transform: none;
+  }
+}
+
+.bar {
+  gap: 4px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 4px;
+  padding: 4px 8px;
+  border-radius: var(--mat-sys-corner-small);
+  color: inherit;
+  font: var(--mat-sys-title-large);
+  text-decoration: none;
+
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+  }
+}
+
+.spacer {
+  flex: 1;
+}
+
+.container {
+  flex: 1;
+  min-height: 0;
+}
+
+.navigation {
+  width: 240px;
+  border-right: 1px solid var(--mat-sys-outline-variant);
+}
+
+.page {
+  outline: none;
+  height: 100%;
+  box-sizing: border-box;
+}

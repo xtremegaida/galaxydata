@@ -25,6 +25,9 @@ dotnet publish src/GalaxyData.Web -c Release -o out
 - **The client is built as it is published.** `npm ci` and `npm run build` run in `src/client`, and what the build
   leaves in `src/client/dist/browser` is published as `wwwroot`. This needs Node.js 24.15 or later (or 22.22.3 or
   later).
+- **Stop the client's development server first** (`npm start`, and `npm run test:watch`). `npm ci` removes
+  `node_modules` before installing, and on Windows those hold files open there: the publish fails (`EBUSY`) with
+  packages missing. Publishing again with them stopped puts them back.
 - **Skipping it.** `-p:SkipClientBuild=true` publishes the server alone; so does a checkout without the client.
   `-p:ClientRoot=<folder>` (relative to `src/GalaxyData.Web`) builds a client from elsewhere, and fails when there
   is none there. A `wwwroot` in `src/GalaxyData.Web` would be published mixed with the client's build, the
@@ -137,6 +140,8 @@ browser-session cookie that ends after `Auth:SessionIdleTimeout` without request
 - have at least `Auth:MinimumPasswordLength` characters, and at most 256;
 - not contain the user name.
 
+`GET /api/auth/password-policy` gives the lengths, for forms to say before a password is sent.
+
 **New and reset passwords.** A new user, and one whose password an administrator resets, must change the
 password at their next sign-in. Until they do, they may do nothing else: every other request is answered 403
 `password-change-required`.
@@ -197,7 +202,7 @@ after another change of user (a session that ended), ask for the session again.
 Every endpoint says which policy it needs:
 
 - **Anyone:** health, the session, signing in and signing out.
-- **Signed in:** changing one's own password, even while it must be changed.
+- **Signed in:** changing one's own password, and what a password must be, even while it must be changed.
 - **Signed in with no password to change:** everything else, by role. The OpenAPI document needs any role.
 
 A test (`PolicyTests`) fails when an endpoint under `/api` doesn't say. Anything that doesn't say needs a signed-in

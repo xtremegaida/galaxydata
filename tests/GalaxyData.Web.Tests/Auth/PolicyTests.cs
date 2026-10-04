@@ -73,6 +73,7 @@ public sealed class PolicyTests
    [InlineData("/api/users")]
    [InlineData("/api/audit/admin-events")]
    [InlineData("/api/openapi/v1.json")]
+   [InlineData("/api/auth/password-policy")]
    public async Task NoOneSignedInIsUnauthenticated(string path)
    {
       await using WebAppFactory factory = new();
