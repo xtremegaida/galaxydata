@@ -149,6 +149,65 @@ Pages for the signed-in are in the shell (`src/app/shell`), which has:
 
 A route's `title` is shown with the application's name after it: "Sign in · GalaxyData".
 
+## Browsing
+
+`/browse` (`src/app/features/browse`), for everyone who reads data: the catalog, and beside it the page of what is
+chosen in it.
+
+- **The tree** (`CatalogTree`, its state in `CatalogTreeStore`): the sources, then their schemas and entities, as
+  queries name them (`GET /api/catalog/tree/children`). A node's children are loaded when it is first opened.
+  - **What each node says:** a source's kind, whether its schema is being read or couldn't be, and whether it is
+    read-only; an entity's kind (table, view or virtual entity) and its row count as the database estimates it. For
+    those who change data, a table of a source that takes changes is marked when they can't change its rows (it has
+    no primary key). An entity's comment is its row's tooltip.
+  - **Only the rows in view are rendered** (the CDK's virtual scrolling, rows of 32 pixels), so a schema of
+    thousands of tables opens at once.
+  - **Kept:** the tree's state is the application's (`providedIn: 'root'`), so it is as the user left it when they
+    come back to browsing.
+  - **Following the catalog.** Every answer of the API gives the catalog's version (`X-Catalog-Version`, which
+    `CatalogVersion` keeps). When it changes from the one the tree was loaded at, the tree is loaded again:
+    - nodes still there stay open, and those gone close (the keyboard goes to the nearest ancestor still there);
+    - a node whose children couldn't be loaded again keeps those it had;
+    - the children of nodes closed aren't loaded again, but let go: they are loaded as their nodes open, and nodes
+      left open under them open again with them;
+    - nodes opened as it runs stay open.
+
+    While a source's schema is being read, the tree loads the sources again, as the connection list does; reading
+    the schema changes the version, and the rest is loaded again. "Try again", after the tree couldn't be loaded
+    again, loads the whole tree. A node's loads are numbered: an answer a later load's outdates doesn't count, and
+    what asked for it gets the later one's outcome.
+- **Search** (`GET /api/catalog/tree/search`) asks as typing pauses (250 ms). It looks in names, in paths for text
+  with a `.` or `[`, and in columns.
+  - What it finds is listed in place of the tree, the text marked, with each node's path and the columns found:
+    the first 50, then up to 200 on asking.
+  - The field is a combobox: the arrow keys go through what was found, Enter chooses (the first found, when it comes
+    before the answer), and Escape clears (without closing the catalog over the page; with nothing typed, Escape is
+    the page's). "Show more" leaves focus in the field, as it goes once more are found.
+  - The node chosen is shown in the tree, its ancestors opened (search gives their ids), and an entity's page
+    opens.
+- **The address** is the entity's name as queries write it: `/browse/shop.orders`. The tree shows the entity the
+  address names, opening its ancestors; when it isn't loaded, searching for its name finds where it is. (F4 adds
+  the grid's state, and navigations, to the address.)
+- **The start of browsing** (`/browse`) lists the connections, with how their schemas stand (followed while they are
+  read), and what building the catalog found wrong (`GET /api/catalog`).
+- **An entity's page** (`GET /api/catalog/entity`) says:
+  - what the entity is: its full name, rows, key, unique keys, the column that shows its rows where others refer to
+    them, triggers, and what the user may do with its rows (and why not);
+  - its columns: types as the language and the database write them, keys, identity, computed, defaults, row
+    versions, hidden; and, when its rows may be changed, what may be done with each;
+  - its navigations: where they lead, how many rows, through which columns, and whether they are inverse, added by
+    the overlay, not enforced, across connections, hidden or inherited;
+  - a virtual entity's query, and what is wrong with it.
+
+  It is read again when the catalog changes, and shown meanwhile (and when reading it again fails).
+- **Reading again** what was read of the catalog: `followCatalog(reload)` gives an operator a resource reads its
+  answers through, which notes the version each came with, and reloads it when the catalog is at another. An answer
+  that is itself the first to give the new version isn't read again.
+- **The layout.** From 1024 pixels the catalog is beside the page, its width set by a splitter and kept in the
+  browser. The splitter is dragged, or moved with the arrow keys, Home and End, from 200 to 640 pixels. On narrower
+  screens the catalog opens over the page: at the start of browsing, and on asking ("Catalog"). It closes once an
+  entity is chosen.
+
 ## Administration
 
 Administrators' pages are under `/admin` (`features/admin`). They are loaded when one is opened, and only for
@@ -227,7 +286,21 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
 ## Accessibility
 
 - **Another page opened:** focus goes to the page (`main`), as it would to a page loaded. A page's own changes of
-  address (its filters, its rows) leave focus where it is.
+  address (its filters, its rows) leave focus where it is. So does a navigation that says so (its state is
+  `keepFocus`): an entity chosen in the catalog's tree beside the page, where the keyboard goes on choosing.
+  Going back or forward doesn't leave focus where it is, though the browser gives such a navigation its state again.
+- **Another entity shown in place of one** moves focus to its page's heading: after a link followed in the page
+  (the link is gone), or an entity chosen in the catalog over the page (which gives focus back to its button).
+  Focus in the catalog beside the page (its tree, its search) stays.
+- **The catalog's tree** is a tree as WAI-ARIA describes one. It is one stop in the tab order.
+  - The arrow keys move through it, and Right and Left open and close. Home, End, Page Up and Page Down go further;
+    `*` opens a node's siblings.
+  - Enter or Space opens an entity, or opens and closes a node. Typing a name's first letters goes to it.
+  - The node the keyboard is on is the tree's active descendant, as rows out of view aren't in the page. It is
+    once its row is rendered; until then the tree itself has focus. Each node says its level, its place among its
+    siblings, whether it is open, and whether it is the entity shown.
+  - Pressing a row leaves focus on the tree, not on the entity's link in it (whose row may scroll out of the page).
+  - What the icons show is said in words to screen readers ("table", "read-only").
 - **Live regions** are in the page before what they announce: an alert or status region is always there, and its
   message is put in it (problems, a schema's state, the list's "no user has…"). Those a page has as it opens are
   filled once it shows (the sign-in page's notice that the session ended).
@@ -268,11 +341,13 @@ policy refuses:
 This is why the build doesn't inline critical CSS (`inlineCritical: false` in `angular.json`). Angular would load
 the rest of the stylesheet with an inline script, which the policy refuses.
 
-**Size.** The first load holds the framework, the Material parts of the shell, and the shell: about 670 kB, 156 kB
-compressed. It grows as the features use more of Angular's core (resources, for one), which every page shares.
-Pages not needed at first are loaded when opened (lazy routes): the sign-in and password pages, the
-administrators' pages (about 330 kB), and the features' pages as they come. The build warns above 700 kB and fails
-above 1 MB (`budgets` in `angular.json`).
+**Size.** The first load holds the framework, the Material parts of the shell, and the shell: about 690 kB, 161 kB
+compressed. It grows as the features use more of Angular's core (resources, for one), which every page shares, and
+of modules the shell uses: the CDK's virtual scrolling is in the module of the scrolling the shell's navigation
+uses, so it loads at first though only browsing uses it. Pages not needed at first are loaded when opened (lazy
+routes): the sign-in and password pages, the administrators' pages (about 260 kB), browsing (about 50 kB), and the
+features' pages as they come. The build warns above 700 kB and fails above 1 MB (`budgets` in `angular.json`).
+GalaxyData isn't meant for slow networks, so these can be raised when a feature needs it.
 
 ## Conventions
 
@@ -280,7 +355,7 @@ above 1 MB (`budgets` in `angular.json`).
 - **Data:** what a page reads comes from `rxResource` (stable in Angular 22), read again after a change or on
   asking. Its loader runs outside the injection context, so it uses fields `inject()` filled, never `inject()`
   itself. `pollWhile` loads a resource again while what it holds is still changing, every `POLL_INTERVAL`
-  milliseconds (two seconds; tests make it one).
+  milliseconds (two seconds; tests make it one). What was read of the catalog is read through `followCatalog`.
 - **Names:** the selector prefix is `gd`. File names have no type suffix (`color-scheme.ts`), as Angular's
   current style guide has it.
 - **Format:** Prettier, with 2-space indentation and lines of up to 100 characters.
@@ -294,10 +369,12 @@ above 1 MB (`budgets` in `angular.json`).
     plain clicks (`clickButton`); the test then answers the request.
   - **Connections' forms are tested with the server's own descriptors** (the snapshot its tests keep), so a change
     to a kind's form shows in the client's tests too.
+  - **The catalog's tree is given a height** (`viewportsFor` in `src/testing/catalog.ts`): jsdom lays nothing out,
+    so a virtual scroll viewport would render a few rows. The search's wait is `SEARCH_WAIT` (none in tests).
 - **Layout:**
   - `src/app/core` holds what the whole application uses: the API, problems, the session, the theme, forms'
-    helpers, and the pieces pages share (`core/ui`: messages, the confirmation dialog, the unsaved-changes
-    guard);
+    helpers, the catalog (its version, the tree's state, following it), and the pieces pages share (`core/ui`:
+    messages, the confirmation dialog, the unsaved-changes guard, `debounced`);
   - `src/app/shell` holds the shell;
   - `src/app/features` holds the pages, by feature;
   - `src/testing` holds the tests' helpers (sessions, and fakes of the page and the other tabs), outside the

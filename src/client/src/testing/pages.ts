@@ -8,15 +8,16 @@ import { provideRouter, withComponentInputBinding, type Routes } from '@angular/
 import { RouterTestingHarness } from '@angular/router/testing';
 import { AuthStore, type Session } from '../app/core/auth/auth-store';
 import { sessionInterceptor } from '../app/core/auth/session.interceptor';
+import { catalogVersionInterceptor } from '../app/core/catalog/catalog-version';
 import { fakeBrowserProviders, sessionOf } from './auth';
 
 /**
- * What pages' tests need: the API (answered by the test), the router with `routes`, fakes of the browser, and
- * Material without animations (jsdom ends none, so a dialog would never finish closing).
+ * What pages' tests need: the API (answered by the test, its catalog versions kept), the router with `routes`, fakes
+ * of the browser, and Material without animations (jsdom ends none, so a dialog would never finish closing).
  */
 export function pageProviders(routes: Routes): (Provider | EnvironmentProviders)[] {
   return [
-    provideHttpClient(withInterceptors([sessionInterceptor])),
+    provideHttpClient(withInterceptors([sessionInterceptor, catalogVersionInterceptor])),
     provideHttpClientTesting(),
     provideRouter(routes, withComponentInputBinding()),
     fakeBrowserProviders(),

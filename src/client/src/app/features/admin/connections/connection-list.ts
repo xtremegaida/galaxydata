@@ -21,7 +21,7 @@ import { pollWhile } from '../../../core/api/poll';
 import { problemMessage, problemOf } from '../../../core/api/problem';
 import { Message } from '../../../core/ui/message';
 import type { Connection } from './connection-draft';
-import { SchemaStatus } from './schema-status';
+import { SchemaStatus } from '../../../core/catalog/schema-status';
 
 /** Whether a connection's schema is still to be read, or being read. */
 export function reading(connection: Connection): boolean {

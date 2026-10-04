@@ -10,7 +10,8 @@ namespace GalaxyData.Web.Hosting;
 /// A path of the client's: not the API's (paths under <c>/api</c> that no endpoint has are the API's 404s and 405s),
 /// nor a file of the kinds the client is built into (a script, a style sheet, an image or font), which is a 404 when
 /// it's missing. Routing's own <c>nonfile</c> won't do: the client's paths have dots in them
-/// (<c>/browse/shop.customers</c>).
+/// (<c>/browse/shop.customers</c>). Paths under <c>/browse</c> are always the client's: their segments are entities'
+/// names, which may end as files do (<c>/browse/geo.map</c>), and the client has no files there.
 /// </summary>
 internal sealed class ClientPathConstraint : IRouteConstraint
 {
@@ -29,6 +30,7 @@ internal sealed class ClientPathConstraint : IRouteConstraint
       if (path == null) { return true; }
       path = path.TrimStart('/');
       if (path.Equals("api", StringComparison.OrdinalIgnoreCase) || path.StartsWith("api/", StringComparison.OrdinalIgnoreCase)) { return false; }
+      if (path.StartsWith("browse/", StringComparison.Ordinal)) { return true; }
       // A segment with matrix parameters (;f=...;row=...) is the client's, whatever its values end with.
       string last = path[(path.LastIndexOf('/') + 1)..];
       return last.Contains(';', StringComparison.Ordinal) || !FileExtensions.Contains(Path.GetExtension(last));

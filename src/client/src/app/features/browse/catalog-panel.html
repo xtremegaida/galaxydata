@@ -1,0 +1,103 @@
+<div class="search">
+  <mat-form-field appearance="outline" subscriptSizing="dynamic" class="search-field">
+    <mat-icon matPrefix>search</mat-icon>
+    <mat-label>Find in the catalog</mat-label>
+    <input
+      #field
+      matInput
+      type="search"
+      role="combobox"
+      aria-autocomplete="list"
+      aria-controls="gd-catalog-hits"
+      [attr.aria-expanded]="searching()"
+      [attr.aria-activedescendant]="activeHit() >= 0 ? hitId(activeHit()) : null"
+      autocomplete="off"
+      spellcheck="false"
+      maxlength="200"
+      [value]="text()"
+      (input)="typed($event)"
+      (keydown)="keydown($event)"
+    />
+    @if (text()) {
+      <button matIconButton matSuffix type="button" aria-label="Clear the search" (click)="clear()">
+        <mat-icon>close</mat-icon>
+      </button>
+    }
+  </mat-form-field>
+  @if (searching() && waiting()) {
+    <mat-progress-bar mode="indeterminate" class="progress" aria-hidden="true" />
+  }
+</div>
+
+<div class="status">
+  <span role="status">{{ status() }}</span>
+  @if (searching() && found()?.more && take() < mostHits) {
+    <button matButton type="button" [disabled]="waiting()" (click)="more()">Show more</button>
+  }
+</div>
+<div role="alert">
+  @if (problem(); as problem) {
+    <gd-message kind="problem">
+      Couldn't search: {{ message(problem) }}
+      <button gdMessageAction matButton type="button" (click)="search.reload()">Try again</button>
+    </gd-message>
+  }
+</div>
+
+<div
+  id="gd-catalog-hits"
+  role="listbox"
+  aria-label="Found in the catalog"
+  class="hits"
+  [class.stale]="waiting()"
+  [hidden]="!searching()"
+>
+  @for (hit of hits(); track hit.node.id; let i = $index) {
+    <!-- The keyboard chooses from the search field, which has focus (its active descendant). -->
+    <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -->
+    <div
+      role="option"
+      class="hit"
+      [id]="hitId(i)"
+      [class.active]="i === activeHit()"
+      [attr.aria-selected]="i === activeHit()"
+      (mousedown)="$event.preventDefault()"
+      (click)="choose(hit)"
+    >
+      <mat-icon class="kind">{{ iconOf(hit.node) }}</mat-icon>
+      <span class="hit-text">
+        <span class="name">
+          @for (part of parts(hit.node.name); track $index) {
+            @if (part.match) {
+              <mark>{{ part.text }}</mark>
+            } @else {
+              <span>{{ part.text }}</span>
+            }
+          }
+        </span>
+        <span class="cdk-visually-hidden">, {{ kindOf(hit.node) }}</span>
+        @if (hit.node.id !== hit.node.name) {
+          <span class="path">
+            <span class="cdk-visually-hidden">, at </span>
+            @for (part of parts(hit.node.id); track $index) {
+              @if (part.match) {
+                <mark>{{ part.text }}</mark>
+              } @else {
+                <span>{{ part.text }}</span>
+              }
+            }
+          </span>
+        }
+        @if (hit.columns) {
+          <span class="columns">
+            <span class="cdk-visually-hidden">, </span>Columns: {{ hit.columns.join(', ') }}
+          </span>
+        }
+      </span>
+    </div>
+  }
+</div>
+
+@if (!searching()) {
+  <gd-catalog-tree class="tree" [keepFocus]="keepFocus()" (chosen)="chosen.emit($event)" />
+}

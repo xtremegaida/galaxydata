@@ -1,0 +1,113 @@
+<div role="alert">
+  @if (rootProblem(); as problem) {
+    <gd-message kind="problem">
+      {{ store.loaded() ? "Couldn't load the catalog again: " : "Couldn't load the catalog: "
+      }}{{ message(problem) }}
+      <button gdMessageAction matButton type="button" (click)="store.retry()">Try again</button>
+    </gd-message>
+  }
+  @if (failure(); as failure) {
+    <gd-message kind="problem">
+      Couldn't open {{ failure.node.name }}: {{ message(failure.problem) }}
+      <button gdMessageAction matButton type="button" (click)="retry()">Try again</button>
+    </gd-message>
+  }
+</div>
+
+@if (store.loaded() && rows().length === 0) {
+  <p class="empty">
+    There are no connections yet.
+    @if (canAdmin()) {
+      <a routerLink="/admin/connections/new">Make one</a> to browse a database.
+    }
+  </p>
+} @else if (!store.loaded() && store.loadingRoots()) {
+  <div class="loading">
+    <mat-progress-spinner mode="indeterminate" diameter="24" aria-hidden="true" />
+    <span>Loading the catalog…</span>
+  </div>
+}
+
+<cdk-virtual-scroll-viewport
+  class="viewport"
+  [class.hidden]="rows().length === 0"
+  [itemSize]="rowHeight"
+  role="tree"
+  aria-label="Catalog"
+  tabindex="0"
+  [attr.aria-activedescendant]="activeDomId()"
+  (focus)="focused()"
+  (keydown)="keydown($event)"
+>
+  <!-- The keyboard is the tree's, which has focus (each node its active descendant in turn). -->
+  <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -->
+  <div
+    *cdkVirtualFor="let row of rows(); trackBy: trackRow"
+    class="row"
+    role="treeitem"
+    [id]="domId(row.node.id)"
+    [class.active]="row.node.id === store.active()"
+    [class.selected]="row.node.id === store.selected()"
+    [attr.aria-level]="row.level"
+    [attr.aria-setsize]="row.siblings"
+    [attr.aria-posinset]="row.position"
+    [attr.aria-expanded]="row.node.hasChildren ? row.expanded && !row.loading : null"
+    [attr.aria-busy]="row.loading ? true : null"
+    [attr.aria-selected]="row.node.id === store.selected() ? true : null"
+    [style.padding-inline-start.px]="(row.level - 1) * 16 + 4"
+    [title]="row.node.comment ?? ''"
+    (mousedown)="pressed($event)"
+    (click)="clicked(row, $event)"
+  >
+    <span class="twisty" aria-hidden="true" (click)="toggled(row, $event)">
+      @if (row.loading) {
+        <mat-progress-spinner mode="indeterminate" diameter="16" />
+      } @else if (row.node.hasChildren) {
+        <mat-icon [class.open]="row.expanded">chevron_right</mat-icon>
+      }
+    </span>
+    <mat-icon class="kind">{{ iconOf(row.node) }}</mat-icon>
+    @if (isEntity(row.node)) {
+      <a
+        class="name"
+        tabindex="-1"
+        [routerLink]="['/browse', row.node.id]"
+        [state]="navigationState()"
+        >{{ row.node.name }}</a
+      >
+    } @else {
+      <span class="name">{{ row.node.name }}</span>
+    }
+    <span class="cdk-visually-hidden">, {{ kindOf(row.node) }}</span>
+    @if (row.node.label) {
+      <span class="label">{{ row.node.label }}</span>
+    }
+    <span class="details">
+      @switch (row.node.status) {
+        @case ('loading') {
+          <span class="status">reading…</span>
+        }
+        @case ('notLoaded') {
+          <span class="status">not read yet</span>
+        }
+        @case ('failed') {
+          <mat-icon class="failed">error</mat-icon>
+          <span class="cdk-visually-hidden">, its schema couldn't be read</span>
+        }
+      }
+      @if (row.node.isReadOnly) {
+        <mat-icon class="flag">lock</mat-icon>
+        <span class="cdk-visually-hidden">, read-only</span>
+      }
+      @if (unchangeable(row)) {
+        <mat-icon class="flag">edit_off</mat-icon>
+        <span class="cdk-visually-hidden">, its rows can't be changed</span>
+      }
+      @if (rowsOf(row.node); as rows) {
+        <span class="rows" [title]="exactRows(row.node)">
+          <span class="cdk-visually-hidden">, about </span>{{ rows }}
+        </span>
+      }
+    </span>
+  </div>
+</cdk-virtual-scroll-viewport>

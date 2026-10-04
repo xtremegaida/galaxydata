@@ -26,6 +26,11 @@ export const routes: Routes = [
     children: [
       { path: '', title: 'Start', component: Start },
       {
+        path: 'browse',
+        canMatch: [allowedTo('canRead')],
+        loadChildren: () => import('./features/browse/browse.routes').then((m) => m.browseRoutes),
+      },
+      {
         path: 'admin',
         canMatch: [allowedTo('canAdmin')],
         loadChildren: () => import('./features/admin/admin.routes').then((m) => m.adminRoutes),

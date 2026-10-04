@@ -76,7 +76,7 @@ describe('Shell', () => {
   it('leads to the pages, the one open marked', async () => {
     const { loader, page } = await open(sessionOf('read'));
     const items = await (await loader.getHarness(MatNavListHarness)).getItems();
-    expect(await Promise.all(items.map((item) => item.getTitle()))).toEqual(['Start']);
+    expect(await Promise.all(items.map((item) => item.getTitle()))).toEqual(['Start', 'Browse']);
     expect(await (await items[0].host()).getAttribute('aria-current')).toBe('page');
     const groups = [...page.querySelectorAll('[role=navigation] [role=group]')];
     expect(groups.map((group) => group.getAttribute('aria-labelledby'))).toEqual([null]);

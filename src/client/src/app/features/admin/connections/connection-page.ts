@@ -40,7 +40,7 @@ import {
 import { ConnectionFields } from './connection-fields';
 import { reading } from './connection-list';
 import { ConnectionSnapshots } from './connection-snapshots';
-import { SchemaStatus } from './schema-status';
+import { SchemaStatus } from '../../../core/catalog/schema-status';
 
 type TestResult = Schema<'ConnectionTestDto'>;
 

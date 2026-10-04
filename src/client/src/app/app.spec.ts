@@ -1,3 +1,4 @@
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
@@ -5,12 +6,14 @@ import { MatButtonHarness } from '@angular/material/button/testing';
 import { MatInputHarness } from '@angular/material/input/testing';
 import { Title } from '@angular/platform-browser';
 import { Router } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, of } from 'rxjs';
 import { fakeBrowserProviders, problemBody, sessionOf, signedOut } from '../testing/auth';
+import { answerChildren, catalogOf, entityOf, searchUrl, sourceNode } from '../testing/catalog';
 import { requestTo, settle } from '../testing/http';
 import { App } from './app';
 import { appConfig } from './app.config';
 import { ApiClient } from './core/api/api-client';
+import { keepFocus } from './core/browser/keep-focus';
 import { CatalogVersion } from './core/catalog/catalog-version';
 
 describe('App', () => {
@@ -102,5 +105,60 @@ describe('App', () => {
     (await requestTo(http, '/api/auth/session')).flush(sessionOf('read'));
     await navigating;
     expect(router.url).toBe('/');
+  });
+});
+
+describe('App, browsing', () => {
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        ...appConfig.providers,
+        provideHttpClientTesting(),
+        fakeBrowserProviders(),
+        {
+          provide: BreakpointObserver,
+          useValue: { observe: () => of({ matches: true, breakpoints: {} }) },
+        },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  it('lets readers browse, leaving focus where it is for navigations that say so', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const page = fixture.nativeElement as HTMLElement;
+    const navigating = router.navigateByUrl('/browse');
+    (await requestTo(http, '/api/auth/session')).flush(sessionOf('read'));
+    await navigating;
+    expect(router.url).toBe('/browse');
+    await answerChildren(http, null, [sourceNode('shop')]);
+    (await requestTo(http, '/api/catalog')).flush(catalogOf());
+    await settle();
+    await fixture.whenStable();
+    expect(page.querySelector('h1')?.textContent).toBe('Browse');
+
+    const tree = page.querySelector<HTMLElement>('[role=tree]')!;
+    tree.focus();
+    const opening = router.navigate(['/browse', 'shop.orders'], { state: keepFocus });
+    (await requestTo(http, searchUrl('shop.orders', 20))).flush({
+      text: 'shop.orders',
+      hits: [],
+      more: false,
+    });
+    (await requestTo(http, '/api/catalog/entity?name=shop.orders')).flush(entityOf());
+    expect(await opening).toBe(true);
+    await settle();
+    await fixture.whenStable();
+    expect(page.querySelector('h1')?.textContent).toBe('shop.orders');
+    expect(document.activeElement).toBe(tree);
+
+    await router.navigateByUrl('/browse');
+    (await requestTo(http, '/api/catalog')).flush(catalogOf());
+    await settle();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(page.querySelector('gd-shell main'));
   });
 });

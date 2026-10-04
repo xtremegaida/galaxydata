@@ -23,6 +23,7 @@ export interface NavSection {
 /** The application's pages, in the navigation's order. */
 export const navItems: readonly NavItem[] = [
   { label: 'Start', icon: 'home', link: '/', exact: true },
+  { label: 'Browse', icon: 'account_tree', link: '/browse', needs: 'canRead' },
   {
     label: 'Users',
     icon: 'group',

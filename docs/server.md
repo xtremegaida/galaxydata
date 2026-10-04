@@ -812,7 +812,8 @@ no-cache`, so a new version is picked up at once. That includes paths with dots 
 
 **Asset files are the exception.** A path whose last segment has no matrix parameters and ends in an extension of
 the kinds the client is built into is a file, and a 404 when it's missing. Those extensions are: `.js`, `.mjs`,
-`.css`, `.map`, `.json`, `.txt`, `.webmanifest`, `.wasm`, images, and fonts.
+`.css`, `.map`, `.json`, `.txt`, `.webmanifest`, `.wasm`, images, and fonts. Paths under `/browse` are always the
+client's: their segments are entities' names, which may end as files do (`/browse/geo.map`).
 
 **Paths under `/api`** that no endpoint has are the API's 404s, and a method an endpoint doesn't take is a 405.
 They are never the client's page.

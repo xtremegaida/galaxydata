@@ -155,7 +155,8 @@ public sealed class HostTests
          await using WebAppFactory factory = new() { WebRoot = webRoot };
          HttpClient client = factory.CreateClient();
          foreach (string path in (string[])["/", "/browse/shop.customers", "/browse/shop.customers;f=country:eq:ZA;row=42/orders;sort=-placed_at?at=1",
-                                            "/browse/files.docs;f=name:eq:report.json", "/browse/files.docs;f=path:eq:a%2Fb.json", "/query/12", "/apis"])
+                                            "/browse/files.docs;f=name:eq:report.json", "/browse/files.docs;f=path:eq:a%2Fb.json", "/browse/geo.map",
+                                            "/browse/shop.orders/lines.json", "/query/12", "/apis"])
          {
             HttpResponseMessage page = await client.GetAsync(path, Token);
             page.StatusCode.ShouldBe(HttpStatusCode.OK, path);
@@ -168,6 +169,7 @@ public sealed class HostTests
          TestApi api = await TestApi.SignedInAsync(factory);
          await (await api.GetAsync("/assets/missing.js")).ProblemAsync(404, "not-found");
          await (await api.GetAsync("/favicon.ico")).ProblemAsync(404, "not-found");
+         await (await api.GetAsync("/browser/missing.js")).ProblemAsync(404, "not-found");
       }
       finally
       {

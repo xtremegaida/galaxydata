@@ -2,7 +2,7 @@ import { DatePipe } from '@angular/common';
 import { Component, input } from '@angular/core';
 import { MatIcon } from '@angular/material/icon';
 import { MatProgressSpinner } from '@angular/material/progress-spinner';
-import type { Schema } from '../../../core/api/api-client';
+import type { Schema } from '../api/api-client';
 
 /** Whether a connection's schema has been read: not yet, being read, read (when), or not (why). */
 @Component({

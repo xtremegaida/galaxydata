@@ -405,7 +405,7 @@ Built in M9 on Npgsql and Microsoft.Data.SqlClient; the dialects were M3's, firs
   - paths under `/api`, which give the API's 404s and 405s;
   - files of the kinds the client is built into (`.js`, `.css`, fonts, images), which give 404s when missing.
 
-  Routing's `nonfile` would have turned away `/browse/shop.customers`. A last segment with matrix parameters is always the client's. Note for F4: a last segment that ends in such an extension without matrix parameters is taken as a file.
+  Routing's `nonfile` would have turned away `/browse/shop.customers`. A last segment with matrix parameters is always the client's. Note for F4: a last segment that ends in such an extension without matrix parameters is taken as a file (settled in F3: paths under `/browse` are always the client's).
 - **Tests** (`tests/GalaxyData.Web.Tests`, `WebApplicationFactory` with a data directory of its own):
   - health, and a check that fails;
   - the data directory made and held;
@@ -993,6 +993,39 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
   - focus was lost after Change, Clear, Keep it, Unlock and removing a setting;
   - smaller: secrets sent with a string that no longer masked them; reading again dropped changes without asking; unlocking dropped changes; the reset dialog closed while resetting; actions stayed enabled while converting; focus didn't reach options' and other settings' errors; the policy never asked again; password managers offered to keep administrators' passwords for others; live regions inserted with their messages; an empty title while loading; a heading out of order; the confirmation not described; toggles' help not tied to them; the navigation's section not a group; tests named for more than they tested.
 
+**Built in F3**
+- **Routes:** `/browse` (lazy, `allowedTo('canRead')` as `canMatch`): `BrowseLayout` around the start of browsing (`''`) and an entity's page (`:entity`, the entity's name as queries write it; titled by it). "Browse" in the navigation.
+- **The tree** (`CatalogTree`; its state in `CatalogTreeStore`, root-provided, so it is as the user left it):
+  - children loaded as a node is first opened; rows flattened (level, place among siblings, the source a node is in); only the rows in view rendered (CDK virtual scrolling);
+  - badges: a source's kind, its schema being read, not read or not readable, read-only; an entity's kind and estimated rows; for those who change data, tables of sources that take changes whose rows they can't change; comments as tooltips;
+  - the WAI-ARIA tree: one tab stop, the active descendant for the node the keyboard is on (rows out of view aren't in the page), arrows, Home, End, Page Up and Down, `*`, Enter and Space, type-ahead;
+  - following the catalog: every answer's `X-Catalog-Version` is kept; a version other than the one the tree was loaded at (or an unknown one) loads it again: open nodes still there stay open (those opened as it runs too), nodes gone close, the keyboard goes to the nearest ancestor left, a node whose children couldn't be loaded again keeps them, and the children of closed nodes are let go, loaded as their nodes open (nodes left open under them opening again with them). While a source's schema is being read, the sources are loaded again (backing off after failures), and the rest when they come at another version; a refresh under way for a version isn't asked for again. "Try again" loads the whole tree. Each node's loads are numbered: an answer a later load's outdates doesn't count, and what asked for it gets the later one's outcome.
+- **Search:** the server's (names, paths, columns), as typing pauses (250 ms, `SEARCH_WAIT`); found nodes listed in place of the tree with the text marked, their paths and the columns found (50, then 200 on asking); a combobox (arrows, Enter, which chooses the first found when it comes before the answer, Escape); the node chosen shown in the tree, its ancestors opened, and an entity's page opened.
+- **The address:** the tree shows the entity the address names (opening its ancestors; search finds where an entity not loaded is). A reveal under way for the entity chosen in the search is shared, not searched again.
+- **The start of browsing:** the connections (kind, the schema's state, entities, read-only) followed while read, and what building the catalog found wrong (`GET /api/catalog`).
+- **An entity's page:** what it is (full name, rows, key, unique keys, the column showing its rows, triggers, what the user may do with its rows and why not), its columns (types as the language and the database write them; key, identity, computed, default, row version, hidden; what may be done with each when its rows may be changed), its navigations (target, rows, through which columns; inverse, overlay, not enforced, across connections, hidden, inherited), a virtual entity's query and problem. Read again when the catalog changes (`followCatalog`: not for the answer that says so), shown meanwhile and when reading again fails. F4 adds the grid beside it.
+- **Layout:** the catalog beside the page from 1024 pixels, its width set by a splitter (dragged, or the arrow keys, Home and End; 200 to 640 pixels; kept in the browser); over the page below (at the start of browsing and on asking; closed once an entity is chosen).
+- **Focus:** a navigation may say to leave focus where it is (`keepFocus`, honoured by `App`, not for back and forward): an entity chosen in the tree beside the page. Another entity shown in place of one (a link followed, an entity chosen in the catalog over the page) moves focus to its heading; focus in the catalog beside the page stays. Pressing a row leaves focus on the tree, not its link; the tree's active descendant is set once the row is rendered.
+- **Server:** paths under `/browse` are always the client's (`ClientPathConstraint`): entities' names may end as files do (`/browse/geo.map` was a 404 when reloaded). This settles B0's note for F4.
+- **Shared:** `followCatalog`, `debounced`, `keepFocus`; `SchemaStatus` moved to `core/catalog`.
+- **Bundle:** browsing is a lazy chunk of 52 kB; the first load is 690 kB (161 kB compressed): the CDK's virtual scrolling is in the module of the scrolling the shell's navigation uses, so it loads at first. The user confirmed (2026-10-04) that the first load may grow, GalaxyData not being meant for slow networks; the budgets stay until a feature needs more.
+- **Tests** (264 Vitest, 6 node; the server's host test for `/browse` paths): the store (loading once, opening, failures, closing under the keyboard, reveals along paths and of new nodes, finding an entity not loaded, a shared reveal, the entity selected last, refreshes keeping, closing and reopening nodes, nodes opened as it runs, earlier answers and failures, refreshing again, catching up after failures and from the sources' loads, polling's problems); `followCatalog`; `debounced`; `keepsFocus`; the tree (ARIA, badges, keys with pages, `*`, modifiers and type-ahead, the active descendant, pressing rows, Enter keeping focus, clicks, failures, an empty catalog, marks for those who change data, following schemas read); the search (marks, paths, columns, nothing found, more and focus, new text, arrows and new results, choosing entities and schemas with focus kept or not, Enter before the answer, Escape, failures); the entity page (structure, read-only, virtual entities, not found, failures, reading again, a failed re-read, another entity loading, focus kept in the tree or moved); the start; the layout (the splitter's keys, drag and button, the width kept, narrow screens: opening, Escape, links, the entity shown chosen again); the application (readers browse, focus kept or moved). Mutations of the key rules and of the review's fixes fail tests.
+- **Checked by hand** against the server: the tree (opening shop, keys, Enter keeping focus in the tree), a navigation's link moving focus to the next entity's heading, search with column matches chosen by keys, a deep link revealed through search, a schema refreshed elsewhere caught up on the next answer, the narrow layout.
+- **Found while checking:** the entity page read an entity twice when its own answer brought a new catalog version (now `followCatalog`); every table of a read-only source was marked as unchangeable (now only tables of sources that take changes); the layout read the child route before it was activated (`route.snapshot.firstChild`); the sources' polls caught the tree up to their version, leaving opened nodes' children behind (only whole loads set the tree's version now).
+- **Found by the review**, fixed:
+  - a refresh closed nodes opened while it ran, and lost the keyboard's place in them;
+  - an outdated load's failure closed a node a later load had opened, saying it couldn't be opened;
+  - the tree stopped following the catalog after its first load failed (no version known), or after a refresh failed (Try again loaded only the sources);
+  - "Show more" took focus away with it;
+  - Escape in the search closed the catalog over the page;
+  - back and forward kept focus where it was, from the state of a navigation the tree made;
+  - pressing an entity's name put focus on its link, out of the tree;
+  - the active descendant pointed at rows not yet rendered;
+  - nodes left open under a closed node didn't stay open through a refresh (the docs said they did);
+  - choosing an entity in the catalog over an entity's page left focus on the catalog's button;
+  - entities whose names end as files do (`geo.map`) were 404s when their address was reloaded (server);
+  - untested rules (mutations that passed): an earlier answer clearing a load under way, the entity selected last, page keys, `*`, modifiers, a space typed in a name, the link's choice closing the catalog, new results and new text in the search, the search's focus state, another entity not shown under the old one's address, focus left in the tree, dragging with another button.
+
 ---
 
 ## 7. Milestones (each ends green and demonstrable)
@@ -1035,7 +1068,7 @@ Scaffold with `npx @angular/cli@latest new … --zoneless --style=scss --ssr=fal
 | F0 | Workspace, theme, generated types, Vitest (see "Built in F0" in §6) |
 | F1 | Auth, guards, interceptors, shell (see "Built in F1" in §6) |
 | F2 | Admin users and connections (dynamic form) (see "Built in F2" in §6) |
-| F3 | Tree and search |
+| F3 | Tree and search (see "Built in F3" in §6) |
 | F4 | Read-only browse: URL codec, AG adapter, datasource, URL sync, lineage inspector |
 | F5 | Reference cells and breadcrumb |
 | F6 | Pending changes: store, dirty overlay, editors, delete, insert rows, nav picker, drawer |
