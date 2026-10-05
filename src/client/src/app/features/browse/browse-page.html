@@ -1,4 +1,35 @@
 <div class="browse-entity">
+  @if (pathCrumbs().length > 0) {
+    <nav class="path" aria-label="Path">
+      <ol>
+        @for (crumb of pathCrumbs(); track $index) {
+          <li>
+            @if (crumb.current) {
+              <span class="crumb" aria-current="page">
+                <span class="crumb-name">{{ crumb.label }}</span>
+                @if (crumb.row !== null) {
+                  <span class="crumb-row"> ({{ crumb.row }})</span>
+                }
+              </span>
+            } @else {
+              <a class="crumb" [routerLink]="crumb.url">
+                <span class="crumb-name">{{ crumb.label }}</span>
+                @if (crumb.row !== null) {
+                  <span class="crumb-row"> ({{ crumb.row }})</span>
+                }
+              </a>
+            }
+          </li>
+        }
+      </ol>
+      @if (pathProblem(); as problem) {
+        <p class="path-problem">
+          The rows chosen go by their keys: {{ message(problem) }}
+          <button matButton type="button" (click)="trail.reload()">Try again</button>
+        </p>
+      }
+    </nav>
+  }
   @if ((described.isLoading() || trail.isLoading()) && !shown()) {
     <mat-progress-bar mode="indeterminate" aria-label="Loading the entity" />
   }
@@ -31,9 +62,6 @@
 
   @if (shown(); as shown) {
     <header class="page-header">
-      @if (pathShown()) {
-        <p class="path">{{ path() }}</p>
-      }
       <h1 #heading tabindex="-1">{{ shown.entity.name }}</h1>
       <p class="subtitle">{{ describe(shown.entity) }}</p>
     </header>
@@ -47,6 +75,7 @@
             class="rows"
             [source]="source"
             [crumb]="crumb()"
+            [linkTo]="linkTo()"
             (crumbChange)="update($event)"
           />
         }

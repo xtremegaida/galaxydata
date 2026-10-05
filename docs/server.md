@@ -434,8 +434,9 @@ anti-forgery token.
 
 - **The crumbs.** The first names an entity, and each after it a navigation from the row chosen in the one before.
 - **What it says of each.** The entity it reaches, and the display value of the row chosen in it, if that row is
-  among the rows the crumb leads to (`found`). A crumb that can't be followed says why, and is the last. A trail has
-  at most 50 crumbs.
+  among the rows the crumb leads to (`found`). A crumb that can't be followed says why (`problem`, no `entity`),
+  and is the last. So is a crumb whose row isn't one (a key that can't be read, or an entity without a key): it has
+  its entity, `found` is false, and `problem` says why. A trail has at most 50 crumbs.
 
 ## Queries
 

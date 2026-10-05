@@ -19,8 +19,10 @@ import {
   ActivatedRoute,
   type ResolveFn,
   Router,
+  RouterLink,
   type UrlMatchResult,
   type UrlSegment,
+  type UrlTree,
 } from '@angular/router';
 import { combineLatest, map } from 'rxjs';
 import { ApiClient, type Schema } from '../../core/api/api-client';
@@ -30,15 +32,20 @@ import {
   type BrowseLocation,
   activeCrumb,
   browseUrlTree,
+  followedLocation,
+  locationAt,
   readBrowseLocation,
+  sameKey,
 } from '../../core/browse/browse-url';
 import { followCatalog } from '../../core/catalog/catalog-changes';
 import { Message } from '../../core/ui/message';
 import { type Entity, EntityStructure, describeEntity } from './entity-structure';
 import type { BrowseSource } from './grid/browse-datasource';
-import { BrowseGrid } from './grid/browse-grid';
+import { BrowseGrid, type LinkTo } from './grid/browse-grid';
+import { displayText } from './grid/grid-links';
 
 type TrailCrumb = Schema<'TrailCrumbDto'>;
+type TrailStep = Schema<'TrailStepDto'>;
 
 /** Browsing's pages are every address under it with segments: a path through the data. */
 export function browseMatcher(segments: UrlSegment[]): UrlMatchResult | null {
@@ -69,6 +76,22 @@ interface Shown {
   readonly entity: Entity;
 }
 
+/** A crumb as the path shows it: what it browses, the row chosen in it, and its address. */
+interface PathCrumb {
+  readonly label: string;
+  /** The row chosen in it, by its display value when the trail has come (else its key); null for none. */
+  readonly row: string | null;
+  readonly url: UrlTree;
+  readonly current: boolean;
+}
+
+/** What the trail's steps to the crumb shown depend on: the crumbs' names to it, and the rows chosen before it. */
+interface StepsFor {
+  readonly prefix: string;
+  readonly at: number;
+  readonly steps: readonly TrailStep[] | undefined;
+}
+
 /**
  * Browsing a path through the data: the rows of the crumb the address shows (an entity's, or those a navigation
  * leads to from the row chosen in the crumb before), in a grid whose state the address keeps, and what the entity
@@ -85,6 +108,7 @@ interface Shown {
     MatTabContent,
     MatTabGroup,
     Message,
+    RouterLink,
   ],
   templateUrl: './browse-page.html',
   styleUrls: ['./browse-shared.scss', './browse-page.scss'],
@@ -102,24 +126,25 @@ export class BrowsePage {
   protected readonly addressProblems = computed(() => this.address()?.problems ?? []);
   protected readonly crumb = computed(() => activeCrumb(this.location()));
   protected readonly path = computed(() => pathOf(this.location()));
-  protected readonly pathShown = computed(() => this.location().crumbs.length > 1);
 
-  /** The crumbs to the one shown, their rows chosen (but the one shown's), for the trail. */
+  /**
+   * The path's crumbs, for the trail: their rows chosen (but the last's, which nothing follows from). Rows chosen
+   * in the last crumb, and other crumbs shown, don't ask for it again; nor do crumbs let go of (a row chosen anew),
+   * as the trail asked for already says what one for those left would.
+   */
   private readonly trailAsked = computed(
     () => {
-      const { crumbs, at } = this.location();
-      if (at === 0) {
+      const { crumbs } = this.location();
+      if (crumbs.length < 2) {
         return undefined;
       }
-      return crumbs
-        .slice(0, at + 1)
-        .map((crumb, index): TrailCrumb =>
-          index === 0
-            ? { entity: crumb.name, key: crumb.row ? [...crumb.row] : null }
-            : { navigation: crumb.name, key: index < at && crumb.row ? [...crumb.row] : null },
-        );
+      const last = crumbs.length - 1;
+      return crumbs.map((crumb, index): TrailCrumb => {
+        const key = index < last && crumb.row ? [...crumb.row] : null;
+        return index === 0 ? { entity: crumb.name, key } : { navigation: crumb.name, key };
+      });
     },
-    { equal: (a, b) => JSON.stringify(a) === JSON.stringify(b) },
+    { equal: covers },
   );
   private readonly trailFollowed = followCatalog(() => this.trail.reload());
   protected readonly trail = rxResource({
@@ -127,13 +152,42 @@ export class BrowsePage {
     stream: ({ params }) =>
       this.api.post('/api/browse/trail', { body: { crumbs: params } }).pipe(this.trailFollowed()),
   });
-  /** Why the crumb shown can't be reached, from the trail. */
+  private readonly trailPrefix = computed(() => {
+    const { crumbs, at } = this.location();
+    return JSON.stringify(
+      crumbs.slice(0, at + 1).map((crumb, index) => [crumb.name, index < at ? crumb.row : null]),
+    );
+  });
+  /**
+   * The trail's steps. While it is read again for a change past the crumb shown (back or forward to the same crumbs
+   * to it, then others), the steps to it are kept, as they are the same: the grid stays. The row chosen in the
+   * crumb shown may be another, so what it is isn't known till the trail comes.
+   */
+  private readonly steps = linkedSignal<StepsFor, readonly TrailStep[] | undefined>({
+    source: () => ({
+      prefix: this.trailPrefix(),
+      at: this.location().at,
+      steps: this.trail.hasValue() ? this.trail.value().crumbs : undefined,
+    }),
+    computation: (now, previous) => {
+      if (now.steps || !previous?.value || previous.source.prefix !== now.prefix) {
+        return now.steps;
+      }
+      return previous.value
+        .slice(0, now.at + 1)
+        .map((step, index) => (index === now.at ? { ...step, title: null } : step));
+    },
+  });
+  /**
+   * Why the crumb shown can't be reached, from the trail. Its own step's problem (the row chosen in it isn't one)
+   * doesn't keep its rows from being shown.
+   */
   protected readonly trailProblem = computed(() => {
     const { crumbs, at } = this.location();
-    if (at === 0 || !this.trail.hasValue()) {
+    const steps = this.steps();
+    if (at === 0 || !steps) {
       return null;
     }
-    const steps = this.trail.value().crumbs;
     for (let index = 0; index < at; index++) {
       const step = steps[index];
       if (!step || step.problem || !step.entity) {
@@ -146,8 +200,16 @@ export class BrowsePage {
         return `The row chosen in ${crumbs[index].name} isn't among its rows (any more), so ${crumbs[index + 1].name} leads nowhere.`;
       }
     }
-    const problem = steps[at]?.problem;
-    return problem ? sentence(problem) : null;
+    const shown = steps[at];
+    return shown?.problem && !shown.entity ? sentence(shown.problem) : null;
+  });
+  /** Whether the rows shown need the trail: those of a navigation's crumb, unless its steps were kept. */
+  private readonly trailNeeded = computed(() => this.location().at > 0 && !this.steps());
+  /** Why the trail couldn't be read, when only the path needs it (its rows go by their keys). */
+  protected readonly pathProblem = computed(() => {
+    const error = this.trailNeeded() ? undefined : this.trail.error();
+    const problem = error ? problemOf(error) : null;
+    return problem && !isSessionProblem(problem) ? problem : null;
   });
 
   /** What the crumb shown browses: an entity's rows, or those a navigation leads to from the row chosen before. */
@@ -160,7 +222,7 @@ export class BrowsePage {
       if (at === 0) {
         return { entity: crumbs[0].name };
       }
-      const before = this.trail.hasValue() ? this.trail.value().crumbs[at - 1] : undefined;
+      const before = this.steps()?.[at - 1];
       const row = crumbs[at - 1].row;
       if (this.trailProblem() || !before?.entity || !row) {
         return null;
@@ -175,7 +237,31 @@ export class BrowsePage {
     if (at === 0) {
       return crumbs[0]?.name ?? null;
     }
-    return this.trail.hasValue() ? (this.trail.value().crumbs[at]?.entity ?? null) : null;
+    return this.steps()?.[at]?.entity ?? null;
+  });
+
+  /** The path through the data, when it has more than one crumb: each crumb, the row chosen in it, its address. */
+  protected readonly pathCrumbs = computed<PathCrumb[]>(() => {
+    const location = this.location();
+    const { crumbs, at } = location;
+    if (crumbs.length < 2) {
+      return [];
+    }
+    const steps = this.steps();
+    return crumbs.map((crumb, index) => {
+      const step = steps?.[index];
+      return {
+        label: step?.label || crumb.name,
+        row: index < crumbs.length - 1 && crumb.row ? rowText(crumb.row, step) : null,
+        url: browseUrlTree(locationAt(location, index)),
+        current: index === at,
+      };
+    });
+  });
+  /** Where a navigation followed from a row of the crumb shown leads: a crumb after it. */
+  protected readonly linkTo = computed<LinkTo>(() => {
+    const location = this.location();
+    return (row, navigation) => browseUrlTree(followedLocation(location, row, navigation));
   });
 
   private readonly followed = followCatalog(() => this.described.reload());
@@ -195,7 +281,7 @@ export class BrowsePage {
       shown ?? (previous?.value?.path === this.path() ? previous.value : undefined),
   });
   protected readonly problem = computed(() => {
-    const error = this.described.error() ?? this.trail.error();
+    const error = this.described.error() ?? (this.trailNeeded() ? this.trail.error() : undefined);
     const problem = error ? problemOf(error) : null;
     return problem && !isSessionProblem(problem) ? problem : null;
   });
@@ -217,8 +303,7 @@ export class BrowsePage {
       // A grid of another crumb, going as this one comes.
       return;
     }
-    const kept =
-      JSON.stringify(before.row) === JSON.stringify(crumb.row) ? crumbs : crumbs.slice(0, at + 1);
+    const kept = sameKey(before.row, crumb.row) ? crumbs : crumbs.slice(0, at + 1);
     const next = kept.map((each, index) => (index === at ? crumb : each));
     void this.router.navigateByUrl(browseUrlTree({ crumbs: next, at }), { replaceUrl: true });
   }
@@ -262,6 +347,35 @@ export class BrowsePage {
       );
     });
   }
+}
+
+/** A row chosen in a crumb, by its display value (the trail's title), else its key. */
+function rowText(row: readonly string[], step: TrailStep | undefined): string {
+  const title: unknown = step?.title;
+  return title === null || title === undefined ? row.join(', ') : displayText(title);
+}
+
+/**
+ * Whether the trail asked for says what one asked for now would: the same crumbs, or the first of them (those after
+ * let go of), the same rows chosen in them, but in the last asked for now, whose row isn't asked.
+ */
+function covers(
+  asked: readonly TrailCrumb[] | undefined,
+  wanted: readonly TrailCrumb[] | undefined,
+): boolean {
+  if (!asked || !wanted) {
+    return asked === wanted;
+  }
+  return (
+    wanted.length <= asked.length &&
+    wanted.every(
+      (crumb, index) =>
+        crumb.entity === asked[index].entity &&
+        crumb.navigation === asked[index].navigation &&
+        (index === wanted.length - 1 ||
+          JSON.stringify(crumb.key) === JSON.stringify(asked[index].key)),
+    )
+  );
 }
 
 /** The address under browsing, as each navigation leaves it. */

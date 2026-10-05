@@ -1,15 +1,19 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { APP_BASE_HREF } from '@angular/common';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MATERIAL_ANIMATIONS } from '@angular/material/core';
 import { By } from '@angular/platform-browser';
+import { Router, provideRouter } from '@angular/router';
 import { AgGridAngular } from 'ag-grid-angular';
 import {
   answerPage,
   columnOf,
   gridCells,
   gridHeaders,
+  linkedPageOf,
+  linkedRows,
   orderColumns,
   orderRows,
   pageOf,
@@ -23,16 +27,23 @@ import { alertsOf, clickButton, textOf } from '../../../../testing/pages';
 import { type BrowseCrumb, crumbOf } from '../../../core/browse/browse-url';
 import { CatalogVersion, catalogVersionInterceptor } from '../../../core/catalog/catalog-version';
 import type { BrowseSource } from './browse-datasource';
-import { BROWSE_PAGE_SIZE, BrowseGrid, keyOf, whereProblemsOf } from './browse-grid';
+import { BROWSE_PAGE_SIZE, BrowseGrid, type LinkTo, whereProblemsOf } from './browse-grid';
+import { keyOf } from './grid-columns';
 
 /** The grid as browsing has it: its state the address's, which follows what the grid says. */
 @Component({
   imports: [BrowseGrid],
-  template: `<gd-browse-grid [source]="source()" [crumb]="crumb()" (crumbChange)="said($event)" />`,
+  template: `<gd-browse-grid
+    [source]="source()"
+    [crumb]="crumb()"
+    [linkTo]="linkTo()"
+    (crumbChange)="said($event)"
+  />`,
 })
 class Host {
   readonly source = signal<BrowseSource>({ entity: 'shop.orders' });
   readonly crumb = signal<BrowseCrumb>(crumbOf('shop.orders'));
+  readonly linkTo = signal<LinkTo | null>(null);
   readonly says: BrowseCrumb[] = [];
 
   said(crumb: BrowseCrumb): void {
@@ -55,6 +66,7 @@ describe('BrowseGrid', () => {
         provideHttpClientTesting(),
         { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
         { provide: BROWSE_PAGE_SIZE, useValue: 3 },
+        provideRouter([]),
       ],
     });
   });
@@ -68,11 +80,12 @@ describe('BrowseGrid', () => {
     }
   });
 
-  /** The grid at an address's state, its first page asked for (not answered). */
-  async function open(crumb = crumbOf('shop.orders')) {
+  /** The grid at an address's state, its first page asked for (not answered); its links lead to `linkTo`. */
+  async function open(crumb = crumbOf('shop.orders'), linkTo: LinkTo | null = null) {
     const fixture = TestBed.createComponent(Host);
     const host = fixture.componentInstance;
     host.crumb.set(crumb);
+    host.linkTo.set(linkTo);
     fixture.detectChanges();
     const http = TestBed.inject(HttpTestingController);
     const element = fixture.nativeElement as HTMLElement;
@@ -602,6 +615,195 @@ describe('BrowseGrid', () => {
     await shown();
     expect(host.says).toEqual([]);
     expect(element.querySelector('.ag-row-selected')).toBeNull();
+  });
+});
+
+describe("the grid's links", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([catalogVersionInterceptor])),
+        provideHttpClientTesting(),
+        { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
+        { provide: BROWSE_PAGE_SIZE, useValue: 3 },
+        provideRouter([]),
+      ],
+    });
+  });
+
+  afterEach(async () => {
+    await pagesFetched();
+    try {
+      TestBed.inject(HttpTestingController).verify();
+    } finally {
+      TestBed.resetTestingModule();
+    }
+  });
+
+  /** Links that lead to `/<prefix>/<navigation>/<row>`. */
+  function linksTo(prefix = 'to'): LinkTo {
+    const router = TestBed.inject(Router);
+    return (row, navigation) => router.parseUrl(`/${prefix}/${navigation}/${row.join('~')}`);
+  }
+
+  /** shop.orders' rows with their customers and lines (unless other rows are given), linked, shown. */
+  async function linked(linkTo: LinkTo | null = linksTo(), page = linkedPageOf(linkedRows(3))) {
+    const fixture = TestBed.createComponent(Host);
+    const host = fixture.componentInstance;
+    host.linkTo.set(linkTo);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    const element = fixture.nativeElement as HTMLElement;
+    const shown = async () => {
+      for (let turn = 0; turn < 3; turn++) {
+        await settle();
+        fixture.detectChanges();
+      }
+      await pagesFetched();
+      fixture.detectChanges();
+    };
+    await answerPage(http, page);
+    await shown();
+    const grid = () =>
+      fixture.debugElement.query(By.directive(AgGridAngular)).componentInstance as AgGridAngular;
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    const hrefs = (colId: string) =>
+      [...element.querySelectorAll(`.ag-row [col-id=${colId}] a`)].map((link) =>
+        link.getAttribute('href'),
+      );
+    const navigated = () => navigate.mock.calls.map(([url]) => url.toString());
+    /** A key pressed in the cell the keyboard is on; whether the event was let be. */
+    const keyDown = (key: string, init: KeyboardEventInit = {}) =>
+      element
+        .querySelector('.ag-cell-focus')!
+        .dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init }),
+        );
+    const inspector = () => element.querySelector('gd-grid-inspector')!;
+    return { fixture, host, element, shown, grid, navigated, hrefs, keyDown, inspector };
+  }
+
+  it("shows the rows a column's values refer to, linked, and a column for each collection of rows that refer to them", async () => {
+    const { element, hrefs } = await linked();
+    expect(gridHeaders(element)).toEqual(['id', 'customer_id', 'status', 'order_lines']);
+    expect(gridCells(element)).toEqual([
+      ['1001', 'Acme42', 'open', 'order_lines ›'],
+      ['1002', '43', 'open', 'order_lines ›'],
+      ['1003', 'NULL', 'open', 'order_lines ›'],
+    ]);
+    expect(hrefs('c1')).toEqual(['/to/customer/1001', '/to/customer/1002']);
+    expect(hrefs('n0')).toEqual([
+      '/to/order_lines/1001',
+      '/to/order_lines/1002',
+      '/to/order_lines/1003',
+    ]);
+    expect(element.querySelector('.ag-row [col-id=c1] a')?.getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('follows a link clicked, without choosing its row', async () => {
+    const { element, host, shown, navigated } = await linked();
+    element.querySelector<HTMLElement>('.ag-row[row-index="1"] [col-id=n0] a')!.click();
+    element.querySelector<HTMLElement>('.ag-row[row-index="0"] [col-id=c1] a')!.click();
+    await shown();
+    expect(navigated()).toEqual(['/to/order_lines/1002', '/to/customer/1001']);
+    expect(host.says).toEqual([]);
+    expect(element.querySelector('.ag-row-selected')).toBeNull();
+  });
+
+  it('follows the link of the cell the keyboard is on with Enter', async () => {
+    const { grid, shown, navigated, keyDown } = await linked();
+    grid().api.setFocusedCell(1, 'n0');
+    await shown();
+    expect(keyDown('Enter')).toBe(false);
+    expect(keyDown('Enter', { ctrlKey: true })).toBe(true);
+    grid().api.setFocusedCell(2, 'c1');
+    await shown();
+    keyDown('Enter');
+    grid().api.setFocusedCell(0, 'c2');
+    await shown();
+    keyDown('Enter');
+    expect(navigated()).toEqual(['/to/order_lines/1002']);
+  });
+
+  it('says where links lead as the address changes, in place: the keyboard on a link stays', async () => {
+    const { element, fixture, host, shown, hrefs } = await linked();
+    const link = element.querySelector<HTMLElement>('.ag-row[row-index="0"] [col-id=c1] a')!;
+    link.focus();
+    host.linkTo.set(linksTo('elsewhere'));
+    fixture.detectChanges();
+    await shown();
+    expect(hrefs('c1')).toEqual(['/elsewhere/customer/1001', '/elsewhere/customer/1002']);
+    expect(hrefs('n0')[0]).toBe('/elsewhere/order_lines/1001');
+    expect(element.querySelector('.ag-row[row-index="0"] [col-id=c1] a')).toBe(link);
+    expect(document.activeElement).toBe(link);
+  });
+
+  it("leads under the application's base", async () => {
+    TestBed.configureTestingModule({ providers: [{ provide: APP_BASE_HREF, useValue: '/app/' }] });
+    const { hrefs } = await linked();
+    expect(hrefs('c1')).toEqual(['/app/to/customer/1001', '/app/to/customer/1002']);
+  });
+
+  it('shows no collections of rows without a key, whose references lead nowhere', async () => {
+    const keyless = linkedRows(2).map((row) => ({ ...row, id: null, k: null }));
+    const page = linkedPageOf(keyless);
+    const { element, grid, shown, inspector } = await linked(linksTo(), {
+      ...page,
+      schema: page.schema && { ...page.schema, key: null },
+    });
+    expect(gridHeaders(element)).toEqual(['id', 'customer_id', 'status']);
+    expect(gridCells(element)[0]).toEqual(['1001', 'Acme42', 'open']);
+    expect(element.querySelector('.ag-row a')).toBeNull();
+    grid().api.setFocusedCell(0, 'c1');
+    await shown();
+    expect(
+      textOf(inspector().querySelector('[aria-labelledby=gd-inspector-reference] .aside')),
+    ).toBe('Rows without a key lead nowhere.');
+  });
+
+  it('shows what rows refer to without links, and no collections, when nothing says where they lead', async () => {
+    const { element, grid, shown, navigated, keyDown, inspector } = await linked(null);
+    expect(gridHeaders(element)).toEqual(['id', 'customer_id', 'status']);
+    expect(gridCells(element)[0]).toEqual(['1001', 'Acme42', 'open']);
+    expect(element.querySelector('.ag-row a')).toBeNull();
+    grid().api.setFocusedCell(0, 'c1');
+    await shown();
+    expect(keyDown('Enter')).toBe(true);
+    expect(navigated()).toEqual([]);
+    expect(textOf(inspector().querySelector('[aria-labelledby=gd-inspector-reference]'))).toBe(
+      'Refers to A row of shop.customers, through customer. Acme',
+    );
+  });
+
+  it('says what the row a cell refers to is, and what rows a collection leads to', async () => {
+    const { grid, shown, inspector } = await linked();
+    grid().api.setFocusedCell(0, 'c1');
+    await shown();
+    const reference = () => inspector().querySelector('[aria-labelledby=gd-inspector-reference]');
+    expect([...reference()!.children].map((child) => textOf(child))).toEqual([
+      'Refers to',
+      'A row of shop.customers, through customer.',
+      'Acme',
+      'Enter, or a click on the link, shows the row.',
+    ]);
+    expect(textOf(inspector().querySelector('.value'))).toBe('42');
+    grid().api.setFocusedCell(2, 'c1');
+    await shown();
+    expect(textOf(reference())).toBe(
+      'Refers to A row of shop.customers, through customer. Its value is NULL: it refers to no row.',
+    );
+    grid().api.setFocusedCell(1, 'n0');
+    await shown();
+    expect(
+      [...inspector().querySelectorAll('h2, .type, h3, p')].map((part) => textOf(part)),
+    ).toEqual([
+      'order_lines',
+      'Rows of shop.order_lines',
+      'Leads to',
+      'The rows of shop.order_lines that refer to this row.',
+      'Enter, or a click on the link, shows them.',
+    ]);
   });
 });
 

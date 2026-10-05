@@ -318,6 +318,18 @@ export function binaryText(base64: string, shown: number): string {
   return bytes.length > shown ? `0x${hex}… (${bytes.length.toLocaleString()} bytes)` : `0x${hex}`;
 }
 
+/** A row's key from its id (its values as JSON), the values as text, as the address holds them. */
+export function keyOf(id: string): string[] {
+  try {
+    const values: unknown = JSON.parse(id);
+    return Array.isArray(values)
+      ? values.map((value) => (typeof value === 'string' ? value : JSON.stringify(value)))
+      : [id];
+  } catch {
+    return [id];
+  }
+}
+
 /** The grid's sort, as the address and the API name columns. */
 export function sortOf(
   model: readonly SortModelItem[],

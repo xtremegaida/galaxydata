@@ -79,7 +79,11 @@ public sealed class BrowseService(CatalogService catalogs, QueryEngines engines,
          request.IncludeSchema ? Schema(source.Entity, schema, columns, references, canEdit) : null, dtos, grid.Offset, more, total);
    }
 
-   /// <summary>The crumbs of a trail as they stand: the entities they reach, and the display values of the rows chosen in them.</summary>
+   /// <summary>
+   /// The crumbs of a trail as they stand: the entities they reach, and the display values of the rows chosen in them.
+   /// A crumb whose rows can't be reached has no entity; one whose row isn't one (a key that can't be read) has its
+   /// entity, and the problem.
+   /// </summary>
    public async Task<BrowseTrailDto> TrailAsync(BrowseTrailRequest request, HttpResponse response, CancellationToken cancellationToken)
    {
       ArgumentNullException.ThrowIfNull(request);
@@ -122,12 +126,21 @@ public sealed class BrowseService(CatalogService catalogs, QueryEngines engines,
                label = navigation.Name;
             }
          }
-         key = null;
-         if (problem == null && crumb.Key is { } given) { key = NavigationResolver.Key(rows!.Entity, given, out problem); }
          if (problem != null)
          {
             steps.Add(new TrailStepDto(null, label, null, null, problem));
             break;
+         }
+         key = null;
+         if (crumb.Key is { } given)
+         {
+            key = NavigationResolver.Key(rows!.Entity, given, out string? keyProblem);
+            if (key == null)
+            {
+               // The crumb's rows are there, but the row chosen in them isn't one: no crumb after it can be followed.
+               steps.Add(new TrailStepDto(rows.Entity.DisplayName, label, null, false, keyProblem));
+               break;
+            }
          }
          (bool found, object? title) = key == null ? (false, null) : await TitleAsync(engine, rows!, key, cancellationToken);
          steps.Add(new TrailStepDto(rows!.Entity.DisplayName, label, title, key == null ? null : found, null));

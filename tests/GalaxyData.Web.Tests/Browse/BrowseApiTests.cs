@@ -252,6 +252,10 @@ public sealed class BrowseApiTests
       (await Trail(new { entity = "shop.customers", key = new[] { "1" } }, new { navigation = "nothing" }, new { navigation = "more" }))
          .ShouldBe("shop.customers: shop.customers Acme Ltd True / nothing:    shop.customers has no navigation 'nothing'");
       (await Trail(new { entity = "shop.customers" }, new { navigation = "orders" })).ShouldBe("shop.customers: shop.customers / orders:    No row is chosen in the crumb before");
+      // A key that can't be read: the crumb's rows are there, but no crumb after it can be followed.
+      (await Trail(new { entity = "shop.customers", key = new[] { "1" } }, new { navigation = "orders", key = new[] { "abc" } }, new { navigation = "order_lines" }))
+         .ShouldBe("shop.customers: shop.customers Acme Ltd True / orders: shop.orders  False 'id': \"abc\" isn't a whole number");
+      (await Trail(new { entity = "shop.customers", key = new[] { "1", "2" } })).ShouldBe("shop.customers: shop.customers  False The key of shop.customers is 1 value (id)");
       (await Trail(new { entity = "shop.nothing" })).ShouldBe("shop.nothing:    There is no entity shop.nothing");
    }
 

@@ -122,6 +122,38 @@ export function activeCrumb(location: BrowseLocation): BrowseCrumb {
   return location.crumbs[location.at];
 }
 
+/** The same path, another of its crumbs shown. */
+export function locationAt(location: BrowseLocation, at: number): BrowseLocation {
+  return { crumbs: location.crumbs, at };
+}
+
+/**
+ * A navigation followed from a row of the crumb shown: the row chosen in it, and the navigation's crumb shown after
+ * it. The crumbs after it go, unless they already follow that navigation from that row (they are kept as they were).
+ */
+export function followedLocation(
+  location: BrowseLocation,
+  row: readonly string[],
+  navigation: string,
+): BrowseLocation {
+  const { crumbs, at } = location;
+  const shown = crumbs[at];
+  if (sameKey(shown.row, row) && crumbs[at + 1]?.name === navigation) {
+    return { crumbs, at: at + 1 };
+  }
+  return {
+    crumbs: [...crumbs.slice(0, at), { ...shown, row: [...row] }, crumbOf(navigation)],
+    at: at + 1,
+  };
+}
+
+/** Whether two rows' keys are the same (none is none). */
+export function sameKey(a: readonly string[] | null, b: readonly string[] | null): boolean {
+  return a === null || b === null
+    ? a === b
+    : a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 /** The address of a location, as the router takes it. */
 export function browseUrlTree(location: BrowseLocation): UrlTree {
   const segments = [

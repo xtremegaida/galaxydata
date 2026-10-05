@@ -197,7 +197,8 @@ chosen in it.
     doubled). `?at=` says which crumb is shown, from 0, when it isn't the last.
   - What can't be read (a page that isn't one, an operation that isn't) is left out, and the page says so.
   - The grid's changes replace the address in the history (sorting, filtering, paging and choosing a row aren't
-    steps back); a crumb that goes elsewhere is a step. Choosing another row in a crumb lets go of those after it.
+    steps back); going elsewhere is a step: a link followed from a row (a crumb after the one shown), a crumb of the
+    path chosen, another entity. Choosing another row in a crumb lets go of those after it.
   - The tree shows the first crumb's entity, opening its ancestors; when it isn't loaded, searching for its name
     finds where it is.
 - **The start of browsing** (`/browse`) lists the connections, with how their schemas stand (followed while they are
@@ -206,8 +207,19 @@ chosen in it.
   what it is. A navigation's crumb is followed through the API's trail (`POST /api/browse/trail`), which says what
   entity each crumb reaches; its rows are those the navigation leads to from the row chosen in the crumb before
   (`{from: {entity, key}, navigation}`). A crumb that can't be followed (no row chosen before it, a row chosen that
-  isn't among its crumb's rows, a navigation the entity hasn't) says why. The grid stays as it was while the other
+  isn't among its crumb's rows, a navigation the entity hasn't) says why. A row chosen in the crumb shown that isn't
+  one (a key that can't be read) doesn't keep its rows from being shown. The grid stays as it was while the other
   tab is shown.
+  - **The path** (a `nav`, "Path"), when it has more than one crumb: each crumb a link to it (`?at=`), the one shown
+    marked (`aria-current`), and the row chosen in each but the last by its display value, as the trail says it
+    (`shop.customers (Acme) › orders (1001) › lines`); by its key until the trail comes, and when it can't be read
+    (which the path says, with "Try again", when the rows shown don't need it). Crumbs after the one shown stay, to
+    go on to.
+  - **The trail** is asked for the whole path, with the rows chosen in all but the last crumb, so rows chosen in the
+    last one, and showing another crumb, don't ask for it again; nor do crumbs let go of (a row chosen anew in a
+    crumb before the last), as the trail asked for already says what one for those left would. While it is read
+    again for a change past the crumb shown (back or forward to the same crumbs to it, then others), the steps to
+    that crumb are kept: they are the same, and the grid stays.
 - **The grid** (`BrowseGrid`, AG Grid Community's infinite row model with pages of 100 rows) shows the rows a page at
   a time from `POST /api/browse/page`:
   - **First,** the rows' schema (their columns) and the page the address names, counted, in one request. When the
@@ -221,6 +233,23 @@ chosen in it.
   - **Columns** are named by their places (names may be any text), the key's marked, numbers on the right, NULL set
     apart; date-times read with a space, binary values as hexadecimal. A column's header, pointed at, says its type
     and where its values come from.
+  - **References:** a column whose values refer to a row (a foreign key; the schema's `references`) shows that
+    row's display value (the page's `r`), with the value itself beside it, as a link: following it shows the row
+    (a crumb after the one shown: the navigation from the row the cell is in, that row chosen). A value that
+    refers to no row (a null among its columns) has no link, nor do rows without a key, which no crumb can follow
+    from. Display values of date-times read with a space. A click on a link follows it without choosing its row;
+    with Ctrl, Shift or Meta, or the middle button, the browser opens it (a new tab); with Alt (which would download
+    it) nothing happens, so its text can be selected. Enter on a cell with a link follows it (`suppressKeyboardEvent`:
+    before the grid does anything with the key, and so that a link the pointer left the keyboard on isn't followed
+    twice).
+  - **Collections:** a column for each collection of rows that refer to the rows (the schema's `collections`,
+    inverse navigations), after the rows' columns: a link in each row with a key (`orders ›`, the arrow drawn but
+    not read) to the rows that refer to it. Rows without a key have none.
+  - **Links** lead where the page says (`linkTo`, from the address: a link from a row of an earlier crumb lets go
+    of the crumbs after it, unless they already follow the same navigation from the same row, when they stay). The
+    cells say where again as the address changes, in place (`LinkCell`, a renderer that changes what it shows), so
+    the keyboard on a link stays there. Without `linkTo` (a grid that isn't browsing's), references show their
+    display values without links, and there are no collections.
   - **Filters** follow each column's type: text (contains, starts and ends with, equals); numbers; 64-bit whole
     numbers (AG Grid's filter for them, which holds them as text, so those past 2^53 stay exact); decimals, times and
     intervals in text fields, with comparisons of our own (the server reads the text as the column's type); dates (a
@@ -247,8 +276,9 @@ chosen in it.
 - **The inspector,** beside the grid (under it when narrow), shows the cell the keyboard is on (a click puts it
   there) whole: its column (type, key), its value (NULL, a text's length, a binary value's bytes), and where the
   column's values come from: read from a column, worked out, aggregated, a constant or put together; the tables'
-  columns they come from, through which navigations, and the expression. It can be hidden, and stays as the user
-  left it.
+  columns they come from, through which navigations, and the expression. A reference's cell says what it refers to
+  (the entity, through which navigation, the row's display value, or that it refers to none: a NULL), and a
+  collection's what rows it leads to; each says that Enter follows its link. It can be hidden, and stays as the user left it.
 - **What an entity is** (the Structure tab, `EntityStructure`, from `GET /api/catalog/entity`):
   - its facts: its full name, rows, key, unique keys, the column that shows its rows where others refer to
     them, triggers, and what the user may do with its rows (and why not);
@@ -349,17 +379,21 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
   `keepFocus`): an entity chosen in the catalog's tree beside the page, where the keyboard goes on choosing.
   Going back or forward doesn't leave focus where it is, though the browser gives such a navigation its state again.
 - **Another entity shown in place of one** moves focus to its page's heading: after a link followed in the page
-  (the link is gone), or an entity chosen in the catalog over the page (which gives focus back to its button).
+  (the link is gone: a navigation, a reference or collection in the grid, a crumb of the path), or an entity chosen
+  in the catalog over the page (which gives focus back to its button).
   Focus in the catalog beside the page (its tree, its search) stays. The grid's changes of the address leave focus
   where it is.
 - **The grid** is AG Grid's ARIA grid: its cells and headers are reached by the arrow keys (Enter on a header sorts,
-  Shift+Enter adds it to the sort, Ctrl+Enter opens its filter), Space chooses the row the keyboard is on, and its
-  pages have buttons of their own. Its rows are in the page in their order (`ensureDomOrder`). Headers' tooltips
+  Shift+Enter adds it to the sort, Ctrl+Enter opens its filter), Space chooses the row the keyboard is on, Enter
+  follows the link of the cell it is on (links in cells aren't stops of their own, `tabindex="-1"`, as the grid
+  is one), and its pages have buttons of their own. Its rows are in the page in their order (`ensureDomOrder`). Headers' tooltips
   (type, lineage) show when pointed at; for the keyboard, the inspector says the same of the column of the cell it
   is on, in a region of its own (hidden, not removed, so its button always controls it). The condition's field is
   labelled and described, and its problems are an alert tied to it (`aria-describedby`, `aria-invalid`); Apply
   stays focusable when there is nothing to apply (`disabledInteractive`), and clearing the condition leaves the
   keyboard in its field. The count is a status.
+- **The path** is a navigation landmark ("Path"), a list of links, the crumb shown marked `aria-current="page"`;
+  the `›` between crumbs is drawn by the style sheet, with no text for screen readers (`content: '›' / ''`).
 - **The catalog's tree** is a tree as WAI-ARIA describes one. It is one stop in the tab order.
   - The arrow keys move through it, and Right and Left open and close. Home, End, Page Up and Page Down go further;
     `*` opens a node's siblings.
@@ -413,9 +447,10 @@ the rest of the stylesheet with an inline script, which the policy refuses.
 compressed. It grows as the features use more of Angular's core (resources, for one), which every page shares, and
 of modules the shell uses: the CDK's virtual scrolling is in the module of the scrolling the shell's navigation
 uses, so it loads at first though only browsing uses it. Pages not needed at first are loaded when opened (lazy
-routes): the sign-in and password pages, the administrators' pages (about 260 kB), browsing (about 1.2 MB, 277 kB
+routes): the sign-in and password pages, the administrators' pages (about 260 kB), browsing (about 1.25 MB, 280 kB
 compressed), and the features' pages as they come. Browsing's chunk is nearly all AG Grid: its core and the modules
-the grid registers (its infinite row model, pages, filters, choosing rows, tooltips, its state and words). The build
+the grid registers (its infinite row model, pages, filters, choosing rows, tooltips, refreshing cells, its state
+and words). The build
 warns above 700 kB and fails above 1 MB for the first load (`budgets` in `angular.json`). GalaxyData isn't meant
 for slow networks, so these can be raised when a feature needs it.
 
@@ -447,6 +482,11 @@ for slow networks, so these can be raised when a feature needs it.
     page: tests that open one answer it (`answerGrid`), or a harness would wait for it. The whole application's test
     leaves the grid out: with every stylesheet in the page, jsdom takes seconds to resolve the styles AG Grid reads
     as it starts.
+  - **Back and forward:** the router follows the browser's history only once it listens, which an application's
+    first navigation sets up and a test's router harness doesn't: a test that goes back calls
+    `router.setUpLocationChangeListener()` first.
+  - **In a browser,** AG Grid makes cells' renderers (the links) in animation frames when it first draws them, so a
+    page that isn't being painted (a window behind another) shows those cells empty until it is.
 - **Layout:**
   - `src/app/core` holds what the whole application uses: the API, problems, the session, the theme, forms'
     helpers, the catalog (its version, the tree's state, following it), browsing's addresses (`core/browse`), the

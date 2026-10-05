@@ -13,7 +13,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { DOCUMENT } from '@angular/common';
+import { DOCUMENT, LocationStrategy } from '@angular/common';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { MatButton, MatIconButton } from '@angular/material/button';
 import { MatFormField, MatLabel } from '@angular/material/form-field';
@@ -21,6 +21,7 @@ import { MatIcon } from '@angular/material/icon';
 import { MatInput } from '@angular/material/input';
 import { MatProgressBar } from '@angular/material/progress-bar';
 import { MatTooltip } from '@angular/material/tooltip';
+import { Router, type UrlTree } from '@angular/router';
 import { AgGridAngular } from 'ag-grid-angular';
 import {
   BigIntFilterModule,
@@ -37,6 +38,7 @@ import {
   type Module,
   NumberFilterModule,
   PaginationModule,
+  RenderApiModule,
   RowApiModule,
   RowSelectionModule,
   type SelectionChangedEvent,
@@ -68,17 +70,26 @@ import {
   sameQuery,
 } from './browse-datasource';
 import {
-  type GridColumn,
   type GridRow,
-  columnDefsOf,
   columnStateOf,
   filterModelOf,
   filtersOf,
   colIdOf,
   indexOfColId,
+  keyOf,
   sortOf,
 } from './grid-columns';
-import { GridInspector } from './grid-inspector';
+import { GridInspector, type Inspected } from './grid-inspector';
+import {
+  type CellLink,
+  type GridLinks,
+  type LinkSchema,
+  cellLinkOf,
+  indexOfCollectionColId,
+  linkedColIdsOf,
+  linkedColumnDefsOf,
+  referenceOf,
+} from './grid-links';
 import { gridTheme } from './grid-theme';
 
 /** How many rows a page of the grid has. */
@@ -86,7 +97,10 @@ export const BROWSE_PAGE_SIZE = new InjectionToken<number>('BROWSE_PAGE_SIZE', {
   factory: () => 100,
 });
 
-/** What the grid needs of the grid's library: the infinite row model, pages, filters, sorting and choosing rows. */
+/**
+ * What the grid needs of the grid's library: the infinite row model, pages, filters, sorting, choosing rows, and
+ * refreshing cells (their links).
+ */
 const modules: Module[] = [
   InfiniteRowModelModule,
   PaginationModule,
@@ -96,6 +110,7 @@ const modules: Module[] = [
   DateFilterModule,
   RowSelectionModule,
   RowApiModule,
+  RenderApiModule,
   CellStyleModule,
   ColumnApiModule,
   GridStateModule,
@@ -104,9 +119,11 @@ const modules: Module[] = [
   ...(isDevMode() ? [ValidationModule] : []),
 ];
 
+/** Where a navigation followed from a row leads (its key, its values as text). */
+export type LinkTo = (row: readonly string[], navigation: string) => UrlTree;
+
 /** The schema of a source's rows, and their first page in the address's state when that could be asked for. */
-interface Primed {
-  readonly columns: readonly GridColumn[];
+interface Primed extends LinkSchema {
   readonly keyed: boolean;
   readonly page: PrimedPage | null;
 }
@@ -114,7 +131,10 @@ interface Primed {
 /** A grid made for a schema and a state: made again for other columns, or an address the grid can't follow. */
 interface Made {
   readonly key: string;
-  readonly columns: readonly GridColumn[];
+  /** The rows' columns, what they refer to and what refers to them. */
+  readonly schema: LinkSchema;
+  /** The ids of the columns with links. */
+  readonly linked: readonly string[];
   readonly options: GridOptions<GridRow>;
   readonly datasource: BrowseDatasource;
   readonly page: number;
@@ -136,7 +156,7 @@ interface Live {
 
 /** The cell the keyboard is on (or clicked), for the inspector. */
 interface Focused {
-  readonly column: number;
+  readonly colId: string;
   readonly row: GridRow | null;
 }
 
@@ -176,6 +196,8 @@ export class BrowseGrid {
   static readonly inspectorKey = 'gd.inspector';
 
   private readonly api = inject(ApiClient);
+  private readonly router = inject(Router);
+  private readonly locationStrategy = inject(LocationStrategy);
   private readonly locale = inject(LOCALE_ID);
   private readonly pageSize = inject(BROWSE_PAGE_SIZE);
   private readonly storage = storageOf(inject(DOCUMENT));
@@ -194,6 +216,11 @@ export class BrowseGrid {
   readonly crumb = input.required<BrowseCrumb>();
   /** The grid's state changed in the grid: the address follows it. */
   readonly crumbChange = output<BrowseCrumb>();
+  /**
+   * Where navigations from rows lead: to the rows a column's values refer to, and the collections of rows that
+   * refer to them. Without it, cells have no links.
+   */
+  readonly linkTo = input<LinkTo | null>(null);
 
   private readonly sourceKey = computed(() => sourceKeyOf(this.source()));
   private readonly followed = followCatalog(() => this.primed.reload());
@@ -203,11 +230,14 @@ export class BrowseGrid {
   });
   /** Counts the grids made for the address gone where the grid can't follow it in place. */
   private readonly remade = signal(0);
+  /** Whether cells have links (where they lead changes with the address; whether they have them, not). */
+  private readonly linked = computed(() => this.linkTo() !== null);
   protected readonly made = computed<Made | undefined>(
     () => {
       const primed = this.primed.hasValue() ? this.primed.value() : undefined;
       const remade = this.remade();
-      return primed ? untracked(() => this.make(primed, remade)) : undefined;
+      const linked = this.linked();
+      return primed ? untracked(() => this.make(primed, remade, linked)) : undefined;
     },
     { equal: (a, b) => a?.key === b?.key },
   );
@@ -242,16 +272,44 @@ export class BrowseGrid {
     }
     return count.rows === 1 ? '1 row' : `${rows} rows`;
   });
-  protected readonly inspected = computed(() => {
+  protected readonly inspected = computed<Inspected | null>(() => {
     const focused = this.focused();
-    const column = focused ? this.made()?.columns[focused.column] : undefined;
-    return focused && column ? { column, index: focused.column, row: focused.row } : null;
+    const made = this.made();
+    if (!focused || !made) {
+      return null;
+    }
+    const { colId, row } = focused;
+    const linked = made.linked.includes(colId) && cellLinkOf(made.schema, colId, row) !== null;
+    const collection = made.schema.collections[indexOfCollectionColId(colId)];
+    if (collection) {
+      return { kind: 'collection', collection, row, linked };
+    }
+    const index = indexOfColId(colId);
+    const column = made.schema.columns[index];
+    if (!column) {
+      return null;
+    }
+    const reference = referenceOf(made.schema, index);
+    return { kind: 'column', column, index, row, reference, linked };
   });
   /** Whether the condition typed isn't the one the rows are filtered by. */
   protected readonly whereEdited = computed(
     () => normalWhere(this.whereText()) !== this.appliedWhere(),
   );
   protected readonly message = problemMessage;
+
+  /** Cells' links: where they lead, as the page that has the grid says. */
+  private readonly links: GridLinks = {
+    href: (link) => {
+      const to = untracked(this.linkTo);
+      return to
+        ? this.locationStrategy.prepareExternalUrl(
+            this.router.serializeUrl(to(link.row, link.navigation)),
+          )
+        : '';
+    },
+    follow: (link) => this.followLink(link),
+  };
 
   constructor() {
     // A grid made anew starts with nothing loaded, and nothing wrong.
@@ -279,6 +337,17 @@ export class BrowseGrid {
         const live = this.current();
         if (primed && live) {
           this.ask(live, live.datasource.query, live.page, primed.page);
+        }
+      });
+    });
+    // Links lead elsewhere (the address changed): the cells with links say where.
+    effect(() => {
+      this.linkTo();
+      untracked(() => {
+        const live = this.current();
+        const linked = this.made()?.linked ?? [];
+        if (live && linked.length > 0) {
+          live.api.refreshCells({ columns: [...linked], force: true });
         }
       });
     });
@@ -322,8 +391,8 @@ export class BrowseGrid {
     }
     const query: BrowseQuery = {
       ...live.datasource.query,
-      filters: filtersOf(live.api.getFilterModel(), made.columns),
-      sort: sortOf(sortModelOf(live.api), made.columns),
+      filters: filtersOf(live.api.getFilterModel(), made.schema.columns),
+      sort: sortOf(sortModelOf(live.api), made.schema.columns),
     };
     if (!sameQuery(query, live.datasource.query)) {
       this.ask(live, query);
@@ -362,12 +431,11 @@ export class BrowseGrid {
   protected cellFocused(event: CellFocusedEvent<GridRow>): void {
     const live = this.current();
     const colId = typeof event.column === 'string' ? event.column : event.column?.getColId();
-    const column = colId ? indexOfColId(colId) : -1;
-    if (!live || event.rowIndex === null || column < 0 || event.rowPinned) {
+    if (!live || !colId || event.rowIndex === null || event.rowPinned) {
       return;
     }
     this.focused.set({
-      column,
+      colId,
       row: live.api.getDisplayedRowAtIndex(event.rowIndex)?.data ?? null,
     });
   }
@@ -434,6 +502,8 @@ export class BrowseGrid {
       });
     const primedOf = (page: BrowsePage, first: PrimedPage | null): Primed => ({
       columns: page.schema?.columns ?? [],
+      references: page.schema?.references ?? [],
+      collections: page.schema?.collections ?? [],
       keyed: (page.schema?.key?.length ?? 0) > 0,
       page: first,
     });
@@ -453,9 +523,15 @@ export class BrowseGrid {
     );
   }
 
-  private make(primed: Primed, remade: number): Made {
+  private make(primed: Primed, remade: number, linked: boolean): Made {
     const crumb = this.crumb();
     const columns = primed.columns;
+    const schema: LinkSchema = {
+      columns,
+      references: primed.references,
+      collections: primed.collections,
+    };
+    const links = linked ? this.links : null;
     const filters = filterModelOf(crumb.filters, columns);
     const sort = columnStateOf(crumb.sort, columns);
     const sortModel: SortModelItem[] = sort.state.map((state) => ({
@@ -472,7 +548,7 @@ export class BrowseGrid {
     const options: GridOptions<GridRow> = {
       theme: gridTheme,
       loadThemeGoogleFonts: false,
-      columnDefs: columnDefsOf(columns),
+      columnDefs: linkedColumnDefsOf(schema, links, primed.keyed),
       defaultColDef: { resizable: true, minWidth: 72 },
       rowModelType: 'infinite',
       datasource,
@@ -508,8 +584,9 @@ export class BrowseGrid {
       },
     };
     return {
-      key: `${this.sourceKey()}|${JSON.stringify(columns)}|${remade}`,
-      columns,
+      key: `${this.sourceKey()}|${JSON.stringify(schema)}|${linked}|${remade}`,
+      schema,
+      linked: links ? linkedColIdsOf(schema, primed.keyed) : [],
       options,
       datasource,
       page: crumb.page,
@@ -528,14 +605,17 @@ export class BrowseGrid {
     }
     const query: BrowseQuery = {
       ...live.datasource.query,
-      filters: filtersOf(filterModelOf(crumb.filters, made.columns).model, made.columns),
+      filters: filtersOf(
+        filterModelOf(crumb.filters, made.schema.columns).model,
+        made.schema.columns,
+      ),
       where: crumb.where,
       sort: sortOf(
-        columnStateOf(crumb.sort, made.columns).state.map((state) => ({
+        columnStateOf(crumb.sort, made.schema.columns).state.map((state) => ({
           colId: state.colId,
           sort: state.sort === 'desc' ? 'desc' : 'asc',
         })),
-        made.columns,
+        made.schema.columns,
       ),
     };
     if (
@@ -696,9 +776,17 @@ export class BrowseGrid {
       return;
     }
     this.focused.set({
-      column: indexOfColId(cell.column.getColId()),
+      colId: cell.column.getColId(),
       row: live.api.getDisplayedRowAtIndex(cell.rowIndex)?.data ?? null,
     });
+  }
+
+  /** Follows a navigation from a row, where the page that has the grid says it leads. */
+  private followLink(link: CellLink): void {
+    const to = untracked(this.linkTo);
+    if (to) {
+      void this.router.navigateByUrl(to(link.row, link.navigation));
+    }
   }
 
   /** Says the grid's state, for the address to follow. */
@@ -734,18 +822,6 @@ export function whereProblemsOf(problem: Problem): WhereProblem[] {
     start: typeof diagnostic['start'] === 'number' ? diagnostic['start'] : null,
     end: typeof diagnostic['end'] === 'number' ? diagnostic['end'] : null,
   }));
-}
-
-/** A row's key from its id (its values as JSON), the values as text, as the address holds them. */
-export function keyOf(id: string): string[] {
-  try {
-    const values: unknown = JSON.parse(id);
-    return Array.isArray(values)
-      ? values.map((value) => (typeof value === 'string' ? value : JSON.stringify(value)))
-      : [id];
-  } catch {
-    return [id];
-  }
 }
 
 /** The grid's overlay for rows that couldn't be read goes. */

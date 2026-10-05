@@ -5,6 +5,8 @@ import { requestTo } from './http';
 
 export type GridColumnDto = Schema<'GridColumnDto'>;
 export type GridRowDto = Schema<'GridRowDto'>;
+export type GridReferenceDto = Schema<'GridReferenceDto'>;
+export type GridCollectionDto = Schema<'GridCollectionDto'>;
 export type BrowsePageDto = Schema<'BrowsePageDto'>;
 export type BrowsePageRequest = Schema<'BrowsePageRequest'>;
 export type ScalarKind = Schema<'ScalarKind'>;
@@ -64,6 +66,67 @@ export function orderRows(count: number, from = 0): GridRowDto[] {
   return Array.from({ length: count }, (_, index) =>
     rowOf([String(1001 + from + index), index % 2 ? 'open' : null, `${from + index}.50`]),
   );
+}
+
+/** shop.orders' columns with its customer's: its key, id, then customer_id (referring to a customer) and status. */
+export function linkedColumns(): GridColumnDto[] {
+  return [
+    columnOf('id', 'int64', {
+      isKey: true,
+      type: { kind: 'int64', nullable: false, text: 'int64' },
+    }),
+    columnOf('customer_id', 'int64', { reference: 0 }),
+    columnOf('status'),
+  ];
+}
+
+/** What shop.orders' rows refer to: their customer, by customer_id. */
+export const customerReference: GridReferenceDto = {
+  navigation: 'customer',
+  target: 'shop.customers',
+  columns: [1],
+  multiplicity: 'one',
+};
+
+/** What refers to shop.orders' rows: their lines. */
+export const linesCollection: GridCollectionDto = {
+  navigation: 'order_lines',
+  target: 'shop.order_lines',
+  multiplicity: 'many',
+};
+
+/**
+ * shop.orders' rows with their customers (ids 1001 on): customer 42 (Acme) and 43 (no display value) in turn, and
+ * none for the third.
+ */
+export function linkedRows(count: number, from = 0): GridRowDto[] {
+  return Array.from({ length: count }, (_, index) => {
+    const customer = [
+      ['42', 'Acme'],
+      ['43', null],
+      [null, null],
+    ][(from + index) % 3];
+    return {
+      ...rowOf([String(1001 + from + index), customer[0], 'open']),
+      r: [customer[1]],
+    };
+  });
+}
+
+/** A page of linked rows, with the schema of their columns, the customer they refer to and their lines. */
+export function linkedPageOf(
+  rows: GridRowDto[],
+  changes: Partial<BrowsePageDto> = {},
+): BrowsePageDto {
+  const page = pageOf(rows, changes, linkedColumns());
+  return {
+    ...page,
+    schema: page.schema && {
+      ...page.schema,
+      references: [customerReference],
+      collections: [linesCollection],
+    },
+  };
 }
 
 /** A page of rows, all there are unless said otherwise; with the schema of `columns` when given. */
@@ -139,6 +202,8 @@ export function gridHeaders(container: ParentNode): string[] {
     .map((header) => header.querySelector('.ag-header-cell-text')?.textContent ?? '');
 }
 
+/** A column's place: the rows' columns (c0, c1, ...) first, then collections' (n0, ...). */
 function colIndex(element: HTMLElement): number {
-  return Number(element.getAttribute('col-id')?.slice(1));
+  const colId = element.getAttribute('col-id') ?? '';
+  return Number(colId.slice(1)) + (colId.startsWith('n') ? 10_000 : 0);
 }

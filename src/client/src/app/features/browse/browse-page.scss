@@ -19,11 +19,63 @@
   margin-bottom: 8px;
 }
 
+// The path through the data: each crumb (the row chosen in it beside it), › between them.
 .path {
-  margin: 0 0 2px;
-  color: var(--mat-sys-on-surface-variant);
+  flex: none;
+  margin: 0 0 4px;
   font: var(--mat-sys-label-large);
+
+  ol {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  li {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+  }
+
+  li + li::before {
+    content: '›';
+    content: '›' / '';
+    padding-inline: 6px;
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+.crumb {
   overflow-wrap: anywhere;
+}
+
+.path-problem {
+  margin: 2px 0 0;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+}
+
+a.crumb {
+  color: var(--mat-sys-primary);
+  text-decoration: none;
+  border-radius: var(--mat-sys-corner-extra-small);
+
+  &:hover .crumb-name {
+    text-decoration: underline;
+  }
+}
+
+.crumb[aria-current] {
+  color: var(--mat-sys-on-surface);
+  font-weight: 600;
+}
+
+.crumb-row {
+  color: var(--mat-sys-on-surface-variant);
+  font-weight: normal;
 }
 
 .plain {

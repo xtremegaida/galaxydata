@@ -1,11 +1,14 @@
 import { BreakpointObserver, type BreakpointState } from '@angular/cdk/layout';
+import { Location } from '@angular/common';
 import { TestBed } from '@angular/core/testing';
 import { Title } from '@angular/platform-browser';
-import { Router } from '@angular/router';
-import { BehaviorSubject } from 'rxjs';
+import { NavigationEnd, Router } from '@angular/router';
+import { BehaviorSubject, filter, firstValueFrom } from 'rxjs';
 import {
   answerPage,
   gridCells,
+  linkedPageOf,
+  linkedRows,
   orderColumns,
   orderRows,
   pageOf,
@@ -49,6 +52,32 @@ describe('BrowsePage', () => {
 
   const entityUrl = (name: string) => `/api/catalog/entity?name=${encodeURIComponent(name)}`;
   const trailUrl = '/api/browse/trail';
+
+  /** A step of a trail: the entity a crumb reaches, as labelled, and the row chosen in it by its display value. */
+  const stepOf = (entity: string, label = entity, title: string | null = null) => ({
+    entity,
+    label,
+    title,
+    found: title === null ? null : true,
+    problem: null,
+  });
+
+  /** The path through the data: its crumbs as they read, the one shown marked. */
+  const pathOf = (page: HTMLElement) =>
+    [...page.querySelectorAll('nav.path li')].map((item) =>
+      item.querySelector('[aria-current=page]') ? `[${textOf(item)}]` : textOf(item),
+    );
+
+  /** Whether each navigation from now on replaces the address in the history. */
+  const replacing = (router: Router) => {
+    const navigations: boolean[] = [];
+    router.events.subscribe((event) => {
+      if ('navigationTrigger' in event) {
+        navigations.push(router.currentNavigation()?.extras.replaceUrl ?? false);
+      }
+    });
+    return navigations;
+  };
 
   /**
    * A path's page opened at `url`, the tree beside it answered (its first entity not found in it), and the entity
@@ -342,7 +371,7 @@ describe('BrowsePage', () => {
     const navigations: boolean[] = [];
     router.events.subscribe((event) => {
       if ('navigationTrigger' in event) {
-        navigations.push(router.getCurrentNavigation()?.extras.replaceUrl ?? false);
+        navigations.push(router.currentNavigation()?.extras.replaceUrl ?? false);
       }
     });
     page.querySelector<HTMLElement>('.ag-header-cell[col-id=c1] .ag-header-cell-label')!.click();
@@ -384,7 +413,7 @@ describe('BrowsePage', () => {
       from: { entity: 'shop.customers', key: ['42'] },
       navigation: 'orders',
     });
-    expect(textOf(page.querySelector('.path'))).toBe('shop.customers › orders');
+    expect(pathOf(page)).toEqual(['shop.customers (Acme)', '[orders]']);
     expect(textOf(page.querySelector('h1'))).toBe('shop.orders');
     expect(gridCells(page).length).toBe(2);
     expect(TestBed.inject(Title).getTitle()).toBe('shop.customers › orders');
@@ -532,9 +561,15 @@ describe('BrowsePage', () => {
     const { http, page, shown, router } = await open(
       '/browse/shop.orders;row=1001/order_lines?at=0',
     );
+    (await requestTo(http, trailUrl, 'POST')).flush({
+      crumbs: [
+        stepOf('shop.orders', 'shop.orders', '1001'),
+        stepOf('shop.order_lines', 'order_lines'),
+      ],
+    });
     await answerPage(http, pageOf(orderRows(3), {}, orderColumns()));
     await shown();
-    expect(textOf(page.querySelector('.path'))).toBe('shop.orders');
+    expect(pathOf(page)).toEqual(['[shop.orders (1001)]', 'order_lines']);
     expect(
       [...page.querySelectorAll('.ag-row-selected')].map((row) => row.getAttribute('row-index')),
     ).toEqual(['0']);
@@ -547,6 +582,12 @@ describe('BrowsePage', () => {
     const { http, page, shown, router } = await open(
       '/browse/shop.orders;row=1001/order_lines?at=0',
     );
+    (await requestTo(http, trailUrl, 'POST')).flush({
+      crumbs: [
+        stepOf('shop.orders', 'shop.orders', '1001'),
+        stepOf('shop.order_lines', 'order_lines'),
+      ],
+    });
     await answerPage(http, pageOf(orderRows(3), { total: 7, hasMore: true }, orderColumns()));
     await shown();
     page.querySelector<HTMLElement>('.ag-paging-button[aria-label="Next Page"]')!.click();
@@ -554,6 +595,318 @@ describe('BrowsePage', () => {
     await answerPage(http, pageOf(orderRows(3, 3), { offset: 3, total: null, hasMore: true }));
     await shown();
     expect(router.url).toBe('/browse/shop.orders;page=2;row=1001/order_lines?at=0');
+  });
+
+  it('shows the path through the data, each crumb a link to it, the row chosen in each', async () => {
+    const { http, page, shown, router } = await open(
+      '/browse/shop.customers;row=42/Orders;row=1001/order_lines;row=7',
+      null,
+    );
+    expect(pathOf(page)).toEqual(['shop.customers (42)', 'Orders (1001)', '[order_lines]']);
+    (await requestTo(http, trailUrl, 'POST')).flush({
+      crumbs: [
+        stepOf('shop.customers', 'shop.customers', 'Acme'),
+        { ...stepOf('shop.orders', 'orders'), title: null, found: true },
+        stepOf('shop.order_lines', 'order_lines'),
+      ],
+    });
+    await shown();
+    // The navigations as the catalog names them; the last crumb's row is the grid's; a row whose display value is
+    // null goes by its key.
+    expect(pathOf(page)).toEqual(['shop.customers (Acme)', 'orders (1001)', '[order_lines]']);
+    expect(page.querySelector('nav.path')?.getAttribute('aria-label')).toBe('Path');
+    expect(
+      [...page.querySelectorAll('nav.path a')].map((link) => link.getAttribute('href')),
+    ).toEqual([
+      '/browse/shop.customers;row=42/Orders;row=1001/order_lines;row=7?at=0',
+      '/browse/shop.customers;row=42/Orders;row=1001/order_lines;row=7?at=1',
+    ]);
+    expect(page.querySelector('[aria-current=page]')?.tagName).toBe('SPAN');
+    (await requestTo(http, entityUrl('shop.order_lines'))).flush(
+      entityOf({ name: 'shop.order_lines', qualifiedName: 'shop.main.order_lines' }),
+    );
+    await answerPage(http, pageOf(orderRows(3), {}, orderColumns()));
+    await shown();
+
+    // An earlier crumb shown: another history entry, the trail as it was, the keyboard on its heading.
+    const navigations = replacing(router);
+    page.querySelector<HTMLElement>('nav.path li:first-child a')!.click();
+    await shown();
+    expect(router.url).toBe('/browse/shop.customers;row=42/Orders;row=1001/order_lines;row=7?at=0');
+    expect(navigations).toEqual([false]);
+    expect(pathOf(page)).toEqual(['[shop.customers (Acme)]', 'orders (1001)', 'order_lines']);
+    expect(http.match(trailUrl)).toEqual([]);
+    (await requestTo(http, entityUrl('shop.customers'))).flush(
+      entityOf({ name: 'shop.customers', qualifiedName: 'shop.main.customers' }),
+    );
+    const body = await answerPage(http, pageOf(orderRows(3), {}, orderColumns()));
+    await shown();
+    expect(body.source).toEqual({ entity: 'shop.customers' });
+    expect(document.activeElement).toBe(page.querySelector('h1'));
+    expect(textOf(page.querySelector('h1'))).toBe('shop.customers');
+  });
+
+  it('follows the row a cell refers to: a crumb after the one shown, its row chosen; back where it was', async () => {
+    const { http, page, shown, router } = await open('/browse/shop.orders;page=2');
+    await answerPage(http, linkedPageOf(linkedRows(3, 3), { offset: 3, total: 9 }));
+    await shown();
+    expect(pathOf(page)).toEqual([]);
+    const navigations = replacing(router);
+    page.querySelector<HTMLElement>('.ag-row[row-index="3"] [col-id=c1] a')!.click();
+    await shown();
+    expect(router.url).toBe('/browse/shop.orders;page=2;row=1004/customer');
+    expect(navigations).toEqual([false]);
+    const trail = await requestTo(http, trailUrl, 'POST');
+    expect(trail.request.body).toEqual({
+      crumbs: [
+        { entity: 'shop.orders', key: ['1004'] },
+        { navigation: 'customer', key: null },
+      ],
+    });
+    trail.flush({
+      crumbs: [stepOf('shop.orders', 'shop.orders', '1004'), stepOf('shop.customers', 'customer')],
+    });
+    await shown();
+    expect(pathOf(page)).toEqual(['shop.orders (1004)', '[customer]']);
+    (await requestTo(http, entityUrl('shop.customers'))).flush(
+      entityOf({ name: 'shop.customers', qualifiedName: 'shop.main.customers' }),
+    );
+    const body = await answerPage(http, pageOf(orderRows(1), {}, orderColumns()));
+    await shown();
+    expect(body.source).toEqual({
+      from: { entity: 'shop.orders', key: ['1004'] },
+      navigation: 'customer',
+    });
+    expect(TestBed.inject(Title).getTitle()).toBe('shop.orders › customer');
+
+    // Back (the router follows the browser's history once it listens, as an application's first navigation has it).
+    router.setUpLocationChangeListener();
+    const back = firstValueFrom(
+      router.events.pipe(filter((event) => event instanceof NavigationEnd)),
+    );
+    TestBed.inject(Location).back();
+    await back;
+    await shown();
+    expect(router.url).toBe('/browse/shop.orders;page=2');
+    (await requestTo(http, entityUrl('shop.orders'))).flush(entityOf());
+    const again = await answerPage(http, linkedPageOf(linkedRows(3, 3), { offset: 3, total: 9 }));
+    await shown();
+    expect(again.grid).toMatchObject({ offset: 3 });
+    expect(pathOf(page)).toEqual([]);
+  });
+
+  it('follows a collection from a row of an earlier crumb, keeping the crumbs after it when they follow it already', async () => {
+    const { http, page, shown, router } = await open(
+      '/browse/shop.orders;row=1001/order_lines;sort=-total?at=0',
+    );
+    (await requestTo(http, trailUrl, 'POST')).flush({
+      crumbs: [
+        stepOf('shop.orders', 'shop.orders', '1001'),
+        stepOf('shop.order_lines', 'order_lines'),
+      ],
+    });
+    await answerPage(http, linkedPageOf(linkedRows(3)));
+    await shown();
+    page.querySelector<HTMLElement>('.ag-row[row-index="0"] [col-id=n0] a')!.click();
+    await shown();
+    expect(router.url).toBe('/browse/shop.orders;row=1001/order_lines;sort=-total');
+    expect(http.match(trailUrl)).toEqual([]);
+    (await requestTo(http, entityUrl('shop.order_lines'))).flush(
+      entityOf({ name: 'shop.order_lines', qualifiedName: 'shop.main.order_lines' }),
+    );
+    const lines = await answerPage(http, pageOf(orderRows(3), {}, orderColumns()));
+    expect(lines.grid?.sort).toEqual([{ column: 'total', desc: true }]);
+    await shown();
+    await router.navigateByUrl('/browse/shop.orders;row=1001/order_lines;sort=-total?at=0');
+    await shown();
+    (await requestTo(http, entityUrl('shop.orders'))).flush(entityOf());
+    await answerPage(http, linkedPageOf(linkedRows(3)));
+    await shown();
+    page.querySelector<HTMLElement>('.ag-row[row-index="1"] [col-id=n0] a')!.click();
+    await shown();
+    expect(router.url).toBe('/browse/shop.orders;row=1002/order_lines');
+    // The rows another row leads to: not shown before the trail says what they are.
+    expect(pathOf(page)).toEqual(['shop.orders (1002)', '[order_lines]']);
+    expect(http.match((request) => request.url === '/api/browse/page')).toEqual([]);
+    expect((await requestTo(http, trailUrl, 'POST')).request.body).toEqual({
+      crumbs: [
+        { entity: 'shop.orders', key: ['1002'] },
+        { navigation: 'order_lines', key: null },
+      ],
+    });
+  });
+
+  it('keeps the grid when a row chosen in it lets go of the crumbs after it, without asking for the trail again', async () => {
+    const { http, page, shown, router } = await open(
+      '/browse/shop.customers;row=42/orders;row=1001/order_lines?at=1',
+      null,
+    );
+    (await requestTo(http, trailUrl, 'POST')).flush({
+      crumbs: [
+        stepOf('shop.customers', 'shop.customers', 'Acme'),
+        stepOf('shop.orders', 'orders', '1001'),
+        stepOf('shop.order_lines', 'order_lines'),
+      ],
+    });
+    await shown();
+    (await requestTo(http, entityUrl('shop.orders'))).flush(entityOf());
+    await answerPage(http, pageOf(orderRows(3), {}, orderColumns()));
+    await shown();
+    const grid = page.querySelector('ag-grid-angular');
+    page.querySelector<HTMLElement>('.ag-row[row-index="2"] [col-id=c1]')!.click();
+    await shown();
+    expect(router.url).toBe('/browse/shop.customers;row=42/orders;row=1003');
+    expect(http.match(trailUrl)).toEqual([]);
+    expect(pathOf(page)).toEqual(['shop.customers (Acme)', '[orders]']);
+    expect(page.querySelector('ag-grid-angular')).toBe(grid);
+    expect(http.match((request) => request.url === '/api/browse/page')).toEqual([]);
+  });
+
+  it('keeps the grid while the trail is read again for crumbs past the one shown, its row by its key till then', async () => {
+    const { http, page, shown, router } = await open(
+      '/browse/shop.customers;row=42/orders;row=1001/order_lines?at=1',
+      null,
+    );
+    (await requestTo(http, trailUrl, 'POST')).flush({
+      crumbs: [
+        stepOf('shop.customers', 'shop.customers', 'Acme'),
+        stepOf('shop.orders', 'orders', 'First'),
+        stepOf('shop.order_lines', 'order_lines'),
+      ],
+    });
+    await shown();
+    (await requestTo(http, entityUrl('shop.orders'))).flush(entityOf());
+    await answerPage(http, pageOf(orderRows(3), {}, orderColumns()));
+    await shown();
+    expect(pathOf(page)).toEqual(['shop.customers (Acme)', '[orders (First)]', 'order_lines']);
+    const grid = page.querySelector('ag-grid-angular');
+    // Back or forward to the same crumbs to the one shown, another row chosen in it.
+    await router.navigateByUrl('/browse/shop.customers;row=42/orders;row=1002/order_lines?at=1');
+    await shown();
+    const trail = await requestTo(http, trailUrl, 'POST');
+    expect(pathOf(page)).toEqual(['shop.customers (Acme)', '[orders (1002)]', 'order_lines']);
+    expect(page.querySelector('ag-grid-angular')).toBe(grid);
+    expect(http.match((request) => request.url === '/api/browse/page')).toEqual([]);
+    expect(
+      [...page.querySelectorAll('.ag-row-selected')].map((row) => row.getAttribute('row-index')),
+    ).toEqual(['1']);
+    trail.flush({
+      crumbs: [
+        stepOf('shop.customers', 'shop.customers', 'Acme'),
+        stepOf('shop.orders', 'orders', 'Second'),
+        stepOf('shop.order_lines', 'order_lines'),
+      ],
+    });
+    await shown();
+    expect(pathOf(page)).toEqual(['shop.customers (Acme)', '[orders (Second)]', 'order_lines']);
+    expect(page.querySelector('ag-grid-angular')).toBe(grid);
+  });
+
+  it("keeps the grid when the trail can't be read again, as its steps to the crumb shown are the same", async () => {
+    const { http, page, shown, router } = await open(
+      '/browse/shop.customers;row=42/orders;row=1001/order_lines?at=1',
+      null,
+    );
+    (await requestTo(http, trailUrl, 'POST')).flush({
+      crumbs: [
+        stepOf('shop.customers', 'shop.customers', 'Acme'),
+        stepOf('shop.orders', 'orders', 'First'),
+        stepOf('shop.order_lines', 'order_lines'),
+      ],
+    });
+    await shown();
+    (await requestTo(http, entityUrl('shop.orders'))).flush(entityOf());
+    await answerPage(http, pageOf(orderRows(3), {}, orderColumns()));
+    await shown();
+    const grid = page.querySelector('ag-grid-angular');
+    await router.navigateByUrl('/browse/shop.customers;row=42/orders;row=1002/order_lines?at=1');
+    await shown();
+    (await requestTo(http, trailUrl, 'POST')).flush(problemBody('internal-error', 'Oops'), {
+      status: 500,
+      statusText: 'Server Error',
+    });
+    await shown();
+    expect(alertsOf(page)).toBe('');
+    expect(page.querySelector('ag-grid-angular')).toBe(grid);
+    expect(pathOf(page)).toEqual(['shop.customers (Acme)', '[orders (1002)]', 'order_lines']);
+    expect(textOf(page.querySelector('.path-problem'))).toBe(
+      'The rows chosen go by their keys: Oops. Try again',
+    );
+  });
+
+  it('asks for the trail of a path made longer, though the crumb it went on from has no row', async () => {
+    const { http, page, shown, router } = await open('/browse/shop.customers;row=42/orders', null);
+    (await requestTo(http, trailUrl, 'POST')).flush({
+      crumbs: [stepOf('shop.customers', 'shop.customers', 'Acme'), stepOf('shop.orders', 'orders')],
+    });
+    await shown();
+    (await requestTo(http, entityUrl('shop.orders'))).flush(entityOf());
+    await answerPage(http, pageOf(orderRows(3), {}, orderColumns()));
+    await shown();
+    await router.navigateByUrl('/browse/shop.customers;row=42/orders/order_lines');
+    await shown();
+    expect((await requestTo(http, trailUrl, 'POST')).request.body).toEqual({
+      crumbs: [
+        { entity: 'shop.customers', key: ['42'] },
+        { navigation: 'orders', key: null },
+        { navigation: 'order_lines', key: null },
+      ],
+    });
+    expect(pathOf(page)).toEqual(['shop.customers (42)', 'orders', '[order_lines]']);
+  });
+
+  it("shows the rows of the crumb shown when the row chosen in it isn't one", async () => {
+    const { http, page, shown } = await open(
+      '/browse/shop.customers;row=42/orders;row=abc/order_lines?at=1',
+      null,
+    );
+    (await requestTo(http, trailUrl, 'POST')).flush({
+      crumbs: [
+        stepOf('shop.customers', 'shop.customers', 'Acme'),
+        {
+          ...stepOf('shop.orders', 'orders'),
+          found: false,
+          problem: "'id': \"abc\" isn't a whole number",
+        },
+      ],
+    });
+    await shown();
+    (await requestTo(http, entityUrl('shop.orders'))).flush(entityOf());
+    const body = await answerPage(http, pageOf(orderRows(3), {}, orderColumns()));
+    await shown();
+    expect(body.source).toEqual({
+      from: { entity: 'shop.customers', key: ['42'] },
+      navigation: 'orders',
+    });
+    expect(alertsOf(page)).toBe('');
+    expect(pathOf(page)).toEqual(['shop.customers (Acme)', '[orders (abc)]', 'order_lines']);
+    expect(page.querySelector('.ag-row-selected')).toBeNull();
+  });
+
+  it("says when only the path's rows couldn't be read: the page shows its rows all the same", async () => {
+    const { http, page, shown } = await open('/browse/shop.orders;row=1001/order_lines?at=0');
+    (await requestTo(http, trailUrl, 'POST')).flush(problemBody('internal-error', 'Oops'), {
+      status: 500,
+      statusText: 'Server Error',
+    });
+    await answerPage(http, pageOf(orderRows(3), {}, orderColumns()));
+    await shown();
+    expect(alertsOf(page)).toBe('');
+    expect(gridCells(page).length).toBe(3);
+    expect(pathOf(page)).toEqual(['[shop.orders (1001)]', 'order_lines']);
+    expect(textOf(page.querySelector('.path-problem'))).toBe(
+      'The rows chosen go by their keys: Oops. Try again',
+    );
+    clickButton(page.querySelector('nav.path')!, 'Try again');
+    (await requestTo(http, trailUrl, 'POST')).flush({
+      crumbs: [
+        stepOf('shop.orders', 'shop.orders', 'open'),
+        stepOf('shop.order_lines', 'order_lines'),
+      ],
+    });
+    await shown();
+    expect(pathOf(page)).toEqual(['[shop.orders (open)]', 'order_lines']);
+    expect(page.querySelector('.path-problem')).toBeNull();
   });
 
   it("says what in the address couldn't be read", async () => {

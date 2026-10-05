@@ -1,12 +1,35 @@
 import { Component, LOCALE_ID, computed, inject, input } from '@angular/core';
 import { type GridColumn, type GridRow, binaryText, cellText } from './grid-columns';
+import {
+  type GridCollection,
+  type GridReference,
+  collectionText,
+  displayOf,
+  refersToNone,
+} from './grid-links';
 
-/** A cell inspected: its column, and its row (null while it is loaded). */
-export interface Inspected {
+/** A cell inspected: its column's, or a collection's of rows that refer to its row. */
+export type Inspected = InspectedColumn | InspectedCollection;
+
+/** A cell of one of the rows' columns, and its row (null while it is loaded). */
+export interface InspectedColumn {
+  readonly kind: 'column';
   readonly column: GridColumn;
   /** The column's place among the row's values. */
   readonly index: number;
   readonly row: GridRow | null;
+  /** What the column's values refer to, if they do. */
+  readonly reference: GridReference | null;
+  /** Whether the cell has a link to follow. */
+  readonly linked: boolean;
+}
+
+/** A cell of a collection's column: the rows that refer to its row. */
+export interface InspectedCollection {
+  readonly kind: 'collection';
+  readonly collection: GridCollection;
+  readonly row: GridRow | null;
+  readonly linked: boolean;
 }
 
 const lineageKinds: Readonly<Record<GridColumn['lineage']['kind'], string>> = {
@@ -21,13 +44,29 @@ const lineageKinds: Readonly<Record<GridColumn['lineage']['kind'], string>> = {
 /**
  * What the cell the keyboard is on (or clicked) holds, whole (the grid shows what fits), and where its column's
  * values come from: the columns of the tables they are read from, through which navigations, and the expression that
- * works them out.
+ * works them out. A cell whose values refer to a row says which; a collection's, what rows it leads to.
  */
 @Component({
   selector: 'gd-grid-inspector',
   host: { role: 'region', 'aria-label': 'Inspector' },
   template: `
-    @if (inspected(); as inspected) {
+    @if (collection(); as inspected) {
+      @let collection = inspected.collection;
+      <h2 class="name">
+        <code>{{ collection.navigation }}</code>
+      </h2>
+      <p class="type">
+        {{ collection.multiplicity === 'many' ? 'Rows of' : 'A row of' }}
+        <code>{{ collection.target }}</code>
+      </p>
+      <section aria-labelledby="gd-inspector-collection">
+        <h3 id="gd-inspector-collection">Leads to</h3>
+        <p>{{ collectionText(collection) }}</p>
+        @if (inspected.linked) {
+          <p class="aside">Enter, or a click on the link, shows {{ them(collection) }}.</p>
+        }
+      </section>
+    } @else if (column(); as inspected) {
       @let column = inspected.column;
       <h2 class="name">
         <code>{{ column.name }}</code>
@@ -49,6 +88,28 @@ const lineageKinds: Readonly<Record<GridColumn['lineage']['kind'], string>> = {
           <p class="aside">The row is being loaded.</p>
         }
       </section>
+      @if (inspected.reference; as reference) {
+        <section aria-labelledby="gd-inspector-reference">
+          <h3 id="gd-inspector-reference">Refers to</h3>
+          <p>
+            A row of <code>{{ reference.target }}</code
+            >, through <code>{{ reference.navigation }}</code
+            >.
+          </p>
+          @if (noRow(); as noRow) {
+            <p class="aside">{{ noRow }}</p>
+          } @else {
+            @if (display(); as display) {
+              <pre class="display">{{ display }}</pre>
+            }
+            @if (inspected.linked) {
+              <p class="aside">Enter, or a click on the link, shows the row.</p>
+            } @else if (inspected.row && inspected.row.id === null) {
+              <p class="aside">Rows without a key lead nowhere.</p>
+            }
+          }
+        </section>
+      }
       <section aria-labelledby="gd-inspector-lineage">
         <h3 id="gd-inspector-lineage">Where it comes from</h3>
         <p>{{ kinds[column.lineage.kind] }}</p>
@@ -151,7 +212,8 @@ const lineageKinds: Readonly<Record<GridColumn['lineage']['kind'], string>> = {
       overflow-wrap: anywhere;
     }
 
-    .expression {
+    .expression,
+    .display {
       margin-top: 4px;
     }
   `,
@@ -162,8 +224,34 @@ export class GridInspector {
   readonly inspected = input<Inspected | null>(null);
 
   protected readonly kinds = lineageKinds;
-  protected readonly value = computed(() => {
+  protected readonly collectionText = collectionText;
+  protected readonly them = them;
+  protected readonly column = computed(() => {
     const inspected = this.inspected();
+    return inspected?.kind === 'column' ? inspected : null;
+  });
+  protected readonly collection = computed(() => {
+    const inspected = this.inspected();
+    return inspected?.kind === 'collection' ? inspected : null;
+  });
+  /** Why the cell's values refer to no row: a null among them. */
+  protected readonly noRow = computed(() => {
+    const inspected = this.column();
+    const reference = inspected?.reference;
+    if (!inspected?.row || !reference || !refersToNone(reference, inspected.row)) {
+      return null;
+    }
+    return reference.columns.length === 1
+      ? 'Its value is NULL: it refers to no row.'
+      : 'One of its values is NULL: it refers to no row.';
+  });
+  /** The display value of the row the cell's values refer to. */
+  protected readonly display = computed(() => {
+    const inspected = this.column();
+    return inspected ? displayOf(inspected.column, inspected.row) : null;
+  });
+  protected readonly value = computed(() => {
+    const inspected = this.column();
     if (!inspected?.row) {
       return null;
     }
@@ -187,6 +275,10 @@ export class GridInspector {
         : '';
     return { text, null: false, size };
   });
+}
+
+function them(collection: GridCollection): string {
+  return collection.multiplicity === 'many' ? 'them' : 'it';
 }
 
 function byteCount(base64: string): number {

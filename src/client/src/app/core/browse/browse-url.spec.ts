@@ -8,8 +8,11 @@ import {
   type GridOp,
   browseUrlTree,
   crumbOf,
+  followedLocation,
+  locationAt,
   opValues,
   readBrowseLocation,
+  sameKey,
 } from './browse-url';
 
 const serializer = new DefaultUrlSerializer();
@@ -184,6 +187,65 @@ describe('browsing addresses', () => {
       }),
       { numRuns: 400 },
     );
+  });
+});
+
+describe('following a path', () => {
+  const customers = crumbOf('shop.customers', {
+    sort: [{ column: 'name', desc: false }],
+    row: ['7'],
+  });
+  const orders = crumbOf('orders', { page: 2, row: ['1001'] });
+  const lines = crumbOf('lines', { where: 'qty > 1' });
+
+  it("follows a navigation from a row: the row chosen, the navigation's crumb shown after it", () => {
+    expect(followedLocation({ crumbs: [customers], at: 0 }, ['42'], 'orders')).toEqual({
+      crumbs: [{ ...customers, row: ['42'] }, crumbOf('orders')],
+      at: 1,
+    });
+  });
+
+  it('lets go of the crumbs after the one shown', () => {
+    expect(
+      followedLocation({ crumbs: [customers, orders, lines], at: 0 }, ['42'], 'orders'),
+    ).toEqual({
+      crumbs: [{ ...customers, row: ['42'] }, crumbOf('orders')],
+      at: 1,
+    });
+    expect(
+      followedLocation({ crumbs: [customers, orders, lines], at: 0 }, ['7'], 'payments'),
+    ).toEqual({
+      crumbs: [customers, crumbOf('payments')],
+      at: 1,
+    });
+  });
+
+  it('keeps the crumbs before the one shown, following from a later crumb', () => {
+    expect(
+      followedLocation({ crumbs: [customers, orders, lines], at: 1 }, ['1002'], 'payments'),
+    ).toEqual({
+      crumbs: [customers, { ...orders, row: ['1002'] }, crumbOf('payments')],
+      at: 2,
+    });
+  });
+
+  it('keeps the crumbs after the one shown when they follow the same navigation from the same row', () => {
+    const location = { crumbs: [customers, orders, lines], at: 0 };
+    expect(followedLocation(location, ['7'], 'orders')).toEqual({ crumbs: location.crumbs, at: 1 });
+  });
+
+  it('shows another crumb of the same path', () => {
+    const location = { crumbs: [customers, orders, lines], at: 2 };
+    expect(locationAt(location, 0)).toEqual({ crumbs: location.crumbs, at: 0 });
+    expect(addressOf(locationAt(location, 2))).not.toContain('at=');
+  });
+
+  it("compares rows' keys value by value", () => {
+    expect(sameKey(['1', '2'], ['1', '2'])).toBe(true);
+    expect(sameKey(['1', '2'], ['1'])).toBe(false);
+    expect(sameKey(['1,2'], ['1', '2'])).toBe(false);
+    expect(sameKey(null, null)).toBe(true);
+    expect(sameKey(null, [])).toBe(false);
   });
 });
 
