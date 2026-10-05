@@ -36,8 +36,17 @@
               "@fontsource-variable/roboto/index.css",
               "@fontsource-variable/roboto-mono/index.css",
               "@material-symbols/font-400/outlined.css",
-              "src/styles.scss"
-            ]
+              "src/styles.scss",
+              {
+                "input": "node_modules/monaco-editor/min/vs/editor/editor.main.css",
+                "bundleName": "monaco",
+                "inject": false
+              }
+            ],
+            "loader": {
+              ".css": "empty"
+            },
+            "webWorkerTsConfig": "tsconfig.worker.json"
           },
           "configurations": {
             "production": {

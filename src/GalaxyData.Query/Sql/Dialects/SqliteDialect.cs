@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Text;
 using GalaxyData.Query.Functions;
 using GalaxyData.Query.Types;
@@ -34,6 +35,9 @@ internal sealed class SqliteDialect : SqlDialect
    };
 
    private protected override void WriteTemporal(StringBuilder text, string keyword, string value) => text.Append('\'').Append(value).Append('\'');
+
+   private protected override void WriteCharacter(StringBuilder text, char value, ScalarType type) =>
+      text.Append("char(").Append(((int)value).ToString(CultureInfo.InvariantCulture)).Append(')');
 
    private protected override void WriteGuid(StringBuilder text, Guid value) => text.Append('\'').Append(value.ToString("D").ToUpperInvariant()).Append('\'');
 

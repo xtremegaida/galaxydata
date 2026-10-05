@@ -24,8 +24,12 @@ import {
   FakeChangesChannel,
   answerChanges,
   changeOf,
+  commitUrl,
   insertOf,
   opsUrl,
+  previewOf,
+  previewUrl,
+  resultOf,
   setOf,
 } from '../../../../testing/changes';
 import { requestTo, settle } from '../../../../testing/http';
@@ -155,6 +159,115 @@ describe('BrowseGrid, changing rows', () => {
     expect(element.querySelector('.ag-header-cell[col-id=gd-state]')).not.toBeNull();
     expect(api().getColumn('gd-state')?.getPinned()).toBe('left');
     expect(gridCells(element).map((row) => row.length)).toEqual([3, 3, 3]);
+  });
+
+  it("marks the cells and rows a preview found can't be committed, and says why", async () => {
+    const paid = changeOf({
+      key: ['1002'],
+      rowId: '["1002"]',
+      values: { status: 'lost' },
+      original: { status: 'open' },
+    });
+    const { element, http, api, shown, changes } = await opened({ changes: setOf([paid]) });
+    const previewing = changes.preview();
+    (await requestTo(http, previewUrl, 'POST')).flush(
+      previewOf({
+        planId: null,
+        issues: [
+          { change: 1, column: 'status', message: "'status' takes open or paid" },
+          { change: 1, column: null, message: 'The row is locked' },
+        ],
+      }),
+    );
+    await previewing;
+    await shown();
+    const cell = element.querySelector('.ag-row[row-index="1"] [col-id=c1]');
+    expect(cell?.classList).toContain('gd-invalid');
+    expect(element.querySelector('.ag-row[row-index="1"] [col-id=c2]')?.classList).not.toContain(
+      'gd-invalid',
+    );
+    expect(states(element)[1]).toBe("Changed, can't be committed");
+    api().setFocusedCell(1, 'c1');
+    await shown();
+    expect(
+      [...element.querySelectorAll('gd-grid-inspector .note')].map((note) => textOf(note)),
+    ).toEqual([
+      'Changed, not committed: it was open.',
+      "Can't be committed: 'status' takes open or paid",
+      "Can't be committed: The row is locked",
+    ]);
+
+    // Changed again, it is of no issue till the next preview.
+    api().getDisplayedRowAtIndex(1)!.setDataValue('c1', 'paid');
+    (await requestTo(http, opsUrl, 'POST')).flush(
+      setOf([{ ...paid, values: { status: 'paid' }, updatedAt: '2026-10-05T08:05:00Z' }], 2),
+    );
+    await shown();
+    expect(element.querySelector('.ag-row[row-index="1"] [col-id=c1]')?.classList).not.toContain(
+      'gd-invalid',
+    );
+    expect(states(element)[1]).toBe('Changed');
+  });
+
+  it('reads its rows again from the page shown, once a cell being edited is', async () => {
+    const { element, http, api, shown, changes } = await opened({
+      page: editablePageOf(orderRows(3), { total: 7, hasMore: true }),
+    });
+    api().paginationGoToPage(1);
+    await shown();
+    await answerPage(http, editablePageOf(orderRows(3, 3), { offset: 3, total: 7, hasMore: true }));
+    await shown();
+    api().startEditingCell({ rowIndex: 3, colKey: 'c1' });
+    await shown();
+    (TestBed.inject(ChangesChannel) as unknown as FakeChangesChannel).hear(1, true);
+    await shown();
+    expect(http.match((request) => request.url === '/api/browse/page').length).toBe(0);
+    expect(element.querySelector('.ag-cell-inline-editing')).not.toBeNull();
+    api().stopEditing(true);
+    await shown();
+    const asked = await answerPage(
+      http,
+      editablePageOf(orderRows(3, 3), { offset: 3, total: 7, hasMore: true }),
+    );
+    expect(asked.grid).toMatchObject({ offset: 3 });
+    await shown();
+    expect(changes.count()).toBe(0);
+  });
+
+  it('reads its rows again, from the page shown, once changes are committed here or in another tab', async () => {
+    const paid = changeOf({
+      key: ['1002'],
+      rowId: '["1002"]',
+      values: { status: 'paid' },
+      original: { status: 'open' },
+    });
+    const { element, http, shown, changes } = await opened({ changes: setOf([paid]) });
+    expect(gridCells(element)[1]).toEqual(['1002', 'paid', '1.50']);
+    const committing = changes.commit({ planId: 'plan-1', version: 1, allowAnyStatement: false });
+    (await requestTo(http, commitUrl, 'POST')).flush(resultOf());
+    await committing;
+    await shown();
+    const rows = orderRows(3).map((row, index) =>
+      index === 1 ? rowOf(['1002', 'paid', '1.50']) : row,
+    );
+    const asked = await answerPage(http, editablePageOf(rows, { total: 3 }));
+    expect(asked.grid).toMatchObject({ offset: 0 });
+    await shown();
+    expect(gridCells(element)[1]).toEqual(['1002', 'paid', '1.50']);
+    expect(states(element)[1]).toBe('');
+
+    (TestBed.inject(ChangesChannel) as unknown as FakeChangesChannel).hear(5, true);
+    await answerChanges(http, setOf([], 5));
+    await answerPage(http, editablePageOf(rows, { total: 3 }));
+    await shown();
+    // Not for a commit that wrote nothing.
+    const failing = changes.commit({ planId: 'plan-2', version: 5, allowAnyStatement: false });
+    (await requestTo(http, commitUrl, 'POST')).flush(
+      resultOf({ outcome: 'rolledBack', changes: setOf([], 5) }),
+    );
+    await failing;
+    await shown();
+    expect(http.match((request) => request.url === '/api/browse/page').length).toBe(0);
   });
 
   it('offers no changes to readers', async () => {

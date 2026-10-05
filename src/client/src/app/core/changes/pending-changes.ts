@@ -9,7 +9,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import type { Observable } from 'rxjs';
+import { type Observable, firstValueFrom } from 'rxjs';
 import { ApiClient, type Schema } from '../api/api-client';
 import { type Problem, isSessionProblem, problemMessage, problemOf } from '../api/problem';
 import { AuthStore } from '../auth/auth-store';
@@ -17,6 +17,14 @@ import { AuthStore } from '../auth/auth-store';
 export type PendingChange = Schema<'PendingChangeDto'>;
 export type ChangeSet = Schema<'ChangeSetDto'>;
 export type ChangeOp = Schema<'ChangeOpDto'>;
+/** Why a change can't be made: the change, the column at fault (if one is), and the reason. */
+export type ChangeIssue = Schema<'ChangeIssueDto'>;
+export type ChangePreview = Schema<'ChangePreviewDto'>;
+export type CommitRequest = Schema<'CommitChangesRequest'>;
+export type CommitResult = Schema<'CommitResultDto'>;
+
+/** What came of asking the server: its answer, or the problem. */
+export type Answered<T> = { readonly answer: T } | { readonly problem: Problem };
 
 /** Values by column (or display values by navigation), as rows' values are sent. */
 export type Values = Readonly<Record<string, unknown>>;
@@ -52,9 +60,21 @@ interface Action {
   readonly resolve: (outcome: Outcome) => void;
 }
 
-/** What a tab says when it changed the user's changes: their version now. */
+/** What a tab says when it changed the user's changes: their version now, and whether a commit wrote some. */
 interface Announcement {
   readonly version: number;
+  readonly committed?: boolean;
+}
+
+/**
+ * Issues found (by a preview, or a commit that failed) at a version of the changes, with when each change was last
+ * changed then: an issue goes once its change is changed again. Until the changes at that version are read here,
+ * when they were changed isn't known, and the issues aren't shown.
+ */
+interface FoundIssues {
+  readonly issues: readonly ChangeIssue[];
+  readonly version: number;
+  readonly changedAt: ReadonlyMap<number, string> | null;
 }
 
 /** Tells the application's other tabs when the user's changes changed here, and hears when they changed in theirs. */
@@ -67,16 +87,16 @@ export class ChangesChannel {
     inject(DestroyRef).onDestroy(() => this.channel?.close());
   }
 
-  /** Tells the other tabs the changes' version now. */
-  announce(version: number): void {
-    this.channel?.postMessage({ version } satisfies Announcement);
+  /** Tells the other tabs the changes' version now, and whether a commit wrote some. */
+  announce(version: number, committed = false): void {
+    this.channel?.postMessage({ version, committed } satisfies Announcement);
   }
 
-  /** Hears the version another tab says the changes are at now. */
-  listen(heard: (version: number) => void): void {
+  /** Hears the version another tab says the changes are at now, and whether a commit there wrote some. */
+  listen(heard: (version: number, committed: boolean) => void): void {
     this.channel?.addEventListener('message', (event: MessageEvent<Announcement | null>) => {
       if (typeof event.data?.version === 'number') {
-        heard(event.data.version);
+        heard(event.data.version, event.data.committed === true);
       }
     });
   }
@@ -89,7 +109,9 @@ const noChanges: EntityChanges = { rows: new Map(), inserts: [] };
  * Actions (setting values, new rows, deleting, reverting, clearing) are shown at once, as the server will make them,
  * and sent one at a time, in order; the server's answer is the changes as they are. An action the server refuses
  * goes, and what came of it says why. Another tab's changes (it says so), and coming back to the tab, read them
- * again, once the actions sent are answered.
+ * again, once the actions sent are answered. Previews and commits wait for the actions asked for before them; what
+ * a preview found wrong with changes is kept until they change, and commits that wrote changes are counted (here
+ * and in other tabs), so the rows shown are read again.
  */
 @Injectable({ providedIn: 'root' })
 export class PendingChanges {
@@ -103,12 +125,19 @@ export class PendingChanges {
   private readonly queue = signal<readonly Action[]>([]);
   private readonly loadProblem = signal<Problem | null>(null);
   private sending = false;
+  /** Waiting for the actions asked for to be answered (previews and commits). */
+  private settling: (() => void)[] = [];
   /** Whether the changes are to be read again once the actions are answered. */
   private reloadWanted = false;
   /** Requests whose answers are the changes, numbered: an answer to an earlier one than the last taken is left. */
   private asked = 0;
   private taken = 0;
   private optimisticIds = 0;
+  /** What the last preview found wrong. */
+  private readonly found = signal<FoundIssues | null>(null);
+  /** The change whose statement stopped the last commit, and why. */
+  private readonly failed = signal<FoundIssues | null>(null);
+  private readonly written = signal(0);
 
   /** Whether the user may change data, and so has changes. */
   readonly enabled = computed(() => this.auth.permissions().canEditData);
@@ -128,13 +157,38 @@ export class PendingChanges {
   readonly saving = computed(() => this.queue().length > 0);
   /** The changes by entity. */
   readonly byEntity = computed(() => indexOf(this.changes()));
+  /**
+   * What the last preview found wrong with changes, and the change that stopped the last commit, by change: of those
+   * not changed since (the same while they are, so other changes don't make them anew).
+   */
+  readonly issues = computed(
+    () => {
+      const issues = new Map<number, ChangeIssue[]>();
+      const changes = new Map(this.changes().map((change) => [change.id, change]));
+      for (const found of [this.failed(), this.found()]) {
+        for (const issue of found?.issues ?? []) {
+          const change = changes.get(issue.change);
+          if (change && change.updatedAt === found?.changedAt?.get(issue.change)) {
+            issues.set(issue.change, [...(issues.get(issue.change) ?? []), issue]);
+          }
+        }
+      }
+      return issues as ReadonlyMap<number, readonly ChangeIssue[]>;
+    },
+    { equal: sameIssues },
+  );
+  /** Counts the commits that wrote changes (or may have), here or in another tab: the rows shown are read again. */
+  readonly commits = this.written.asReadonly();
 
   constructor() {
     effect(() => {
       const enabled = this.enabled();
       untracked(() => (enabled ? this.load() : this.reset()));
     });
-    this.channel.listen((version) => {
+    this.channel.listen((version, committed) => {
+      if (committed) {
+        this.written.update((count) => count + 1);
+      }
       if (version !== untracked(this.confirmed)?.version) {
         this.reload();
       }
@@ -152,6 +206,82 @@ export class PendingChanges {
   /** The changes of an entity's rows. */
   of(entity: string): EntityChanges {
     return this.byEntity().get(entity) ?? noChanges;
+  }
+
+  /** What the last preview found wrong with a change (not changed since). */
+  issuesOf(change: PendingChange | null): readonly ChangeIssue[] {
+    return (change && this.issues().get(change.id)) ?? [];
+  }
+
+  /**
+   * What committing the changes would run on each connection, and what is wrong with changes (kept, for the rows
+   * to show): once the actions asked for are answered.
+   */
+  async preview(): Promise<Answered<ChangePreview>> {
+    await this.settled();
+    try {
+      const preview = await firstValueFrom(this.api.post('/api/changes/preview'));
+      const confirmed = untracked(this.confirmed);
+      const same = preview.version === confirmed?.version;
+      this.found.set({
+        issues: preview.issues,
+        version: preview.version,
+        changedAt: same ? changedAtOf(confirmed) : null,
+      });
+      if (!same) {
+        // Changed elsewhere since they were read here.
+        this.reload();
+      }
+      return { answer: preview };
+    } catch (error: unknown) {
+      return { problem: problemOf(error) };
+    }
+  }
+
+  /**
+   * Commits a preview's plan (once the actions asked for are answered; those asked for meanwhile, and reading the
+   * changes again, wait for it): the changes left are the server's; the change whose statement failed is marked,
+   * with why; a commit that wrote changes is counted, and told the other tabs. A commit that may have run (no
+   * answer, a failure) reads the changes again, and is counted.
+   */
+  async commit(request: CommitRequest): Promise<Answered<CommitResult>> {
+    while (this.sending || untracked(this.queue).length > 0) {
+      await this.settled();
+    }
+    this.sending = true;
+    const number = ++this.asked;
+    try {
+      const result = await firstValueFrom(this.api.post('/api/changes/commit', { body: request }));
+      const wrote = result.outcome !== 'rolledBack';
+      if (this.take(number, result.changes)) {
+        this.channel.announce(result.changes.version, wrote);
+      }
+      const failure = result.failure;
+      this.found.set(null);
+      this.failed.set(
+        failure?.change != null
+          ? {
+              issues: [{ change: failure.change, column: null, message: failure.message }],
+              version: result.changes.version,
+              changedAt: changedAtOf(result.changes),
+            }
+          : null,
+      );
+      if (wrote) {
+        this.written.update((count) => count + 1);
+      }
+      return { answer: result };
+    } catch (error: unknown) {
+      const problem = problemOf(error);
+      if (![400, 403, 409, 422].includes(problem.status) && !isSessionProblem(problem)) {
+        this.written.update((count) => count + 1);
+        this.reloadWanted = true;
+      }
+      return { problem };
+    } finally {
+      this.sending = false;
+      this.finished();
+    }
   }
 
   /** Reads the changes again (once the actions sent are answered). */
@@ -250,6 +380,14 @@ export class PendingChanges {
     return this.api.post('/api/changes/ops', { body: { ops } });
   }
 
+  /** Once the actions asked for are answered. */
+  private settled(): Promise<void> {
+    if (!this.sending && untracked(this.queue).length === 0) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => this.settling.push(resolve));
+  }
+
   private act(request: () => Observable<ChangeSet>, fold: Action['fold']): Promise<Outcome> {
     return new Promise((resolve) => {
       this.queue.update((queue) => [...queue, { request, fold, resolve }]);
@@ -257,7 +395,25 @@ export class PendingChanges {
     });
   }
 
-  /** Sends the first action waiting, unless one is being sent. */
+  /**
+   * An action or a commit answered: the next action is sent; else the changes are read again when that is wanted,
+   * and what waits for the actions to be answered goes on.
+   */
+  private finished(): void {
+    if (untracked(this.queue).length > 0) {
+      this.next();
+      return;
+    }
+    if (this.reloadWanted) {
+      this.reloadWanted = false;
+      this.load();
+    }
+    const settling = this.settling;
+    this.settling = [];
+    settling.forEach((settled) => settled());
+  }
+
+  /** Sends the first action waiting, unless one is being sent (or a commit). */
   private next(): void {
     const action = untracked(this.queue)[0];
     if (this.sending || !action) {
@@ -269,12 +425,7 @@ export class PendingChanges {
       this.queue.update((queue) => queue.filter((each) => each !== action));
       this.sending = false;
       action.resolve(outcome);
-      if (untracked(this.queue).length > 0) {
-        this.next();
-      } else if (this.reloadWanted) {
-        this.reloadWanted = false;
-        this.load();
-      }
+      this.finished();
     };
     action.request().subscribe({
       next: (set) => {
@@ -319,12 +470,21 @@ export class PendingChanges {
     this.taken = number;
     this.confirmed.set(set);
     this.loadProblem.set(null);
+    // Issues found at this version are of these changes as they are.
+    for (const found of [this.found, this.failed]) {
+      const issues = untracked(found);
+      if (issues && issues.changedAt === null && issues.version === set.version) {
+        found.set({ ...issues, changedAt: changedAtOf(set) });
+      }
+    }
     return true;
   }
 
   private reset(): void {
     this.confirmed.set(null);
     this.loadProblem.set(null);
+    this.found.set(null);
+    this.failed.set(null);
   }
 
   /** The changes as an operation leaves them (as the server merges them), for showing it before it is answered. */
@@ -453,6 +613,19 @@ export function foldOp(
     default:
       return changes;
   }
+}
+
+/** When each change was last changed, by its id. */
+function changedAtOf(set: ChangeSet | null): ReadonlyMap<number, string> {
+  return new Map((set?.changes ?? []).map((change) => [change.id, change.updatedAt]));
+}
+
+/** Whether two indexes of issues say the same of the same changes. */
+function sameIssues(
+  a: ReadonlyMap<number, readonly ChangeIssue[]>,
+  b: ReadonlyMap<number, readonly ChangeIssue[]>,
+): boolean {
+  return a.size === b.size && [...a].every(([id, issues]) => sameValue(issues, b.get(id)));
 }
 
 /** Whether two values are the same as sent (JSON's). */

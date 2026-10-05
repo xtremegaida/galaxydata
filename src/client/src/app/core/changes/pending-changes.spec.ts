@@ -7,8 +7,12 @@ import {
   answerChanges,
   changeOf,
   changesUrl,
+  commitUrl,
   insertOf,
   opsUrl,
+  previewOf,
+  previewUrl,
+  resultOf,
   setOf,
 } from '../../../testing/changes';
 import { requestTo, settle } from '../../../testing/http';
@@ -281,6 +285,262 @@ describe('PendingChanges', () => {
     expect(store.count()).toBe(0);
     (await requestTo(http, changesUrl, 'DELETE')).flush(setOf([], 4));
     await all;
+  });
+
+  it('previews the changes once the actions asked for are answered, keeping what it found wrong while they stay', async () => {
+    const order = changeOf({ id: 1 });
+    const line = changeOf({ id: 2, entity: 'shop.order_lines', key: ['1'], rowId: '["1"]' });
+    const store = await loaded([order, line], 1);
+    const done = store.set('shop.orders', row, { status: 'shipped' }, { status: 'open' });
+    const previewing = store.preview();
+    await settle();
+    // Not before the action is answered.
+    expect(http.match(previewUrl).length).toBe(0);
+    const changed = { ...order, values: { status: 'shipped' }, updatedAt: '2026-10-05T08:01:00Z' };
+    (await requestTo(http, opsUrl, 'POST')).flush(setOf([changed, line], 2));
+    await done;
+    const issues = [
+      { change: 1, column: 'status', message: "'status' takes open, paid or shipped" },
+      { change: 2, column: null, message: 'shop.order_lines takes no changes' },
+      { change: 2, column: 'qty', message: "'qty' is too large" },
+    ];
+    (await requestTo(http, previewUrl, 'POST')).flush(
+      previewOf({ planId: null, version: 2, issues }),
+    );
+    const answered = await previewing;
+    expect('answer' in answered && answered.answer.issues).toEqual(issues);
+    expect(store.issuesOf(changed)).toEqual([issues[0]]);
+    expect(store.issuesOf(line)).toEqual([issues[1], issues[2]]);
+    expect(store.issuesOf(null)).toEqual([]);
+
+    // Changes that change are of no issue any more (till the next preview); others keep theirs.
+    const before = store.issues();
+    const again = store.set('shop.orders', row, { status: 'paid' }, { status: 'open' });
+    (await requestTo(http, opsUrl, 'POST')).flush(
+      setOf(
+        [{ ...changed, values: { status: 'paid' }, updatedAt: '2026-10-05T08:02:00Z' }, line],
+        3,
+      ),
+    );
+    await again;
+    expect(store.issuesOf(store.changes()[0])).toEqual([]);
+    expect(store.issuesOf(line).length).toBe(2);
+    expect(store.issues()).not.toBe(before);
+    const kept = store.issues();
+    const other = store.insert('wh.stock');
+    (await requestTo(http, opsUrl, 'POST')).flush(
+      setOf([store.changes()[0], line, insertOf(other.tempId, { id: 3, entity: 'wh.stock' })], 4),
+    );
+    await other.done;
+    // The same, as other changes changed.
+    expect(store.issues()).toBe(kept);
+  });
+
+  it('reads the changes again when a preview is of changes changed elsewhere, and says its problem', async () => {
+    const store = await loaded([changeOf()], 1);
+    const previewing = store.preview();
+    (await requestTo(http, previewUrl, 'POST')).flush(previewOf({ version: 2 }));
+    await previewing;
+    await answerChanges(http, setOf([changeOf()], 2));
+
+    const failing = store.preview();
+    (await requestTo(http, previewUrl, 'POST')).flush(
+      problemBody('commit-in-progress', 'A commit of the changes is running'),
+      { status: 409, statusText: 'Conflict' },
+    );
+    const failed = await failing;
+    expect('problem' in failed && failed.problem.code).toBe('commit-in-progress');
+  });
+
+  it('commits a plan: the changes left are the answer, the other tabs are told, and the commit is counted', async () => {
+    const store = await loaded([changeOf(), changeOf({ id: 2, key: ['1002'], rowId: '["1002"]' })]);
+    const previewing = store.preview();
+    (await requestTo(http, previewUrl, 'POST')).flush(
+      previewOf({ issues: [{ change: 2, column: null, message: 'Gone' }] }),
+    );
+    await previewing;
+    expect(store.commits()).toBe(0);
+    const request = { planId: 'plan-1', version: 1, allowAnyStatement: false };
+    const committing = store.commit(request);
+    const sent = await requestTo(http, commitUrl, 'POST');
+    expect(sent.request.body).toEqual(request);
+    sent.flush(
+      resultOf({ changes: setOf([changeOf({ id: 2, key: ['1002'], rowId: '["1002"]' })], 5) }),
+    );
+    const committed = await committing;
+    expect('answer' in committed && committed.answer.auditId).toBe(12);
+    expect(store.changes().map((change) => change.id)).toEqual([2]);
+    expect(channel.committed).toEqual([5]);
+    expect(store.commits()).toBe(1);
+    // What the preview found goes with it.
+    expect(store.issues().size).toBe(0);
+  });
+
+  it("marks the change whose statement stopped a commit, which wrote nothing, and isn't counted", async () => {
+    const store = await loaded([changeOf()]);
+    const committing = store.commit({ planId: 'plan-1', version: 1, allowAnyStatement: false });
+    (await requestTo(http, commitUrl, 'POST')).flush(
+      resultOf({
+        outcome: 'rolledBack',
+        failure: {
+          kind: 'conflict',
+          source: 'shop',
+          message: 'The row was changed or deleted since it was read',
+          change: 1,
+          statement: 'the update of shop.orders (id = 1001)',
+        },
+        changes: setOf([changeOf()], 1),
+      }),
+    );
+    await committing;
+    expect(store.issuesOf(store.changes()[0])).toEqual([
+      { change: 1, column: null, message: 'The row was changed or deleted since it was read' },
+    ]);
+    expect(store.commits()).toBe(0);
+    expect(channel.announced).toEqual([1]);
+    expect(channel.committed).toEqual([]);
+  });
+
+  it('reads the changes again after a commit that may have run, and counts it; not after one refused', async () => {
+    const store = await loaded([changeOf()]);
+    const refused = store.commit({ planId: 'plan-1', version: 1, allowAnyStatement: false });
+    (await requestTo(http, commitUrl, 'POST')).flush(
+      problemBody('plan-stale', 'The preview is out of date'),
+      { status: 409, statusText: 'Conflict' },
+    );
+    const stale = await refused;
+    expect('problem' in stale && stale.problem.code).toBe('plan-stale');
+    await settle();
+    expect(http.match(changesUrl).length).toBe(0);
+    expect(store.commits()).toBe(0);
+
+    const lost = store.commit({ planId: 'plan-2', version: 1, allowAnyStatement: false });
+    (await requestTo(http, commitUrl, 'POST')).error(new ProgressEvent('error'));
+    const unknown = await lost;
+    expect('problem' in unknown && unknown.problem.code).toBe('unreachable');
+    expect(store.commits()).toBe(1);
+    await answerChanges(http, setOf([], 2));
+    expect(store.count()).toBe(0);
+  });
+
+  it('holds back reading the changes, and actions asked for, while a commit is answered', async () => {
+    const store = await loaded([changeOf()], 1);
+    const committing = store.commit({ planId: 'plan-1', version: 1, allowAnyStatement: false });
+    const sent = await requestTo(http, commitUrl, 'POST');
+    // Coming back into view, and another action, wait for it.
+    const state = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    state.mockRestore();
+    const next = store.set(
+      'shop.orders',
+      { key: ['1002'], rowId: '["1002"]' },
+      { status: 'x' },
+      { status: 'open' },
+    );
+    await settle();
+    expect(http.match(changesUrl).length).toBe(0);
+    expect(http.match(opsUrl).length).toBe(0);
+    sent.flush(resultOf({ changes: setOf([], 2) }));
+    expect('answer' in (await committing)).toBe(true);
+    expect(channel.committed).toEqual([2]);
+    (await requestTo(http, opsUrl, 'POST')).flush(
+      setOf([changeOf({ key: ['1002'], rowId: '["1002"]', values: { status: 'x' } })], 3),
+    );
+    await next;
+    await answerChanges(http, setOf([changeOf({ key: ['1002'], rowId: '["1002"]' })], 3));
+    expect(store.count()).toBe(1);
+  });
+
+  it('keeps the change that stopped a commit marked through previews, till it is changed', async () => {
+    const store = await loaded([changeOf()], 1);
+    const committing = store.commit({ planId: 'plan-1', version: 1, allowAnyStatement: false });
+    (await requestTo(http, commitUrl, 'POST')).flush(
+      resultOf({
+        outcome: 'rolledBack',
+        failure: {
+          kind: 'conflict',
+          source: 'shop',
+          message: 'Changed since',
+          change: 1,
+          statement: null,
+        },
+        changes: setOf([changeOf()], 1),
+      }),
+    );
+    await committing;
+    const previewing = store.preview();
+    (await requestTo(http, previewUrl, 'POST')).flush(
+      previewOf({ issues: [{ change: 1, column: 'status', message: 'Not a status' }] }),
+    );
+    await previewing;
+    expect(store.issuesOf(store.changes()[0]).map((issue) => issue.message)).toEqual([
+      'Changed since',
+      'Not a status',
+    ]);
+    const changed = store.set('shop.orders', row, { status: 'shipped' }, { status: 'open' });
+    (await requestTo(http, opsUrl, 'POST')).flush(
+      setOf([changeOf({ values: { status: 'shipped' }, updatedAt: '2026-10-05T08:09:00Z' })], 2),
+    );
+    await changed;
+    expect(store.issuesOf(store.changes()[0])).toEqual([]);
+  });
+
+  it('forgets what was found wrong when the user may change data no more', async () => {
+    const store = await loaded([changeOf()], 1);
+    const committing = store.commit({ planId: 'plan-1', version: 1, allowAnyStatement: false });
+    (await requestTo(http, commitUrl, 'POST')).flush(
+      resultOf({
+        outcome: 'rolledBack',
+        failure: {
+          kind: 'conflict',
+          source: 'shop',
+          message: 'Changed since',
+          change: 1,
+          statement: null,
+        },
+        changes: setOf([changeOf()], 1),
+      }),
+    );
+    await committing;
+    const auth = TestBed.inject(AuthStore);
+    let asked = auth.load();
+    http.expectOne('/api/auth/session').flush(sessionOf('read'));
+    await asked;
+    TestBed.tick();
+    asked = auth.load();
+    http.expectOne('/api/auth/session').flush(sessionOf('dataManager'));
+    await asked;
+    TestBed.tick();
+    await answerChanges(http, setOf([changeOf()], 1));
+    expect(store.issuesOf(store.changes()[0])).toEqual([]);
+  });
+
+  it('shows what a preview of changes changed elsewhere found once they are read at its version', async () => {
+    const store = await loaded([changeOf()], 1);
+    const previewing = store.preview();
+    (await requestTo(http, previewUrl, 'POST')).flush(
+      previewOf({ version: 3, issues: [{ change: 1, column: null, message: 'Gone' }] }),
+    );
+    await previewing;
+    expect(store.issues().size).toBe(0);
+    // Read at another version still: not known to be of these changes.
+    await answerChanges(http, setOf([changeOf({ updatedAt: '2026-10-05T08:02:00Z' })], 2));
+    expect(store.issues().size).toBe(0);
+    store.reload();
+    await answerChanges(http, setOf([changeOf({ updatedAt: '2026-10-05T08:03:00Z' })], 3));
+    expect(store.issuesOf(store.changes()[0])).toEqual([
+      { change: 1, column: null, message: 'Gone' },
+    ]);
+  });
+
+  it("counts other tabs' commits that wrote changes", async () => {
+    const store = await loaded([changeOf()], 1);
+    channel.hear(2, true);
+    expect(store.commits()).toBe(1);
+    await answerChanges(http, setOf([], 2));
+    channel.hear(3);
+    expect(store.commits()).toBe(1);
+    await answerChanges(http, setOf([], 3));
   });
 
   it('names each new row apart', async () => {

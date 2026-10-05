@@ -1,0 +1,9 @@
+/* Web workers: the editor's (src/app/core/editor). */
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["es2022", "webworker"],
+    "types": []
+  },
+  "include": ["src/**/*.worker.ts"]
+}

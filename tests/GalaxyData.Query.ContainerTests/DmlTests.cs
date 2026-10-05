@@ -93,6 +93,15 @@ public sealed class DmlTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   public async Task LineBreaksInValuesStayAsTheyAreInEditedScripts(ServerKind server)
+   {
+      await using TestSources sources = await SourcesAsync(server);
+      await LineBreaksInValuesStayAsTheyAreInEditedScriptsAsync(sources);
+   }
+
+   [Theory]
+   [InlineData(ServerKind.Postgres)]
+   [InlineData(ServerKind.SqlServer)]
    public async Task EditsOfResultRowsChangeTheirTables(ServerKind server)
    {
       await using TestSources sources = await SourcesAsync(server);

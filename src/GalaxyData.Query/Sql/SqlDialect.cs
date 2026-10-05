@@ -164,8 +164,50 @@ public abstract class SqlDialect
       }
    }
 
-   private protected virtual void WriteString(StringBuilder text, string value, ScalarType type) =>
+   /// <summary>
+   /// Text, quoted. Its line breaks (CR, LF) are written as characters by their codes, joined to the rest
+   /// (<c>('a' || chr(10) || 'b')</c>), so a script's text has none in its values: an editor that changes a script's
+   /// line breaks (to one kind, as Monaco does) changes no value.
+   /// </summary>
+   private protected virtual void WriteString(StringBuilder text, string value, ScalarType type)
+   {
+      if (value.AsSpan().IndexOfAny('\r', '\n') < 0)
+      {
+         WriteQuoted(text, value, type);
+         return;
+      }
+      text.Append('(');
+      bool first = true;
+      int start = 0;
+      for (int i = 0; i <= value.Length; i++)
+      {
+         if (i < value.Length && value[i] is not ('\r' or '\n')) { continue; }
+         if (i > start)
+         {
+            if (!first) { text.Append(Concatenation); }
+            WriteQuoted(text, value[start..i], type);
+            first = false;
+         }
+         if (i < value.Length)
+         {
+            if (!first) { text.Append(Concatenation); }
+            WriteCharacter(text, value[i], type);
+            first = false;
+         }
+         start = i + 1;
+      }
+      text.Append(')');
+   }
+
+   private protected virtual void WriteQuoted(StringBuilder text, string value, ScalarType type) =>
       text.Append('\'').Append(value.Replace("'", "''", StringComparison.Ordinal)).Append('\'');
+
+   /// <summary>How texts are joined.</summary>
+   private protected virtual string Concatenation => " || ";
+
+   /// <summary>A character by its code, as text.</summary>
+   private protected virtual void WriteCharacter(StringBuilder text, char value, ScalarType type) =>
+      text.Append("chr(").Append(((int)value).ToString(CultureInfo.InvariantCulture)).Append(')');
 
    private protected virtual void WriteTemporal(StringBuilder text, string keyword, string value) =>
       text.Append(keyword).Append(" '").Append(value).Append('\'');

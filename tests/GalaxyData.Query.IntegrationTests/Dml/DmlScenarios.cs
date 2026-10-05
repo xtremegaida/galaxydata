@@ -213,6 +213,33 @@ internal static class DmlScenarios
       (await engine.CommitAsync([any], Token)).Outcome.ShouldBe(DmlOutcome.Committed);
    }
 
+   /// <summary>
+   /// Line breaks in values are written by their codes in a script's text, so the script, its own line breaks made
+   /// another kind (as an editor may), finds the row by them and writes them as they are.
+   /// </summary>
+   public static async Task LineBreaksInValuesStayAsTheyAreInEditedScriptsAsync(TestSources sources)
+   {
+      QueryEngine engine = sources.Engine();
+      SourceInfo shop = engine.Catalog.FindSource("shop")!;
+      const string before = "Cape\nTown's", after = "Port\r\nElizabeth\rEast\n";
+      (await CommitAsync(engine, new UpdateRow(Table(engine, "shop.customers"), Row(("id", 1L)), Row(("city", before))))).Outcome.ShouldBe(DmlOutcome.Committed);
+      DmlPlan plan = engine.PlanChanges(new ChangeSet(
+         [new UpdateRow(Table(engine, "shop.customers"), Row(("id", 1L)), Row(("city", after))) { Original = Row(("city", before)) }]));
+      string text = plan.Scripts.Single().ToDisplayText();
+      text.ShouldNotContain("Cape\n");
+      text.ShouldNotContain("Port\r");
+      foreach (string breaks in new[] { "\n", "\r\n" })
+      {
+         DmlScript script = engine.ParseScript(shop, text.ReplaceLineEndings(breaks));
+         script.IsEdited.ShouldBeTrue();
+         DmlResult result = await engine.CommitAsync([script], Token);
+         result.Outcome.ShouldBe(DmlOutcome.Committed, result.ToString());
+         result.Scripts.Single().Statements.Single().RowsChanged.ShouldBe(1L, breaks.Length == 1 ? "the row is found by its city, the script's line breaks LF" : "the row is found by its city, the script's line breaks CRLF");
+         (await FirstRowAsync(engine, "shop.customers.where(id == 1).select(city)")).Row[0].ShouldBe(after);
+         (await CommitAsync(engine, new UpdateRow(Table(engine, "shop.customers"), Row(("id", 1L)), Row(("city", before))))).Outcome.ShouldBe(DmlOutcome.Committed);
+      }
+   }
+
    /// <summary>Edits of a query's rows become changes of the rows they came from, through the result's edit targets.</summary>
    public static async Task EditsOfResultRowsChangeTheirTablesAsync(TestSources sources)
    {

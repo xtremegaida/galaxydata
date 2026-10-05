@@ -9400,6 +9400,7 @@
           "kind",
           "dialect",
           "text",
+          "editable",
           "statements"
         ],
         "type": "object",
@@ -9415,6 +9416,9 @@
           },
           "text": {
             "type": "string"
+          },
+          "editable": {
+            "type": "boolean"
           },
           "statements": {
             "type": "array",

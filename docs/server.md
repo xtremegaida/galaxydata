@@ -619,7 +619,8 @@ have gone, a value may not be of its column's type any more), and plans them as 
 reference, 11). It gives:
 
 - `scripts`: one for each connection, in the order their changes first appear. Each has its `source`, `kind` and
-  `dialect`; its `text`, with the values written in, which may be edited; and its `statements`, each with the
+  `dialect`; its `text`, with the values written in, which may be edited (`editable`: by administrators, and by
+  others but for databases that run in the application, DuckDB's, see Commit); and its `statements`, each with the
   `change` it carries out. Inserts run first, the tables they refer to first, then updates, then deletes.
 - `issues`: why changes can't be made (a new row without a value a column needs, a value that doesn't fit its
   column), each with its `change` and `column`. The other changes' statements are shown all the same.
@@ -637,6 +638,8 @@ edited, each `{source, text}`.
   commit-in-progress`): until those it writes are cleared, a plan of them would write them twice.
 - **As planned.** A script as the preview gave it runs as planned. Each statement must change one row, and changes it
   only if the row's originals still hold; a row changed since it was read is a conflict.
+- **Values' line breaks** are written by their codes in a script's text (`('a' || char(10) || 'b')`, PostgreSQL's
+  as escape strings, `E'a\nb'`), so an editor that makes the text's line breaks one kind changes no value.
 - **As edited.** A script whose text differs (line breaks and white space at its end aside) runs as edited. It is
   split into statements, which may only insert, update, delete or merge, unless an administrator allows any
   (`allowAnyStatement`; another user gets a 403). Transactions are the engine's in any case. How many rows edited

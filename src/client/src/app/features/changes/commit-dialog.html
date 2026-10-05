@@ -1,0 +1,240 @@
+<h2 mat-dialog-title tabindex="-1" #title>Commit the changes</h2>
+<mat-dialog-content class="content">
+  @if (previewing() || committing()) {
+    <mat-progress-bar
+      class="busy"
+      mode="indeterminate"
+      [attr.aria-label]="committing() ? 'Committing the changes' : 'Previewing the changes'"
+    />
+  }
+  <div role="alert">
+    @if (problem(); as problem) {
+      <gd-message kind="problem">
+        {{ message(problem) }}
+        @if (!result()) {
+          <button gdMessageAction matButton type="button" (click)="retry()">Preview again</button>
+        }
+      </gd-message>
+    }
+  </div>
+  <div role="status">
+    @if (notice(); as notice) {
+      <gd-message kind="notice">{{ notice }}</gd-message>
+    }
+  </div>
+
+  @if (result(); as result) {
+    <section class="outcome" [attr.aria-labelledby]="id + '-outcome'">
+      <h3 [id]="id + '-outcome'" tabindex="-1" #outcome>What came of the commit</h3>
+      <div [attr.role]="result.outcome === 'committed' ? 'status' : 'alert'">
+        <gd-message [kind]="result.outcome === 'committed' ? 'success' : 'problem'">
+          {{ headline() }}
+        </gd-message>
+      </div>
+      <ul class="results">
+        @for (script of results(); track script.source) {
+          <li [class]="'status-' + script.status">
+            <strong>{{ script.source }}</strong
+            >: {{ script.text }}.
+            @if (script.error) {
+              <span class="error">{{ script.error }}</span>
+            }
+          </li>
+        }
+      </ul>
+      @if (failedChange(); as change) {
+        <p>
+          The change that stopped it: {{ change }}. It's marked among the pending changes, and in
+          its rows.
+        </p>
+      }
+      @for (warning of result.warnings; track $index) {
+        <gd-message kind="warning">{{ warning }}</gd-message>
+      }
+      @if (result.inserted.length > 0) {
+        <p>
+          {{
+            result.inserted.length === 1
+              ? '1 new row was'
+              : result.inserted.length + ' new rows were'
+          }}
+          made.
+        </p>
+      }
+      <p>{{ left() }}</p>
+      @if (admin()) {
+        <p>
+          <a [routerLink]="['/admin/audit/commits', result.auditId]" (click)="dialogClosed()"
+            >Commit {{ result.auditId }} in the audit</a
+          >
+        </p>
+      }
+    </section>
+  } @else if (preview(); as preview) {
+    @if (issues().length > 0) {
+      <section class="issues" [attr.aria-labelledby]="id + '-issues'">
+        <h3 [id]="id + '-issues'">
+          {{
+            issues().length === 1
+              ? "A change can't be made as it is"
+              : issues().length + " changes can't be made as they are"
+          }}
+        </h3>
+        <p class="aside">Change them, or revert them, and preview again.</p>
+        <ul>
+          @for (issue of issues(); track $index) {
+            <li>
+              <mat-icon aria-hidden="true">error</mat-icon>
+              <span
+                ><span class="where">{{ issue.where }}</span
+                >: {{ issue.message }}</span
+              >
+            </li>
+          }
+        </ul>
+      </section>
+    }
+    @if (preview.scripts.length === 0) {
+      <p class="empty">There are no changes to commit.</p>
+    } @else {
+      @if (preview.multiConnection) {
+        <gd-message kind="warning">
+          These changes write to {{ connections() }}, which commit one after another: should a
+          commit fail after another's succeeded, the changes are left written in part.
+        </gd-message>
+      }
+      <mat-tab-group
+        class="scripts"
+        mat-stretch-tabs="false"
+        mat-align-tabs="start"
+        preserveContent
+        [selectedIndex]="selected()"
+        (selectedIndexChange)="selected.set($event)"
+        aria-label="The scripts, by connection"
+      >
+        @for (shown of scripts(); track shown.script.source) {
+          <mat-tab>
+            <ng-template mat-tab-label>
+              {{ shown.script.source }}
+              @if (shown.edited) {
+                <span class="edited">edited</span>
+              }
+              @if (shown.refusal) {
+                <mat-icon class="refused" aria-label="refused">error</mat-icon>
+              }
+            </ng-template>
+            <div class="script">
+              <p class="about" [id]="shown.id + '-about'">
+                {{ shown.script.dialect }}: {{ shown.summary }}.
+                @if (shown.script.editable) {
+                  Edited, it runs as written (only statements that change data, unless allowed),
+                  without counting the rows it changes.
+                } @else {
+                  Only administrators edit {{ shown.script.dialect }}'s scripts, which run in the
+                  application.
+                }
+              </p>
+              <div role="alert">
+                @if (shown.refusal; as refusal) {
+                  <gd-message kind="problem" [id]="shown.id + '-problems'">
+                    {{ refusal.title }}.
+                    <ul class="problems">
+                      @for (problem of refusal.problems; track $index) {
+                        <li>Line {{ problem.line }}: {{ problem.message }}</li>
+                      }
+                    </ul>
+                  </gd-message>
+                }
+              </div>
+              <gd-code-editor
+                class="editor"
+                [text]="shown.text"
+                (textChange)="edit(shown.script, $event)"
+                [label]="'The script for ' + shown.script.source"
+                [language]="shown.language"
+                [readOnly]="!shown.script.editable || committing()"
+                [readOnlyMessage]="
+                  shown.script.editable
+                    ? 'The changes are being committed'
+                    : 'Only administrators edit ' + shown.script.dialect + '\'s scripts'
+                "
+                [markers]="shown.markers"
+                [describedBy]="
+                  shown.id + '-about' + (shown.refusal ? ' ' + shown.id + '-problems' : '')
+                "
+                #editor
+              />
+              <div class="script-actions">
+                @if (shown.edited) {
+                  <button
+                    matButton
+                    type="button"
+                    [disabled]="committing()"
+                    (click)="undo(shown.script, editor)"
+                  >
+                    <mat-icon>undo</mat-icon>
+                    Undo my edits
+                  </button>
+                }
+              </div>
+              <details class="statements">
+                <summary>What each statement does</summary>
+                <ol>
+                  @for (statement of shown.script.statements; track $index) {
+                    <li>{{ capital(statement.description) }}</li>
+                  }
+                </ol>
+              </details>
+            </div>
+          </mat-tab>
+        }
+      </mat-tab-group>
+      @if (admin()) {
+        <mat-checkbox
+          [checked]="allowAny()"
+          [disabled]="!edited() || committing()"
+          (change)="allowAny.set($event.checked)"
+        >
+          Edited scripts may run any statement, not only those that change data (but transaction
+          control)
+        </mat-checkbox>
+      }
+      @if (preview.planId && preview.expiresAt) {
+        <p class="aside">
+          The preview may be committed until {{ preview.expiresAt | date: 'shortTime' }}, while the
+          changes stay as they are.
+        </p>
+      }
+    }
+  }
+</mat-dialog-content>
+<mat-dialog-actions>
+  @if (result(); as result) {
+    @if (result.changes.changes.length > 0) {
+      <button matButton type="button" class="start" (click)="back()">Back to the preview</button>
+    }
+    <button matButton="filled" type="button" (click)="close()">Close</button>
+  } @else {
+    <button matButton type="button" class="start" [disabled]="committing()" (click)="close()">
+      Cancel
+    </button>
+    <button
+      matButton
+      type="button"
+      disabledInteractive
+      [disabled]="previewing() || committing()"
+      (click)="refresh()"
+    >
+      Preview again
+    </button>
+    <button
+      matButton="filled"
+      type="button"
+      disabledInteractive
+      [disabled]="!canCommit()"
+      (click)="commit()"
+    >
+      Commit
+    </button>
+  }
+</mat-dialog-actions>

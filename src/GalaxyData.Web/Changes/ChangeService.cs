@@ -108,9 +108,10 @@ public sealed partial class ChangeService(MetadataDb db, CatalogService catalogs
 
    /// <summary>
    /// What committing the changes would run, checked against the catalog as it stands; a plan to commit, when no
-   /// change has an issue. It replaces the user's plan before.
+   /// change has an issue. It replaces the user's plan before. Which scripts the user may edit: an administrator
+   /// (<paramref name="admin"/>) all, others those of databases that don't run in the application.
    /// </summary>
-   public async Task<ChangePreviewDto> PreviewAsync(int userId, HttpResponse response, CancellationToken cancellationToken)
+   public async Task<ChangePreviewDto> PreviewAsync(int userId, bool admin, HttpResponse response, CancellationToken cancellationToken)
    {
       if (plans.IsCommitting(userId)) { throw Running(); }
       CatalogState state = await catalogs.GetAsync(response, cancellationToken);
@@ -135,6 +136,7 @@ public sealed partial class ChangeService(MetadataDb db, CatalogService catalogs
          plans.Drop(userId);
       }
       List<PreviewScriptDto> scripts = [.. plan.Scripts.Select(s => new PreviewScriptDto(s.Source.Alias, s.Source.ProviderKind, s.Dialect.Name, s.ToDisplayText(),
+         admin || !DmlGuard.RunsInTheApplication(s.Dialect),
          [.. s.Statements.Select(t => new PreviewStatementDto(t.ChangeIndex is int i ? planned[i].Id : null, t.Kind, t.Description, t.ToDisplayText()))]))];
       return new ChangePreviewDto(kept?.Id, set?.Version ?? 0, state.Version, kept?.ExpiresAt, plan.IsMultiConnection, scripts, issues);
    }

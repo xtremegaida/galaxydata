@@ -57,11 +57,16 @@ internal sealed class SqlServerDialect : SqlDialect
       _ => "nvarchar(max)",
    };
 
-   private protected override void WriteString(StringBuilder text, string value, ScalarType type)
+   private protected override void WriteQuoted(StringBuilder text, string value, ScalarType type)
    {
       if (!type.IsAnsi) { text.Append('N'); }
-      base.WriteString(text, value, type);
+      base.WriteQuoted(text, value, type);
    }
+
+   private protected override string Concatenation => " + ";
+
+   private protected override void WriteCharacter(StringBuilder text, char value, ScalarType type) =>
+      text.Append(type.IsAnsi ? "CHAR(" : "NCHAR(").Append(((int)value).ToString(CultureInfo.InvariantCulture)).Append(')');
 
    private protected override void WriteTemporal(StringBuilder text, string keyword, string value)
    {

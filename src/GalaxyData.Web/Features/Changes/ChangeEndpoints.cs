@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using GalaxyData.Web.Auth;
 using GalaxyData.Web.Changes;
 using GalaxyData.Web.Hosting;
+using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Problems;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -61,7 +62,7 @@ public static class ChangeEndpoints
       Answer(() => changes.ClearAsync(me.RequiredUserId(), source, entity, version, cancellationToken));
 
    private static Task<IResult> PreviewAsync(ClaimsPrincipal me, HttpResponse response, ChangeService changes, CancellationToken cancellationToken) =>
-      Answer(() => changes.PreviewAsync(me.RequiredUserId(), response, cancellationToken));
+      Answer(() => changes.PreviewAsync(me.RequiredUserId(), me.IsInRole(nameof(UserRole.Admin)), response, cancellationToken));
 
    private static Task<IResult> CommitAsync(CommitChangesRequest request, ClaimsPrincipal me, HttpResponse response, ChangeService changes,
                                             CancellationToken cancellationToken) =>

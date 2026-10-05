@@ -46,6 +46,24 @@ public sealed class SqlDialectTests
       Literal(dialect, "it's", ScalarType.Text()).ShouldBe(expected);
    }
 
+   [Theory]
+   [InlineData("sqlite", "('it''s' || char(13) || char(10) || 'a\\b' || char(10))")]
+   [InlineData("duckdb", "('it''s' || chr(13) || chr(10) || 'a\\b' || chr(10))")]
+   [InlineData("postgres", "E'it''s\\r\\na\\\\b\\n'")]
+   [InlineData("sqlserver", "(N'it''s' + NCHAR(13) + NCHAR(10) + N'a\\b' + NCHAR(10))")]
+   public void TextWithLineBreaksIsWrittenWithoutThem(string dialect, string expected)
+   {
+      // An editor may make a script's line breaks another kind; its values' stay as they are.
+      Literal(dialect, "it's\r\na\\b\n", ScalarType.Text()).ShouldBe(expected);
+      Literal(dialect, "\n", ScalarType.Text()).ShouldNotContain("\n");
+   }
+
+   [Fact]
+   public void AnsiTextWithLineBreaksIsNotUnicodeInSqlServer()
+   {
+      Literal("sqlserver", "\nx", ScalarType.Text(20, ansi: true)).ShouldBe("(CHAR(10) + 'x')");
+   }
+
    [Fact]
    public void AnsiTextIsNotUnicodeInSqlServer()
    {

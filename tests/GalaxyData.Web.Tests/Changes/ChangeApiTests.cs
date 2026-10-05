@@ -510,7 +510,8 @@ public sealed class ChangeApiTests
          Set("wh.stock", ["P-100"], new { qty = 8 }, new { qty = 10 }));
       JsonElement preview = await PreviewAsync(admin);
       preview.GetProperty("multiConnection").GetBoolean().ShouldBeTrue();
-      preview.GetProperty("scripts").EnumerateArray().Select(s => $"{s.GetProperty("source").GetString()} {s.GetProperty("dialect").GetString()}").ShouldBe(["shop SQLite", "wh DuckDB"]);
+      preview.GetProperty("scripts").EnumerateArray().Select(s => $"{s.GetProperty("source").GetString()} {s.GetProperty("dialect").GetString()} {s.GetProperty("editable").GetBoolean()}")
+         .ShouldBe(["shop SQLite True", "wh DuckDB True"]);
       JsonElement result = await CommitAsync(admin, preview);
       result.GetProperty("outcome").GetString().ShouldBe("committed");
       result.GetProperty("scripts").EnumerateArray().Select(s => s.GetProperty("status").GetString()).ShouldBe(["committed", "committed"]);
@@ -518,8 +519,13 @@ public sealed class ChangeApiTests
 
       // DuckDB runs in the application, and reads any file a statement names: only administrators edit its scripts.
       TestApi kim = await UserAsync(factory, admin, "kim", "dataManager");
+      await OpsAsync(kim, Set("shop.orders", ["1002"], new { status = "shipped" }, new { status = "open" }));
+      (await PreviewAsync(kim)).GetProperty("scripts")[0].GetProperty("editable").GetBoolean()
+         .ShouldBeTrue("others edit the scripts of databases that don't run in the application");
+      (await kim.DeleteAsync("/api/changes")).StatusCode.ShouldBe(HttpStatusCode.OK);
       await OpsAsync(kim, Set("wh.stock", ["P-100"], new { qty = 7 }, new { qty = 8 }));
       JsonElement kims = await PreviewAsync(kim);
+      kims.GetProperty("scripts")[0].GetProperty("editable").GetBoolean().ShouldBeFalse("the preview says so");
       string text = kims.GetProperty("scripts")[0].GetProperty("text").GetString()!;
       (await (await PostCommitAsync(kim, kims, [new { source = "wh", text = text + "INSERT INTO stock SELECT 'X', 1;" }])).ProblemAsync(403, ProblemCodes.Forbidden))
          .GetProperty("title").GetString().ShouldBe("Only administrators may edit the script for wh");

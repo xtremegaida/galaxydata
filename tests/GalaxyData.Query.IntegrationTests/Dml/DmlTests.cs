@@ -88,6 +88,15 @@ public sealed class DmlTests
    [Theory]
    [InlineData("sqlite")]
    [InlineData("duckdb")]
+   public async Task LineBreaksInValuesStayAsTheyAreInEditedScripts(string provider)
+   {
+      await using TestSources sources = await SourcesAsync(provider);
+      await LineBreaksInValuesStayAsTheyAreInEditedScriptsAsync(sources);
+   }
+
+   [Theory]
+   [InlineData("sqlite")]
+   [InlineData("duckdb")]
    public async Task EditsOfResultRowsChangeTheirTables(string provider)
    {
       await using TestSources sources = await SourcesAsync(provider);

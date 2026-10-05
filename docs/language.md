@@ -1934,7 +1934,9 @@ A change file is a JSON array of changes:
 ```
 
 Whole numbers are 64-bit, other numbers decimals, and text converts to the column's type (`"2026-03-01"` for a date).
-For this file `gdq changes` prints:
+Values are written into the statements (so the text can be edited and run as a script); line breaks in text are
+written by their codes (`('a' || char(10) || 'b')` in SQLite, `chr` in DuckDB, `NCHAR` in SQL Server, an escape
+string `E'a\nb'` in PostgreSQL), so the text has none in its values. For this file `gdq changes` prints:
 
 ```text
 -- shop (SQLite)

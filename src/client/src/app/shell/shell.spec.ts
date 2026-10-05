@@ -280,7 +280,11 @@ describe('navItemsFor', () => {
   it("puts administrators' pages under their heading", () => {
     expect(navItemsFor({ canRead: true, canEditData: true, canAdmin: true }).at(-1)).toMatchObject({
       label: 'Administration',
-      items: [{ label: 'Users' }, { label: 'Connections' }],
+      items: [
+        { label: 'Users' },
+        { label: 'Connections' },
+        { label: 'Audit', link: '/admin/audit' },
+      ],
     });
   });
 });

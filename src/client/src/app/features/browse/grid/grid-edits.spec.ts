@@ -15,7 +15,7 @@ import {
   linkedColumns,
   rowOf,
 } from '../../../../testing/browse';
-import type { PendingChange } from '../../../core/changes/pending-changes';
+import type { ChangeIssue, PendingChange } from '../../../core/changes/pending-changes';
 import type { GridColumn, GridRow } from './grid-columns';
 import {
   type Capabilities,
@@ -46,11 +46,13 @@ interface Asked {
 function editsOf(
   changes: Map<GridRow, PendingChange>,
   capabilities: Partial<Capabilities> = {},
+  issues = new Map<GridRow, ChangeIssue[]>(),
 ): { edits: GridEdits; asked: Asked } {
   const asked: Asked = { set: [], refused: [], picked: [], toggled: [], reverted: [] };
   const edits: GridEdits = {
     capabilities: { canInsert: true, canUpdate: true, canDelete: true, ...capabilities },
     changeOf: (row) => changes.get(row) ?? null,
+    issuesOf: (row) => issues.get(row) ?? [],
     set: (row, values, display) => asked.set.push([row, new Map(values), display]),
     refused: (_, column, reason) => asked.refused.push([column.name, reason]),
     pick: (row, at) => asked.picked.push([row, at]),
@@ -223,8 +225,12 @@ describe('editedColumnDefsOf', () => {
   const columns = editableColumns();
   const read = rowOf(['1001', 'open', '12.50']);
 
-  function defsOf(changes = new Map<GridRow, PendingChange>(), capabilities = {}) {
-    const { edits, asked } = editsOf(changes, capabilities);
+  function defsOf(
+    changes = new Map<GridRow, PendingChange>(),
+    capabilities = {},
+    issues = new Map<GridRow, ChangeIssue[]>(),
+  ) {
+    const { edits, asked } = editsOf(changes, capabilities, issues);
     const schema = schemaOf(columns);
     return {
       defs: editedColumnDefsOf(schema, linkedColumnDefsOf(schema, null, true), edits),
@@ -280,6 +286,41 @@ describe('editedColumnDefsOf', () => {
     expect(tooltip(defs[2], read)).toBe('Changed from open');
     expect(classes(defs[3], read)).toEqual([]);
     expect(tooltip(defs[3], read)).toBeUndefined();
+  });
+
+  it("marks what a preview found can't be committed: cells by their columns, and rows", () => {
+    const change = changeOf({ values: { status: 'lost' }, original: { status: 'open' } });
+    const issues = [
+      { change: 1, column: 'STATUS', message: "'status' takes open, paid or shipped" },
+      { change: 1, column: null, message: 'The row is gone' },
+    ];
+    const { defs } = defsOf(new Map([[read, change]]), {}, new Map([[read, issues]]));
+    expect(classes(defs[2], read)).toEqual(['gd-dirty', 'gd-invalid']);
+    expect(tooltip(defs[2], read)).toBe("Can't be committed: 'status' takes open, paid or shipped");
+    expect(classes(defs[3], read)).toEqual([]);
+    expect(classes(defs[0], read)).toEqual(['gd-invalid']);
+    expect(
+      (defs[0].tooltip as (p: { value: unknown; data: GridRow }) => string)({
+        value: 'changed',
+        data: read,
+      }),
+    ).toBe("Changed, can't be committed: 'status' takes open, paid or shipped The row is gone");
+    expect(
+      (defs[0].tooltip as (p: { value: unknown; data: GridRow }) => string)({
+        value: 'changed',
+        data: rowOf(['1002', 'x', '1']),
+      }),
+    ).toBe('Changed');
+    // The state cell draws it.
+    const cell = new StateCell();
+    cell.init({
+      ...(defs[0].cellRendererParams as object),
+      value: 'changed',
+      data: read,
+      eGridCell: document.createElement('div'),
+    } as unknown as ICellRendererParams<GridRow>);
+    expect(cell.getGui().textContent).toBe("errorChanged, can't be committed");
+    expect(cell.getGui().querySelector('.gd-state-invalid')).not.toBeNull();
   });
 
   it('marks values changed elsewhere since they were changed here', () => {

@@ -54,6 +54,32 @@ internal sealed class PostgreSqlDialect : SqlDialect
    private protected override void WriteBinary(StringBuilder text, byte[] value) =>
       text.Append("CAST('\\x").Append(Convert.ToHexString(value)).Append("' AS bytea)");
 
+   /// <summary>
+   /// Text with line breaks is an escape string (<c>E'a\nb'</c>), which, as a literal, PostgreSQL takes as the type of
+   /// what it meets (an enum, <c>jsonb</c>), as it does other text; text joined to characters would be <c>text</c>.
+   /// </summary>
+   private protected override void WriteString(StringBuilder text, string value, ScalarType type)
+   {
+      if (value.AsSpan().IndexOfAny('\r', '\n') < 0)
+      {
+         WriteQuoted(text, value, type);
+         return;
+      }
+      text.Append("E'");
+      foreach (char c in value)
+      {
+         text.Append(c switch
+         {
+            '\\' => "\\\\",
+            '\'' => "''",
+            '\r' => "\\r",
+            '\n' => "\\n",
+            _ => c.ToString(),
+         });
+      }
+      text.Append('\'');
+   }
+
    /// <summary>There is no <c>%</c> for doubles; the remainder is taken in numeric.</summary>
    internal override SqlExpr Modulo(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       IsFloating(leftType) || IsFloating(rightType)

@@ -202,7 +202,8 @@
     color: var(--mat-sys-tertiary);
   }
 
-  .gd-state-deleted {
+  .gd-state-deleted,
+  .gd-state-invalid {
     color: var(--mat-sys-error);
   }
 

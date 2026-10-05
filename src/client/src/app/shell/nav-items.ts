@@ -38,6 +38,13 @@ export const navItems: readonly NavItem[] = [
     needs: 'canAdmin',
     section: 'Administration',
   },
+  {
+    label: 'Audit',
+    icon: 'history',
+    link: '/admin/audit',
+    needs: 'canAdmin',
+    section: 'Administration',
+  },
 ];
 
 /** The pages a user may open, by section, in order. */

@@ -1,0 +1,132 @@
+// The dialog is as high as the window lets it be (90vh), its content scrolling within.
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  max-height: none;
+}
+
+.busy {
+  flex: none;
+}
+
+h3 {
+  margin: 0 0 4px;
+  font: var(--mat-sys-title-medium);
+}
+
+h2:focus,
+h3:focus {
+  outline: none;
+}
+
+.aside,
+.about {
+  margin: 0;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+}
+
+.issues ul,
+.results,
+.problems {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.issues li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 2px 0;
+  color: var(--mat-sys-error);
+
+  mat-icon {
+    flex: none;
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.where {
+  font-weight: 500;
+}
+
+.problems li {
+  margin: 2px 0;
+}
+
+.scripts {
+  flex: none;
+}
+
+.script {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0 0;
+}
+
+.editor {
+  height: 40vh;
+  min-height: 200px;
+}
+
+.script-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.edited {
+  margin-inline-start: 6px;
+  padding: 0 6px;
+  border-radius: var(--mat-sys-corner-small);
+  background: var(--mat-sys-tertiary-container);
+  color: var(--mat-sys-on-tertiary-container);
+  font: var(--mat-sys-label-small);
+}
+
+.refused {
+  margin-inline-start: 4px;
+  color: var(--mat-sys-error);
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.statements summary {
+  cursor: pointer;
+  color: var(--mat-sys-primary);
+}
+
+.statements ol {
+  margin: 4px 0 0;
+  padding-inline-start: 24px;
+}
+
+.results li {
+  margin: 2px 0;
+}
+
+.status-rolledBack,
+.status-commitFailed {
+  color: var(--mat-sys-error);
+}
+
+.error {
+  display: block;
+  font-family: var(--gd-code-font-family);
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  margin: 16px 0;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.start {
+  margin-inline-end: auto;
+}

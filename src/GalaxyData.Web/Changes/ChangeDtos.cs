@@ -64,9 +64,11 @@ public sealed record PreviewStatementDto(long? Change, DmlStatementKind Kind, st
 
 /// <summary>
 /// The statements one connection would run, in one transaction: as text with the values written in
-/// (<see cref="Text"/>, which may be edited and committed instead), and each with the change it carries out.
+/// (<see cref="Text"/>, which may be edited and committed instead, when <see cref="Editable"/>), and each with the
+/// change it carries out. Scripts of databases that run in the application (DuckDB, which reads any file a
+/// statement names) are edited by administrators alone.
 /// </summary>
-public sealed record PreviewScriptDto(string Source, string Kind, string Dialect, string Text, IReadOnlyList<PreviewStatementDto> Statements);
+public sealed record PreviewScriptDto(string Source, string Kind, string Dialect, string Text, bool Editable, IReadOnlyList<PreviewStatementDto> Statements);
 
 /// <summary>
 /// What committing the pending changes would run: a script for each connection, and why changes can't be made.

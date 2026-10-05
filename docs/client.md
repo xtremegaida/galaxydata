@@ -148,8 +148,8 @@ Pages for the signed-in are in the shell (`src/app/shell`), which has:
   beside the page, and may be closed.
 - **The page.**
 - **The pending changes** (`ChangesDrawer`, `src/app/features/changes`), for those who change data: a drawer at the
-  end of the page (beside it from 960 pixels, over it below), loaded when first opened (`@defer`). See [Changing
-  data](#changing-data).
+  end of the page (beside it from 960 pixels, over it below), loaded when first opened (`@defer`), from which they
+  are previewed and committed. See [Changing data](#changing-data).
 
 A route's `title` is shown with the application's name after it: "Sign in · GalaxyData".
 
@@ -305,8 +305,9 @@ chosen in it.
 
 Those who change data (data managers and administrators) change rows where they browse them, as the entity allows
 (a table of a source that takes changes; changing rows needs its own primary key). What they change isn't written
-to the database at once: it is a **pending change**, kept on the server (`/api/changes`) until it is committed (F7)
-or reverted, and shown wherever the rows are.
+to the database at once: it is a **pending change**, kept on the server (`/api/changes`) until it is committed or
+reverted, and shown wherever the rows are. Committing them previews them first, as the statements each connection
+would run ([Committing](#committing)).
 
 - **The store** (`PendingChanges`, `src/app/core/changes`) holds the user's changes, read when they may change data
   (`GET /api/changes`). Changing them is an action: setting values (`set`), a new row (`insert`, named by a
@@ -324,6 +325,15 @@ or reverted, and shown wherever the rows are.
   - **Other tabs.** A tab whose action was answered tells the others the changes' version (`ChangesChannel`, a
     `BroadcastChannel`); a tab at another reads them again, as one does coming back into view, once the actions it
     sent are answered.
+  - **Previews and commits** (`preview()`, `commit()`) wait for the actions asked for before them to be answered;
+    while a commit is answered, actions asked for and reading the changes again wait for it (a read answered
+    first would be of the changes before the commit). What a preview found wrong with changes (`issues`, by
+    change) is kept while each change stays as it was then (its `updatedAt`), the same while it is (so other
+    changes don't make the grid draw anew); a preview of changes changed elsewhere shows its issues once the
+    changes at its version are read. A commit's answer holds the changes left, which the store takes; the change
+    whose statement stopped it is marked with why, through later previews, till it is changed. A commit that
+    wrote changes is counted (`commits`), here and in the other tabs it tells (`committed`), so the rows shown are
+    read again; so is one that may have (no answer, a server's failure), whose changes are read again.
 - **In the grid** (`grid-edits.ts`), with `editing` (browsing's grid), as the entity and each column allow
   (`capabilities`, and each column's `canUpdate` and `insert`):
   - **Values as they will be:** a cell shows its change's value, else the row's. A cell changed is marked
@@ -363,20 +373,56 @@ or reverted, and shown wherever the rows are.
     the grid's (`complete`) isn't set so. A reference changed shows the display value given, without a link to
     click or follow with Enter (crumbs follow references as committed); Enter on one not changed follows its link.
     The picker opens once at a time.
-  - **Following the changes:** when the entity's changes change (an action, another tab's, an answer), the cells
-    and rows show them (`refreshCells`, the rows' classes set again, new rows pinned), the keyboard staying where
-    it is.
+  - **Following the changes:** when the entity's changes change (an action, another tab's, an answer), or what a
+    preview found wrong with them, the cells and rows show them (`refreshCells`, the rows' classes set again, new
+    rows pinned), the keyboard staying where it is. A cell whose value can't be committed as it is is marked
+    (`gd-invalid`; pointed at, it says why), and so is its row's change (an error drawn, "can't be committed" said).
+  - **After a commit** (here or in another tab), the grid reads its rows again, from the page shown (and counts
+    them), once a cell being edited is (the grid makes its rows anew, which would end the edit).
   - **Failures:** an action refused (by the client's checks or the server) is said above the grid ("Couldn't change
     total: …"), with Dismiss; its value goes from the cell.
 - **The inspector** says a cell's change: a new row's, a row to be deleted, a value changed (what it was), changed
-  elsewhere since (what it is now), with Revert (Restore the row, Clear the value); and why a cell can't be given a
-  value. A reference's says that F2 or a double click chooses its row.
+  elsewhere since (what it is now), why it can't be committed as it is (its column's issues and its row's), with
+  Revert (Restore the row, Clear the value); and why a cell can't be given a value. A reference's says that F2 or a
+  double click chooses its row.
 - **The drawer** (`ChangesDrawer`) lists the changes by connection, entity (a link to browse it) and row: the
   columns changed, what each was and will be (a new row's values; a row to be deleted), and the display values given
   with references. A column's change, a row's, an entity's, a connection's or all can be reverted (clearing asks
   first). The bar's button counts the rows changed. Opened, the keyboard goes to its heading; closed, back to the
-  button; when a button it was on goes with what it reverted, to its heading. Previewing and committing come in
-  F7.
+  button; when a button it was on goes with what it reverted, to its heading. Under each row, what the last preview
+  found wrong with its change. "Preview and commit" opens the commit dialog.
+
+### Committing
+
+`CommitDialog` (`features/changes/commit-dialog.ts`, loaded when first opened, from the drawer) commits the
+changes:
+
+- **The preview** (`POST /api/changes/preview`): the statements each connection would run, a tab for each, in an
+  editor ([The editor](#the-editor)), with what they do ("2 statements: 1 insert, 1 update", and each statement's
+  description). When changes can't be made as they are, they are listed (entity, row, column, why), there is
+  nothing to commit, and the grid and the drawer mark them; "Preview again" previews the changes as they are now.
+  Changes to more than one connection are warned of: they commit one after another, so a commit that fails after
+  another's succeeded leaves them written in part. The preview may be committed until it expires.
+- **Editing a script:** a script the preview says may be edited (`editable`: all for administrators, but DuckDB's
+  for others, as it runs in the application) is edited in place; edited, it runs as written (statements that
+  change data only, unless an administrator allows any), without counting the rows it changes. A script is edited
+  when its text differs but for line breaks and white space at its end (as the server compares them); the
+  server writes values' line breaks by their codes, so the editor, which makes a text's line breaks one kind,
+  changes no value. Scripts that may not be edited are sent as planned. "Undo my edits" puts the preview's text
+  back (an edit the editor can undo), the keyboard staying in the editor. An edited script the server refuses
+  (`script-invalid`) says why, its problems placed in it (markers, and a list by line), till it is edited again.
+- **Committing** (`POST /api/changes/commit`) sends the plan, the changes' version, the edited scripts alone, and
+  whether any statement may run. What came of it: committed, nothing written, or written in part (with why), each
+  connection's outcome (statements, rows changed, its error), the warnings, the new rows made, how many changes are
+  left pending, and for administrators the commit in the audit. With changes left pending (those it didn't write,
+  or made since the preview), it goes back to the preview on asking, with the edits made (the keyboard going to
+  the dialog's title).
+- **A preview gone out of date** (`plan-stale`: the changes or the catalog changed, the plan expired or was
+  replaced) is previewed again at once, and said; so is "Preview again". Edits stay where their scripts are the
+  same, and those let go (their scripts changed, or gone) are said.
+- **Closing:** Escape (but in an editor, which keeps it), the backdrop and Cancel close it, asking first when
+  scripts were edited and not committed (after a commit that didn't write everything too); nothing closes it while
+  it commits. Closed, the keyboard goes back to the drawer.
 
 ## Administration
 
@@ -436,6 +482,18 @@ administrators (`allowedTo('canAdmin')` as a `canMatch` guard).
   looks again later, waiting twice as long each time (up to 30 seconds); the list keeps the connections it showed.
   A look begun before the connection was saved, or read again, is left aside.
 
+**The audit** (`/admin/audit`, `features/admin/audit`), as tabs:
+
+- **Commits of changes** (`/admin/audit/commits`): newest first, who committed, when, the outcome (committed,
+  rolled back, written in part, in progress, unknown: the application stopped as it ran), whether scripts were
+  edited (and any statement allowed), how many changes, to which connections, and why it failed.
+- **A commit** (`/admin/audit/commits/:id`): the same, how long it took, the catalog's version, and each script it
+  ran: its outcome, statements, rows changed, error, and its text.
+- **What administrators did** (`/admin/audit/events`): who (the application itself as it started: `(system)`),
+  what (`user.updated`), to what, and what changed, a line each (`role: dataManager → read`; settings by name).
+- **Pages** (`AuditPages`) come 50 at a time (51 asked for, to know whether there are more), "Show more" asking for
+  those before the last shown; the keyboard goes to the first of a page shown after the first.
+
 ## Forms
 
 Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form fields.
@@ -483,6 +541,13 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
   picker is a dialog titled by what it chooses; closed, focus goes back to the cell. The drawer is a region
   ("Pending changes"); its buttons say what they revert (`aria-label`: "Revert status of shop.orders Row 1001"),
   and a column's change reads as a sentence ("status: open becomes paid", the arrow drawn, not read).
+- **Committing:** the dialog takes the keyboard as it opens (the dialog itself, titled), and gives it back to the
+  drawer; the outcome's heading takes it once committed, the title going back to the preview. Its scripts are tabs
+  (a tab list named "The scripts, by connection"); each editor is labelled ("The script for shop") and described
+  by what the script does and the keys (Tab inserts a tab; Ctrl+M, on macOS Ctrl+Shift+M, makes it move on), and
+  by its problems when refused; problems are an alert, and listed by line as well as marked. Undoing edits keeps
+  the keyboard in the editor. Commit and Preview again stay focusable when they can't be pressed
+  (`disabledInteractive`). Previews, and what came of the commit, are said.
 - **The path** is a navigation landmark ("Path"), a list of links, the crumb shown marked `aria-current="page"`;
   the `›` between crumbs is drawn by the style sheet, with no text for screen readers (`content: '›' / ''`).
 - **The catalog's tree** is a tree as WAI-ARIA describes one. It is one stop in the tab order.
@@ -502,6 +567,30 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
 - **The shell:** its bar is the banner, with "Skip to the page" first for keyboards; the navigation is a landmark
   of its own (Material's navigation list is one).
 - **Lint:** ESLint's template rules include Angular's accessibility checks.
+
+## The editor
+
+Code is edited in Monaco (`monaco-editor`, `CodeEditor` in `core/editor`): the commit dialog's scripts, and F8's
+queries.
+
+- **Loaded when first shown** (`MonacoLoader`): its ESM modules, those the application uses (`monaco-modules.ts`:
+  the editor and its commands, the features for editing scripts, SQL's and PostgreSQL's languages), are a chunk of
+  their own. Monaco's modules import their styles, which the application's builder doesn't load for a lazy chunk:
+  those imports are empty (`loader: {".css": "empty"}` in `angular.json`), and Monaco's whole stylesheet is a
+  bundle of its own (`monaco.css`, `inject: false`), linked as Monaco loads. Its worker (`editor.worker.ts`, with
+  `tsconfig.worker.json`) is a file of the application's (the policy's `worker-src 'self'`).
+- **The theme** follows the page's colour scheme (`vs`, `vs-dark`); the font is the page's code font, measured
+  again once loaded.
+- **The text** is two-way (`[(text)]`): as typed, and set from outside as an edit that can be undone. Markers
+  (`EditorMarker`: an offset, a length, a message) are placed by offsets in the text. A read-only editor says why
+  when typed in.
+- **Keys:** Tab inserts a tab; Ctrl+M (Ctrl+Shift+M on macOS) switches Tab to moving the keyboard on, and back
+  (Monaco's tab focus mode). The editor says so under itself, and is described by it, when it may be typed in.
+  Escape is the editor's. Monaco's text area is labelled (`label`) and described (`describedBy`); its edit context
+  (experimental) is off. The font is read from the page (an editor in a tab not shown is made outside it).
+- **Should Monaco fail to load,** the text is edited in a plain text area, labelled and described the same.
+- **Packages:** `monaco-editor` (MIT) brings `marked` and `dompurify`; an npm override gives Monaco dompurify
+  3.4.16, for an advisory of the version it pins (GHSA-p98j-92pf-mc4p).
 
 ## The theme
 
@@ -534,12 +623,15 @@ policy refuses:
 This is why the build doesn't inline critical CSS (`inlineCritical: false` in `angular.json`). Angular would load
 the rest of the stylesheet with an inline script, which the policy refuses.
 
-**Size.** The first load holds the framework, the Material parts of the shell, and the shell: about 715 kB, 167 kB
-compressed (the pending changes' store and badge are in it; their drawer, about 11 kB, loads when first opened). It grows as the features use more of Angular's core (resources, for one), which every page shares, and
+**Size.** The first load holds the framework, the Material parts of the shell, and the shell: about 718 kB, 168 kB
+compressed (the pending changes' store and badge are in it; their drawer, about 13 kB, and the commit dialog, about
+25 kB, load when first opened). It grows as the features use more of Angular's core (resources, for one), which every page shares, and
 of modules the shell uses: the CDK's virtual scrolling is in the module of the scrolling the shell's navigation
 uses, so it loads at first though only browsing uses it. Pages not needed at first are loaded when opened (lazy
-routes): the sign-in and password pages, the administrators' pages (about 230 kB), browsing (about 1.36 MB, 305 kB
-compressed; its picker loads when first wanted), and the features' pages as they come. Browsing's chunk is nearly
+routes): the sign-in and password pages, the administrators' pages (about 255 kB), browsing (about 1.32 MB, 297 kB
+compressed; its picker loads when first wanted), and the features' pages as they come. The editor (Monaco) is a
+chunk of 3.3 MB (660 kB compressed), with its stylesheet (`monaco.css`, 390 kB, 108 kB compressed, its icons'
+font in it) and worker (300 kB), loaded when an editor is first shown. Browsing's chunk is nearly
 all AG Grid: its core and the modules the grid registers (its infinite row model, pages, filters, choosing rows,
 tooltips, refreshing cells, its state and words, its editors, rows' classes, pinned rows, scrolling). The build
 warns above 750 kB (700 kB until F6) and fails above 1 MB for the first load (`budgets` in `angular.json`). GalaxyData isn't meant
@@ -582,6 +674,10 @@ for slow networks, so these can be raised when a feature needs it.
     (they don't fit), and that column's cells are in the rows (`gridCells` leaves them out). New rows are in
     `.ag-grid-pinned-top-rows` (`newRowCells`; `gridCells` leaves them out too). Key events a test makes are
     `cancelable`, or `preventDefault` does nothing.
+  - **Editors** are on a fake Monaco in tests (`fakeMonacoProviders` in `src/testing/monaco.ts`): its editors and
+    models hold their options, text, edits and markers, and a test types in a model (`type`); without one
+    (`fakeMonacoProviders(null)`), Monaco fails to load and editors are text areas. Monaco itself isn't loaded in
+    jsdom (it lays out what jsdom doesn't).
   - **Back and forward:** the router follows the browser's history only once it listens, which an application's
     first navigation sets up and a test's router harness doesn't: a test that goes back calls
     `router.setUpLocationChangeListener()` first.
@@ -590,7 +686,7 @@ for slow networks, so these can be raised when a feature needs it.
 - **Layout:**
   - `src/app/core` holds what the whole application uses: the API, problems, the session, the theme, forms'
     helpers, the catalog (its version, the tree's state, following it), the pending changes (`core/changes`),
-    browsing's addresses (`core/browse`), the
+    browsing's addresses (`core/browse`), the editor (`core/editor`), the
     browser's storage (`core/browser/stored.ts`), and the pieces pages share (`core/ui`: messages, the confirmation
     dialog, the unsaved-changes guard, `debounced`);
   - `src/app/shell` holds the shell;

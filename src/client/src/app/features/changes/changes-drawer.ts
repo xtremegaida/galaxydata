@@ -1,5 +1,6 @@
 import {
   Component,
+  DestroyRef,
   ElementRef,
   Injector,
   afterNextRender,
@@ -12,13 +13,17 @@ import {
   viewChild,
 } from '@angular/core';
 import { MatButton, MatIconButton } from '@angular/material/button';
+import { MatDialog } from '@angular/material/dialog';
 import { MatIcon } from '@angular/material/icon';
 import { MatProgressBar } from '@angular/material/progress-bar';
 import { MatTooltip } from '@angular/material/tooltip';
 import { RouterLink, type UrlTree } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
 import { isSessionProblem, problemMessage } from '../../core/api/problem';
 import { entityUrl } from '../../core/browse/browse-url';
+import { issueText, rowLabelOf, valueText } from '../../core/changes/change-labels';
 import {
+  type ChangeIssue,
   type ChangeRow,
   type ClearScope,
   type Outcome,
@@ -45,6 +50,8 @@ interface RowChange {
   readonly columns: readonly ColumnChange[];
   /** What is shown for the rows references then refer to, by navigation. */
   readonly display: readonly { readonly navigation: string; readonly value: string }[];
+  /** Why the change can't be committed as it is, as the last preview found. */
+  readonly issues: readonly string[];
 }
 
 interface EntityChanges {
@@ -67,8 +74,9 @@ const kindLabels: Readonly<Record<PendingChange['kind'], string>> = {
 
 /**
  * The user's pending changes, by connection, entity and row: the values changed (as they were, and will be), new
- * rows, rows to be deleted; each reverted (a column's, a row's), or those of an entity, a connection or all cleared.
- * They are kept on the server until they are committed or reverted.
+ * rows, rows to be deleted, and why some can't be committed as they are (as the last preview found); each reverted
+ * (a column's, a row's), or those of an entity, a connection or all cleared; and all previewed and committed (in
+ * a dialog of its own, loaded when first opened). They are kept on the server until they are committed or reverted.
  */
 @Component({
   selector: 'gd-changes-drawer',
@@ -103,6 +111,16 @@ const kindLabels: Readonly<Record<PendingChange['kind'], string>> = {
     <p class="summary" role="status">{{ summary() }}</p>
     @if (sources().length > 0) {
       <div class="actions">
+        <button
+          matButton="filled"
+          type="button"
+          disabledInteractive
+          [disabled]="committing()"
+          (click)="commit()"
+        >
+          <mat-icon>publish</mat-icon>
+          Preview and commit
+        </button>
         <button matButton type="button" (click)="clear({}, 'all the changes')">
           <mat-icon>delete_sweep</mat-icon>
           Clear all
@@ -198,6 +216,19 @@ const kindLabels: Readonly<Record<PendingChange['kind'], string>> = {
                       <code>{{ shown.navigation }}</code
                       >: {{ shown.value }}
                     </p>
+                  }
+                  @if (row.issues.length > 0) {
+                    <ul class="issues">
+                      @for (issue of row.issues; track $index) {
+                        <li>
+                          <mat-icon aria-hidden="true">error</mat-icon>
+                          <span
+                            ><span class="cdk-visually-hidden">Can't be committed: </span
+                            >{{ issue }}</span
+                          >
+                        </li>
+                      }
+                    </ul>
                   }
                 </li>
               }
@@ -337,6 +368,33 @@ const kindLabels: Readonly<Record<PendingChange['kind'], string>> = {
       font: var(--mat-sys-body-small);
     }
 
+    .issues {
+      margin: 2px 0 0;
+      padding: 0;
+      list-style: none;
+      color: var(--mat-sys-error);
+      font: var(--mat-sys-body-small);
+
+      li {
+        display: flex;
+        align-items: flex-start;
+        gap: 4px;
+      }
+
+      mat-icon {
+        flex: none;
+        font-size: 16px;
+        width: 16px;
+        height: 16px;
+      }
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
     .small {
       --mat-icon-button-state-layer-size: 32px;
       --mat-icon-button-icon-size: 18px;
@@ -347,6 +405,7 @@ const kindLabels: Readonly<Record<PendingChange['kind'], string>> = {
 export class ChangesDrawer {
   private readonly changes = inject(PendingChanges);
   private readonly confirmer = inject(Confirmer);
+  private readonly dialog = inject(MatDialog);
 
   private readonly injector = inject(Injector);
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
@@ -362,7 +421,12 @@ export class ChangesDrawer {
   protected readonly loadProblem = this.changes.problem;
   /** An action that couldn't be done, and why. */
   protected readonly refused = signal<string | null>(null);
-  protected readonly sources = computed(() => groupsOf(this.changes.changes()));
+  /** Set while the commit dialog is open (or loading): it opens once at a time. */
+  protected readonly committing = signal(false);
+  private destroyed = false;
+  protected readonly sources = computed(() =>
+    groupsOf(this.changes.changes(), (change) => this.changes.issuesOf(change)),
+  );
   protected readonly summary = computed(() => {
     const count = this.changes.count();
     if (!this.changes.loaded()) {
@@ -376,6 +440,7 @@ export class ChangesDrawer {
   });
 
   constructor() {
+    inject(DestroyRef).onDestroy(() => (this.destroyed = true));
     effect(() => {
       if (this.opened()) {
         afterNextRender(() => this.heading().nativeElement.focus(), { injector: this.injector });
@@ -385,6 +450,41 @@ export class ChangesDrawer {
 
   protected reload(): void {
     this.changes.reload();
+  }
+
+  /** Previews the changes, and commits them, in a dialog; closed, the keyboard comes back to the drawer. */
+  protected async commit(): Promise<void> {
+    if (this.committing()) {
+      return;
+    }
+    this.committing.set(true);
+    try {
+      let dialog: typeof import('./commit-dialog');
+      try {
+        dialog = await import('./commit-dialog');
+      } catch {
+        this.refused.set("Couldn't open the dialog to commit the changes: try again.");
+        return;
+      }
+      const { CommitDialog } = dialog;
+      if (this.destroyed) {
+        return;
+      }
+      await firstValueFrom(
+        this.dialog
+          .open(CommitDialog, {
+            width: '90vw',
+            maxWidth: '1100px',
+            maxHeight: '90vh',
+            autoFocus: 'dialog',
+            disableClose: true,
+          })
+          .afterClosed(),
+      );
+    } finally {
+      this.committing.set(false);
+    }
+    this.keepKeyboard();
   }
 
   protected revertLabel(row: RowChange): string {
@@ -454,7 +554,10 @@ export class ChangesDrawer {
 }
 
 /** The changes by connection, then entity (each in the order first changed), then row. */
-function groupsOf(changes: readonly PendingChange[]): SourceChanges[] {
+function groupsOf(
+  changes: readonly PendingChange[],
+  issuesOf: (change: PendingChange) => readonly ChangeIssue[],
+): SourceChanges[] {
   const sources = new Map<string, Map<string, PendingChange[]>>();
   for (const change of changes) {
     const entities = sources.get(change.source) ?? new Map<string, PendingChange[]>();
@@ -467,27 +570,27 @@ function groupsOf(changes: readonly PendingChange[]): SourceChanges[] {
     source,
     count: [...entities.values()].reduce((sum, rows) => sum + rows.length, 0),
     entities: [...entities].map(([entity, rows]) => {
-      let added = 0;
       return {
         entity,
         url: entityUrl(entity),
-        rows: rows.map((change) => rowOf(change, change.kind === 'insert' ? ++added : 0)),
+        rows: rows.map((change) => rowOf(change, rows, issuesOf(change))),
       };
     }),
   }));
 }
 
-function rowOf(change: PendingChange, newRow: number): RowChange {
+function rowOf(
+  change: PendingChange,
+  changes: readonly PendingChange[],
+  issues: readonly ChangeIssue[],
+): RowChange {
   const row: ChangeRow | null =
     change.tempId !== null
       ? { tempId: change.tempId }
       : change.key && change.rowId
         ? { key: change.key, rowId: change.rowId }
         : null;
-  const label =
-    change.kind === 'insert'
-      ? `New row ${newRow}`
-      : `Row ${(change.key ?? []).map((value) => textOf(value)).join(', ')}`;
+  const label = rowLabelOf(change, changes);
   const names = change.kind === 'delete' ? [] : Object.keys(change.values);
   return {
     id: change.id,
@@ -496,24 +599,14 @@ function rowOf(change: PendingChange, newRow: number): RowChange {
     row,
     columns: names.map((name) => ({
       name,
-      value: textOf(change.values[name]),
-      original: change.kind === 'insert' ? null : textOf(change.original[name]),
+      value: valueText(change.values[name]),
+      original: change.kind === 'insert' ? null : valueText(change.original[name]),
       null: change.values[name] === null,
     })),
     // A reference that refers to no row has nothing shown for it.
     display: Object.entries(change.display)
       .filter(([, value]) => value !== null && value !== undefined)
-      .map(([navigation, value]) => ({ navigation, value: textOf(value) })),
+      .map(([navigation, value]) => ({ navigation, value: valueText(value) })),
+    issues: issues.map(issueText),
   };
-}
-
-/** A value as sent, as text: NULL for null, date-times with a space. */
-function textOf(value: unknown): string {
-  if (value === null || value === undefined) {
-    return 'NULL';
-  }
-  if (typeof value !== 'string') {
-    return JSON.stringify(value);
-  }
-  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) ? value.replace('T', ' ') : value;
 }

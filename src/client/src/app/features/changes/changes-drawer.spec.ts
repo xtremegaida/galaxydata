@@ -11,12 +11,15 @@ import {
   changesUrl,
   insertOf,
   opsUrl,
+  previewOf,
+  previewUrl,
   setOf,
 } from '../../../testing/changes';
 import { requestTo, settle } from '../../../testing/http';
+import { fakeMonacoProviders } from '../../../testing/monaco';
 import { alertsOf, clickButton, textOf } from '../../../testing/pages';
 import { AuthStore } from '../../core/auth/auth-store';
-import { type ChangeSet, ChangesChannel } from '../../core/changes/pending-changes';
+import { type ChangeSet, ChangesChannel, PendingChanges } from '../../core/changes/pending-changes';
 import { ChangesDrawer } from './changes-drawer';
 
 describe('ChangesDrawer', () => {
@@ -29,6 +32,7 @@ describe('ChangesDrawer', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         fakeBrowserProviders(),
+        fakeMonacoProviders(),
         { provide: ChangesChannel, useClass: FakeChangesChannel },
         { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
       ],
@@ -170,6 +174,63 @@ describe('ChangesDrawer', () => {
       'No changes: rows changed in browsing wait here until they are committed.',
     );
     expect(element.querySelector('.actions')).toBeNull();
+  });
+
+  it('previews and commits the changes in a dialog, opened once at a time', async () => {
+    const { element, shown } = await opened(changes);
+    const button = [...element.querySelectorAll<HTMLButtonElement>('.actions button')].find(
+      (each) => textOf(each) === 'publish Preview and commit',
+    )!;
+    button.focus();
+    button.click();
+    button.click();
+    // The dialog is loaded as it is first opened.
+    for (let turn = 0; turn < 100 && !document.querySelector('gd-commit-dialog'); turn++) {
+      await settle(1);
+      await shown();
+    }
+    await shown();
+    expect(document.querySelectorAll('gd-commit-dialog').length).toBe(1);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    (await requestTo(http, previewUrl, 'POST')).flush(previewOf());
+    await shown();
+    clickButton(document.querySelector<HTMLElement>('gd-commit-dialog')!, 'Cancel');
+    await shown();
+    await settle();
+    await shown();
+    expect(document.querySelector('gd-commit-dialog')).toBeNull();
+    expect(button.getAttribute('aria-disabled')).toBeNull();
+    expect(document.activeElement).toBe(button);
+  });
+
+  it("says why changes can't be committed as they are, as the last preview found", async () => {
+    const { element, shown } = await opened(changes);
+    const previewing = TestBed.inject(PendingChanges).preview();
+    (await requestTo(http, previewUrl, 'POST')).flush(
+      previewOf({
+        planId: null,
+        issues: [
+          { change: 1, column: 'status', message: 'Not one of open, paid' },
+          { change: 1, column: 'placed_at', message: "'placed_at' is in the future" },
+          { change: 4, column: null, message: 'wh.stock takes no changes' },
+        ],
+      }),
+    );
+    await previewing;
+    await shown();
+    expect(
+      [...element.querySelectorAll('li.row')].map((row) =>
+        [...row.querySelectorAll('.issues li')].map((issue) => textOf(issue)),
+      ),
+    ).toEqual([
+      [
+        "errorCan't be committed: status: Not one of open, paid",
+        "errorCan't be committed: 'placed_at' is in the future",
+      ],
+      [],
+      [],
+      ["errorCan't be committed: wh.stock takes no changes"],
+    ]);
   });
 
   it("says why a revert couldn't be made", async () => {

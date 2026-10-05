@@ -40,6 +40,8 @@ export interface CellEdit {
   readonly original: unknown;
   /** Whether the row was changed elsewhere since: its value read now isn't the original. */
   readonly conflict: boolean;
+  /** Why the cell's value, or its row's change, can't be committed as it is (as the last preview found). */
+  readonly issues: readonly string[];
   /** Whether the cell may be given a value. */
   readonly editable: boolean;
 }
@@ -128,6 +130,9 @@ const lineageKinds: Readonly<Record<GridColumn['lineage']['kind'], string>> = {
               Changed elsewhere since: it is <code>{{ readText() }}</code> now. Committing would
               change nothing, and say so.
             </p>
+          }
+          @for (issue of edit.issues; track $index) {
+            <p class="note conflict">Can't be committed: {{ issue }}</p>
           }
           @if (edit.changed || edit.state === 'deleted') {
             <button matButton type="button" class="revert" (click)="revert.emit()">

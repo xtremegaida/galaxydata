@@ -1,0 +1,75 @@
+// The audit's tables and scripts.
+
+table.audit {
+  border-collapse: collapse;
+  font: var(--mat-sys-body-medium);
+
+  th,
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--mat-sys-outline-variant);
+    text-align: start;
+    vertical-align: top;
+  }
+
+  th {
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-title-small);
+    white-space: nowrap;
+  }
+
+  td:focus,
+  a:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: 2px;
+  }
+}
+
+.failure {
+  max-width: 360px;
+  overflow-wrap: anywhere;
+}
+
+.details {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  code {
+    font-family: var(--gd-code-font-family);
+  }
+}
+
+code.action {
+  font-family: var(--gd-code-font-family);
+  white-space: nowrap;
+}
+
+.script {
+  margin: 0 0 24px;
+
+  h3 {
+    margin: 0 0 8px;
+    font: var(--mat-sys-title-small);
+  }
+}
+
+pre.text {
+  max-height: 50vh;
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: var(--mat-sys-corner-extra-small);
+  background: var(--mat-sys-surface-container-low);
+  font: 13px/1.5 var(--gd-code-font-family);
+
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+  }
+}
+
+.error {
+  color: var(--mat-sys-error);
+  overflow-wrap: anywhere;
+}

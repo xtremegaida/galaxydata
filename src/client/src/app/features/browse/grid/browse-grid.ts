@@ -305,6 +305,8 @@ export class BrowseGrid {
   private newRows = new Map<string, EditRow>();
   /** Set while the picker is open (or loading): it opens once at a time. */
   private picking = false;
+  /** The grid whose rows wait for a cell's edit to end, to be read again. */
+  private waitingToRead: Live | null = null;
 
   /** What the rows are of. */
   readonly source = input.required<BrowseSource>();
@@ -484,6 +486,14 @@ export class BrowseGrid {
               changed,
               original: changed ? originalOf(change, column.name) : undefined,
               conflict: conflicts(column, index, row, change),
+              issues: this.changes
+                .issuesOf(change)
+                .filter(
+                  (issue) =>
+                    issue.column === null ||
+                    issue.column.toLowerCase() === column.name.toLowerCase(),
+                )
+                .map((issue) => issue.message),
               editable:
                 reference !== null
                   ? referenceEditable(made.schema, reference, row, edits)
@@ -552,10 +562,22 @@ export class BrowseGrid {
         }
       });
     });
-    // The entity's changes changed: the cells show them.
+    // The entity's changes changed (or what a preview found wrong with them): the cells show them.
     effect(() => {
       const changes = this.shownChanges();
+      this.changes.issues();
       untracked(() => this.showChanges(changes));
+    });
+    // Changes were committed (here or in another tab): the rows are read again, from the page shown (a grid
+    // being made has none yet).
+    effect(() => {
+      this.changes.commits();
+      untracked(() => {
+        const live = this.current();
+        if (live) {
+          this.readAgain(live);
+        }
+      });
     });
   }
 
@@ -666,6 +688,14 @@ export class BrowseGrid {
     }
     if (!this.linked() && row.id) {
       this.rowActivated.emit({ row, columns: made.schema.columns });
+    }
+  }
+
+  /** A cell's edit ended: rows waiting for it are read again. */
+  protected editingStopped(): void {
+    const live = this.current();
+    if (live && this.waitingToRead === live) {
+      this.readAgain(live);
     }
   }
 
@@ -957,6 +987,8 @@ export class BrowseGrid {
       capabilities,
       // The store's, as they are (the cells may be drawn before the grid follows them).
       changeOf: (row) => untracked(() => changeIn(this.changes.of(entity), row)),
+      issuesOf: (row) =>
+        untracked(() => this.changes.issuesOf(changeIn(this.changes.of(entity), row))),
       set: (row, values, display = {}) => this.setValues(entity, schema, row, values, display),
       refused: (_, column, reason) =>
         this.editProblem.set({ title: `Couldn't change ${column.name}`, reasons: [reason] }),
@@ -1199,6 +1231,19 @@ export class BrowseGrid {
     } finally {
       this.following = false;
     }
+  }
+
+  /**
+   * The rows asked for anew, from the page shown (and counted): once the cell being edited is, as the grid makes
+   * its rows anew (which would end the edit).
+   */
+  private readAgain(live: Live): void {
+    if (live.api.getEditingCells().length > 0) {
+      this.waitingToRead = live;
+      return;
+    }
+    this.waitingToRead = null;
+    this.ask(live, live.datasource.query, live.page);
   }
 
   /** Whether the address says other than what the grid shows. */

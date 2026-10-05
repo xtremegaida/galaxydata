@@ -7,7 +7,13 @@ import type {
   ValueSetterParams,
 } from 'ag-grid-community';
 import type { Schema } from '../../../core/api/api-client';
-import { type PendingChange, type Values, sameValue } from '../../../core/changes/pending-changes';
+import { issueText } from '../../../core/changes/change-labels';
+import {
+  type ChangeIssue,
+  type PendingChange,
+  type Values,
+  sameValue,
+} from '../../../core/changes/pending-changes';
 import {
   type GridColumn,
   type GridRow,
@@ -40,6 +46,8 @@ export interface GridEdits {
   readonly capabilities: Capabilities;
   /** The row's change, if it has one. */
   changeOf(row: GridRow): PendingChange | null;
+  /** What the last preview found wrong with the row's change. */
+  issuesOf(row: GridRow): readonly ChangeIssue[];
   /** Sets columns' values (by their places) of a row, with display values of the rows navigations then lead to. */
   set(row: GridRow, values: ReadonlyMap<number, unknown>, display?: Values): void;
   /** Says why a value given can't be (it isn't sent). */
@@ -70,6 +78,11 @@ function changedValue(change: PendingChange | null, name: string): unknown {
   }
   const found = Object.keys(values).filter((key) => key.toLowerCase() === name.toLowerCase());
   return found.length === 1 ? values[found[0]] : absent;
+}
+
+/** What is wrong with a column's value, among a row's issues. */
+export function columnIssues(issues: readonly ChangeIssue[], name: string): readonly ChangeIssue[] {
+  return issues.filter((issue) => issue.column?.toLowerCase() === name.toLowerCase());
 }
 
 /** Whether a change has a value for a column. */
@@ -357,13 +370,21 @@ function editorOf(column: GridColumn): Partial<ColDef<GridRow>> {
   }
 }
 
-/** What a cell says when pointed at: why it is marked (changed, changed elsewhere, needing a value). */
+/**
+ * What a cell says when pointed at: why it is marked (it can't be committed as it is, changed, changed elsewhere,
+ * needing a value).
+ */
 function tooltipOf(
   column: GridColumn,
   index: number,
   row: GridRow,
   change: PendingChange | null,
+  issues: readonly ChangeIssue[],
 ): string | undefined {
+  const wrong = columnIssues(issues, column.name);
+  if (wrong.length > 0) {
+    return `Can't be committed: ${wrong.map((issue) => issue.message).join(' ')}`;
+  }
   if (isNew(row)) {
     if (!hasValue(change, column.name)) {
       return column.insert === 'required'
@@ -429,10 +450,16 @@ export function editedColumnDefsOf(
         'gd-conflict': ({ data }: CellClassParams<GridRow>) =>
           !!data && conflicts(column, index, data, changeOf(data)),
         'gd-invalid': ({ data }: CellClassParams<GridRow>) =>
-          isNew(data) && column.insert === 'required' && !hasValue(changeOf(data), column.name),
+          !!data &&
+          ((isNew(data) &&
+            column.insert === 'required' &&
+            !hasValue(changeOf(data), column.name)) ||
+            columnIssues(edits.issuesOf(data), column.name).length > 0),
       },
       tooltip: ({ data }) =>
-        data ? tooltipOf(column, index, data, edits.changeOf(data)) : undefined,
+        data
+          ? tooltipOf(column, index, data, edits.changeOf(data), edits.issuesOf(data))
+          : undefined,
       suppressKeyboardEvent,
     };
   });
@@ -571,7 +598,12 @@ const stateIcons: Readonly<Record<Exclude<RowState, null>, string>> = {
   changed: 'edit',
 };
 
-/** The column that says each row's change: new, to be deleted, or changed. */
+/** What the state cell draws with: what is wrong with a row's change. */
+interface StateCellParams extends ICellRendererParams<GridRow> {
+  readonly issuesOf?: (row: GridRow) => readonly ChangeIssue[];
+}
+
+/** The column that says each row's change (new, to be deleted, or changed), and whether it can be committed. */
 function stateColumnDef(edits: GridEdits): ColDef<GridRow> {
   return {
     colId: stateColId,
@@ -587,17 +619,34 @@ function stateColumnDef(edits: GridEdits): ColDef<GridRow> {
     width: 44,
     minWidth: 44,
     valueGetter: ({ data }) => (data ? rowStateOf(data, edits.changeOf(data)) : undefined),
-    tooltip: ({ value }) => (value ? stateLabels[value as Exclude<RowState, null>] : undefined),
+    tooltip: ({ value, data }) => {
+      if (!value) {
+        return undefined;
+      }
+      const label = stateLabels[value as Exclude<RowState, null>];
+      const issues = data ? edits.issuesOf(data) : [];
+      return issues.length > 0
+        ? `${label}, can't be committed: ${issues.map(issueText).join(' ')}`
+        : label;
+    },
+    cellClassRules: {
+      'gd-invalid': ({ data }: CellClassParams<GridRow>) =>
+        !!data && edits.issuesOf(data).length > 0,
+    },
     cellRenderer: StateCell,
+    cellRendererParams: { issuesOf: (row: GridRow) => edits.issuesOf(row) },
     suppressKeyboardEvent: editingKeys({ columns: [], references: [], collections: [] }, -1, edits),
   };
 }
 
-/** A row's change, drawn (an icon) and said (its words, for screen readers). */
+/**
+ * A row's change, drawn (an icon) and said (its words, for screen readers); one that can't be committed as it is
+ * says so.
+ */
 export class StateCell implements ICellRendererComp<GridRow> {
   private element!: HTMLElement;
 
-  init(params: ICellRendererParams<GridRow>): void {
+  init(params: StateCellParams): void {
     this.element = params.eGridCell.ownerDocument.createElement('span');
     this.element.className = 'gd-state';
     this.show(params);
@@ -607,25 +656,26 @@ export class StateCell implements ICellRendererComp<GridRow> {
     return this.element;
   }
 
-  refresh(params: ICellRendererParams<GridRow>): boolean {
+  refresh(params: StateCellParams): boolean {
     this.show(params);
     return true;
   }
 
-  private show(params: ICellRendererParams<GridRow>): void {
+  private show(params: StateCellParams): void {
     const state = params.value as RowState | undefined;
     const document = this.element.ownerDocument;
     this.element.replaceChildren();
     if (!state) {
       return;
     }
+    const invalid = !!params.data && (params.issuesOf?.(params.data).length ?? 0) > 0;
     const icon = document.createElement('span');
-    icon.className = `gd-state-icon gd-state-${state}`;
+    icon.className = `gd-state-icon gd-state-${invalid ? 'invalid' : state}`;
     icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = stateIcons[state];
+    icon.textContent = invalid ? 'error' : stateIcons[state];
     const label = document.createElement('span');
     label.className = 'cdk-visually-hidden';
-    label.textContent = stateLabels[state];
+    label.textContent = invalid ? `${stateLabels[state]}, can't be committed` : stateLabels[state];
     this.element.append(icon, label);
   }
 }

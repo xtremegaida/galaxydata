@@ -1678,6 +1678,7 @@ export interface components {
             kind: string;
             dialect: string;
             text: string;
+            editable: boolean;
             statements: components["schemas"]["PreviewStatementDto"][];
         };
         PreviewStatementDto: {

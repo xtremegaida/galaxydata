@@ -36,7 +36,8 @@ import { describeChanges, describeEntity, throughOf } from './entity-structure';
 import { insertDefaultsOf } from './browse-page';
 import { BROWSE_PAGE_SIZE } from './grid/browse-grid';
 
-describe('BrowsePage', () => {
+// Each test makes grids (one per crumb), which take seconds in jsdom on a busy machine.
+describe('BrowsePage', { timeout: 15_000 }, () => {
   const wide = new BehaviorSubject<BreakpointState>({ matches: true, breakpoints: {} });
 
   beforeEach(() => {
