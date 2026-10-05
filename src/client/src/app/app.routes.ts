@@ -31,6 +31,11 @@ export const routes: Routes = [
         loadChildren: () => import('./features/browse/browse.routes').then((m) => m.browseRoutes),
       },
       {
+        path: 'query',
+        canMatch: [allowedTo('canRead')],
+        loadChildren: () => import('./features/query/query.routes').then((m) => m.queryRoutes),
+      },
+      {
         path: 'admin',
         canMatch: [allowedTo('canAdmin')],
         loadChildren: () => import('./features/admin/admin.routes').then((m) => m.adminRoutes),

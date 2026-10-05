@@ -1,5 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { settle } from '../../../testing/http';
 import { FakeMonaco, fakeMonacoProviders } from '../../../testing/monaco';
 import { ColorScheme } from '../theme/color-scheme';
@@ -28,6 +29,22 @@ class Host {
   readonly language = signal('sql');
   readonly readOnly = signal(false);
   readonly markers = signal<EditorMarker[]>([]);
+}
+
+@Component({
+  imports: [CodeEditor],
+  template: `
+    <gd-code-editor
+      [(text)]="text"
+      label="The query"
+      submitHint="runs the query"
+      (submitted)="submitted = submitted + 1"
+    />
+  `,
+})
+class Submitting {
+  readonly text = signal('shop.orders\r\n.take(1)');
+  submitted = 0;
 }
 
 describe('CodeEditor', () => {
@@ -138,6 +155,108 @@ describe('CodeEditor', () => {
     }
   });
 
+  it('marks how wrong each thing is: errors, warnings and what is only said', async () => {
+    const monaco = new FakeMonaco();
+    const { fixture, host } = await opened(monaco);
+    host.markers.set([
+      { start: 0, length: 1, message: 'Wrong' },
+      { start: 1, length: 1, message: 'Odd', severity: 'warning' },
+      { start: 2, length: 1, message: 'Said', severity: 'info' },
+      { start: 3, length: 1, message: 'Wrong too', severity: 'error' },
+    ]);
+    fixture.detectChanges();
+    await settle();
+    expect(monaco.last.model.markers.map((marker) => marker.severity)).toEqual([8, 4, 2, 8]);
+  });
+
+  it('puts the keyboard where it is asked to, in sight', async () => {
+    const monaco = new FakeMonaco();
+    const { fixture, element } = await opened(monaco);
+    const editor = fixture.debugElement.query(By.directive(CodeEditor))
+      .componentInstance as CodeEditor;
+    editor.reveal(22);
+    expect(monaco.last.position).toEqual({ lineNumber: 2, column: 3 });
+    expect(document.activeElement).toBe(monaco.last.input);
+    expect(element.contains(document.activeElement)).toBe(true);
+  });
+
+  it("makes line breaks line feeds, unless the text given has Windows' own", async () => {
+    const monaco = new FakeMonaco();
+    await opened(monaco);
+    expect(monaco.last.model.eol).toBe(0);
+
+    TestBed.resetTestingModule();
+    const other = new FakeMonaco();
+    TestBed.configureTestingModule({ providers: fakeMonacoProviders(other) });
+    const fixture = TestBed.createComponent(Submitting);
+    fixture.detectChanges();
+    await settle();
+    expect(other.last.model.eol).toBeNull();
+  });
+
+  it('takes the line breaks of a text set later, so it is the same text', async () => {
+    const monaco = new FakeMonaco();
+    const { fixture, host } = await opened(monaco);
+    expect(monaco.last.model.eol).toBe(0);
+    host.text.set('UPDATE a SET b = 1;\r\nDROP TABLE a;\r\n');
+    fixture.detectChanges();
+    await settle();
+    expect(monaco.last.model.eol).toBe(1);
+    expect(host.text()).toBe('UPDATE a SET b = 1;\r\nDROP TABLE a;\r\n');
+    host.text.set('one line');
+    fixture.detectChanges();
+    await settle();
+    expect(monaco.last.model.eol).toBe(1);
+    host.text.set('a\nb');
+    fixture.detectChanges();
+    await settle();
+    expect(monaco.last.model.eol).toBe(0);
+  });
+
+  it('submits the text with Ctrl+Enter when it says what that does', async () => {
+    const monaco = new FakeMonaco();
+    TestBed.configureTestingModule({ providers: fakeMonacoProviders(monaco) });
+    const fixture = TestBed.createComponent(Submitting);
+    fixture.detectChanges();
+    await settle();
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.querySelector('.keys')?.textContent).toBe(
+      'Tab inserts a tab; Ctrl+M makes it move on, and back. Ctrl+Enter runs the query.',
+    );
+    monaco.last.submit();
+    expect(fixture.componentInstance.submitted).toBe(1);
+
+    // Without saying it, Ctrl+Enter is Monaco's.
+    const others = new FakeMonaco();
+    TestBed.resetTestingModule();
+    await opened(others);
+    expect(others.last.commands.size).toBe(0);
+  });
+
+  it('submits a plain text area with Ctrl+Enter too, Cmd+Enter on macOS', async () => {
+    const platform = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('Win32');
+    try {
+      TestBed.configureTestingModule({ providers: fakeMonacoProviders(null) });
+      const fixture = TestBed.createComponent(Submitting);
+      fixture.detectChanges();
+      await settle();
+      fixture.detectChanges();
+      const area = (fixture.nativeElement as HTMLElement).querySelector('textarea')!;
+      const pressed = (init: KeyboardEventInit) => {
+        const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, ...init });
+        area.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+      expect(pressed({})).toBe(false);
+      expect(pressed({ metaKey: true })).toBe(false);
+      expect(pressed({ ctrlKey: true })).toBe(true);
+      expect(fixture.componentInstance.submitted).toBe(1);
+    } finally {
+      platform.mockRestore();
+    }
+  });
+
   it("edits the text as plain text when Monaco can't be loaded", async () => {
     const { fixture, host, element } = await opened(null);
     const area = element.querySelector<HTMLTextAreaElement>('textarea.plain')!;
@@ -185,7 +304,7 @@ describe('MonacoLoader', () => {
     return document.head.querySelector<HTMLLinkElement>('link[rel=stylesheet][href$="monaco.css"]');
   }
 
-  it('loads Monaco once, with its stylesheet; its theme follows the colour scheme', async () => {
+  it('loads Monaco once, with its stylesheet and the query language; its theme follows the colour scheme', async () => {
     const loader = TestBed.inject(MonacoLoader);
     const first = loader.load();
     const second = loader.load();
@@ -195,6 +314,7 @@ describe('MonacoLoader', () => {
     link.dispatchEvent(new Event('load'));
     expect(await first).toBe(monaco.asMonaco());
     expect(imports).toBe(1);
+    expect([...monaco.languages.registered.keys()]).toEqual(['gdq']);
     TestBed.tick();
     expect(monaco.theme).toBe('vs');
     dark.set(true);

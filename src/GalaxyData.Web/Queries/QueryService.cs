@@ -41,7 +41,17 @@ public sealed class QueryService(CatalogService catalogs, QueryEngines engines, 
       QueryParameters all = Copy(given);
       foreach (string name in used.Where(n => !given.TryGet(n, out _))) { all.Add(name, null); }
       CatalogState state = await catalogs.GetAsync(response, cancellationToken);
-      PreparedQuery prepared = engines.For(state).Prepare(new QueryRequest(request.Text) { Parameters = all });
+      QueryEngine engine = engines.For(state);
+      PreparedQuery prepared = engine.Prepare(new QueryRequest(request.Text) { Parameters = all });
+      // The type the query takes for each parameter is the one it takes without a value: a value given doesn't change
+      // it (a whole number given for a decimal column is still asked for as a decimal).
+      IReadOnlyDictionary<string, ScalarType> taken = prepared.ParameterTypes;
+      if (used.Any(n => given.TryGet(n, out _)))
+      {
+         QueryParameters nulls = new();
+         foreach (string name in used) { nulls.Add(name, null); }
+         taken = engine.Prepare(new QueryRequest(request.Text) { Parameters = nulls }).ParameterTypes;
+      }
 
       // A null doesn't fit everywhere a value would (-$n, abs($n), $a == $b): there, the parameter wants a value before more can be said.
       List<Range> unfilled = [.. uses.Where(u => !given.TryGet(u.Name, out _)).Select(u => u.Range)];
@@ -55,11 +65,13 @@ public sealed class QueryService(CatalogService catalogs, QueryEngines engines, 
             : new DiagnosticDto(diagnostic.Code, DiagnosticSeverity.Info, $"${name} has no value, so this can't be checked yet: {diagnostic.Message}", diagnostic.Start, diagnostic.End));
       }
       return new QueryValidationDto(!diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error), prepared.Success, diagnostics,
-         [.. used.Select(n => new UsedParameterDto(n, given.TryGet(n, out _), prepared.ParameterTypes.TryGetValue(n, out ScalarType type) && type.Kind != ScalarKind.Unknown
-            ? type.AsNonNullable().ToString()
-            : null))],
+         [.. used.Select(n => new UsedParameterDto(n, given.TryGet(n, out _), TypeOf(n, taken) ?? TypeOf(n, prepared.ParameterTypes)))],
          prepared.Success ? [.. prepared.Schema!.VisibleColumns.Select(c => new QueryColumnDto(c.Name, TypeDto.Of(c.Type)))] : null);
    }
+
+   /// <summary>A parameter's type as the language writes it, when one is known.</summary>
+   private static string? TypeOf(string name, IReadOnlyDictionary<string, ScalarType> types) =>
+      types.TryGetValue(name, out ScalarType type) && type.Kind != ScalarKind.Unknown ? type.AsNonNullable().ToString() : null;
 
    private static bool Overlaps(QueryDiagnostic diagnostic, Range range) =>
       diagnostic.Start < range.End.Value && Math.Max(diagnostic.End, diagnostic.Start + 1) > range.Start.Value;

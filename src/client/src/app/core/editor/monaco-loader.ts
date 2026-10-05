@@ -1,6 +1,7 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, InjectionToken, Injector, effect, inject } from '@angular/core';
 import { ColorScheme } from '../theme/color-scheme';
+import { registerGdq } from './gdq-language';
 
 /** Monaco's API, as the application loads it. */
 export type Monaco = typeof import('./monaco-modules');
@@ -13,7 +14,8 @@ export const MONACO_IMPORT = new InjectionToken<() => Promise<Monaco>>('MONACO_I
 
 /**
  * Loads Monaco once, when an editor is first shown: its chunk and its stylesheet (`monaco.css`, a bundle of its own
- * that pages don't load). Its editors' theme follows the page's colour scheme. A load that fails may be tried again.
+ * that pages don't load), with the query language registered (`gdq`). Its editors' theme follows the page's colour
+ * scheme. A load that fails may be tried again.
  */
 @Injectable({ providedIn: 'root' })
 export class MonacoLoader {
@@ -33,6 +35,7 @@ export class MonacoLoader {
 
   private async start(): Promise<Monaco> {
     const [monaco] = await Promise.all([this.import(), this.stylesheet()]);
+    registerGdq(monaco);
     effect(() => monaco.editor.setTheme(this.scheme.dark() ? 'vs-dark' : 'vs'), {
       injector: this.injector,
     });

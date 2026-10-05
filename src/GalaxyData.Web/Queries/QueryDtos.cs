@@ -47,7 +47,10 @@ public sealed record QueryExplainRequest([Required] string Text, List<QueryParam
 public sealed record QueryLinkRequest([Required] string Text, [Required] List<object?> Row, List<QueryParameterInput>? Parameters = null, int? Column = null,
                                       int? Related = null, string? CatalogVersion = null);
 
-/// <summary>A parameter the text uses, whether a value was given for it, and the type it takes (as far as the query was checked), to ask for a value of.</summary>
+/// <summary>
+/// A parameter the text uses, whether a value was given for it, and the type the query takes for it (as far as the
+/// query was checked), to ask for a value of: the type it takes without a value, whatever value was given.
+/// </summary>
 public sealed record UsedParameterDto(string Name, bool Given, string? Type);
 
 /// <summary>A column of a query's result, as validating it finds it.</summary>

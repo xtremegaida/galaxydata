@@ -98,7 +98,9 @@ anti-forgery token. Signing in, signing out and changing the password go through
 
 **Pages.** `/sign-in`, and `/change-password`: chosen from the user's menu, or first, when the password must be
 changed. Both take `returnUrl`, where to go after: an address of the application's (read as a browser reads it,
-so that one leading to another site doesn't pass), or else the start. They load when they are needed (lazy
+so that one leading to another site doesn't pass), or else the start. It is without the address's fragment, which
+the browser keeps to itself and a query (`?returnUrl=`) would send to the server: the query editor's holds the
+query's text, which the editor shows again. They load when they are needed (lazy
 routes), so the signed-in don't load their forms.
 
 **Guards** (`core/auth/guards.ts`):
@@ -151,7 +153,8 @@ Pages for the signed-in are in the shell (`src/app/shell`), which has:
   end of the page (beside it from 960 pixels, over it below), loaded when first opened (`@defer`), from which they
   are previewed and committed. See [Changing data](#changing-data).
 
-A route's `title` is shown with the application's name after it: "Sign in · GalaxyData".
+A route's `title` is shown with the application's name after it: "Sign in · GalaxyData". A page may put what it
+shows before it (`PageTitle`, in `core/page-titles.ts`): "Big orders · Query · GalaxyData".
 
 ## Browsing
 
@@ -424,6 +427,65 @@ changes:
   scripts were edited and not committed (after a commit that didn't write everything too); nothing closes it while
   it commits. Closed, the keyboard goes back to the drawer.
 
+## Querying
+
+`/query` (`src/app/features/query`), for everyone who reads data: queries written in the query language
+([language.md](language.md)), run, explained, and saved.
+
+- **The address** (`core/query/query-url.ts`, the only place it is read and written) says what the editor holds:
+  `/query` for a query not saved, `/query/<id>` for a saved one; and, as JSON in the fragment, what isn't the saved
+  query's (its text, its parameters' values) and whether its rows are shown: `/query/7#{"text":"…","run":true}`.
+  Browsers keep a fragment (in the history, an address copied) but don't send it to the server: a query's text may
+  be long, and hold values. The page writes its address in place as typing pauses (and, the page left before it
+  did, in place before the router goes on: `Location.replaceState`), and shows what an address it didn't write says
+  (back, forward, a reload, a link), running the query when its rows were shown (not after a run was stopped). So
+  going back from where a link led shows the query, run again, and the address is a link to the query. Query in the
+  navigation shows the query left there (`LastQuery`), but not going back or forward to a new query; New query
+  starts another, the one before a step back. While a saved query is read, the editor shows nothing (read-only),
+  and the query can't be run or saved; what is answered for a query no longer shown (a read, a save, a delete) is
+  left.
+- **Checking as typing pauses** (`POST /api/query/validate`): what is wrong is marked in the editor (errors,
+  warnings, and what is only said), listed in Messages by line (gone to on asking), and counted on its tab; the
+  parameters the query uses are asked for.
+- **The editor** ([The editor](#the-editor)) highlights the query language. Ctrl+Enter (Cmd+Enter on macOS) runs
+  the query, there or anywhere in the page but the grid (where it is the grid's); Ctrl+S saves it.
+- **Runs and explanations wait for the text to be checked** (a moment after typing pauses), so their parameters
+  are typed as the query takes them: a group's rows by a postcode `0123`, compared with text, are asked for with
+  the text `0123`. Should the check fail, they go on, the values typed as the command line types them.
+- **Parameters:** a field for each (`$min`), with the type the query takes for it and how such a value is written,
+  or NULL. Values are sent as the type's kind (`decimal` for `decimal(10,2)`: a parameter takes the precision its
+  value needs), and checked first: one that isn't of its type (`abc isn't a number`) is said at its field, and the
+  query isn't run till it is. Where the query takes no type, values are typed as the command line types them
+  (`null`, `true`, `false`, whole and decimal numbers, else text; quotes keep text). Values of parameters the text no
+  longer uses are kept as typed, but aren't run, saved, or in the address; NULL gives back what was typed before it
+  when unticked. A query isn't saved with a value that isn't of its type.
+- **Results** (`QueryResults`) are a grid as browsing's (AG Grid's infinite row model, pages of 100, filters and
+  sorting the server composes onto the query, counted; `PagedDatasource` is both's), each column by its ordinal,
+  hidden ones (keys, for links) hidden. Values that lead somewhere are links, and where the server says (`POST
+  /api/query/link`, for the page's rows, at the catalog's version they were read at): the row a value refers to
+  (`customer_id`, `select(customer)`) and the rows a value was worked out from (`orders.count()`) are browsed; a
+  group's aggregate leads to the group's rows, as a query (a new address, its rows shown). When the rows are an
+  entity's, a column for each kind of rows that refer to them. Links in cells are text marked as links (the server
+  says where they lead, so they aren't addresses to open elsewhere); a click or Enter follows them. The inspector
+  says where a value leads. A link's answer for rows no longer shown (run anew, sorted) is left. Stop, while the
+  first page comes, lets its request go, and the server stops the query; a run anew says nothing of the one before.
+  What reading the page took (the rows fetched from each source, keys sent to look rows up by) and its warnings are
+  in Messages.
+- **Explain** (`POST /api/query/explain`): the plan as a tree (each operator with what it does, where it runs when
+  it runs in more than one place, and the rows it is thought to give; subqueries under the operators that use
+  them), the plan after each phase of the optimizer on asking, and `gdq explain`'s text; and the SQL each source
+  runs, a tab each (how its rows are fetched, its parameters, the statement for each batch of keys when they are
+  looked up by another's), with the merge engine's. An explanation of the query before its last changes says so.
+- **Saved queries** (`/api/saved-queries`): Save saves a new query, named in a dialog (the name is the user's alone,
+  whatever its case; a description; shared with everyone or not), and a saved one in place, to the version read.
+  One changed since says so: it is read again (the editor keeping its text), or saved as a copy. Queries the user
+  may not change are saved as copies. Also: a copy; a saved query's name, description and sharing (its text as
+  saved); deleting it, once confirmed (the editor keeps its text); Undo my edits. Open… lists the user's queries and
+  others' (shared, and for administrators those whose owner is gone), found by name, description or owner. A saved
+  query's name titles the page (`PageTitle`), "(edited)" after it when its text or values aren't the saved ones.
+  Copy a link copies a shared saved query's own address, else one with the query's text and values (shown, to copy
+  by hand, when the browser won't).
+
 ## Administration
 
 Administrators' pages are under `/admin` (`features/admin`). They are loaded when one is opened, and only for
@@ -548,6 +610,17 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
   by its problems when refused; problems are an alert, and listed by line as well as marked. Undoing edits keeps
   the keyboard in the editor. Commit and Preview again stay focusable when they can't be pressed
   (`disabledInteractive`). Previews, and what came of the commit, are said.
+- **Querying:** the editor is labelled ("The query") and described by its keys (Ctrl+Enter runs the query); Run,
+  Explain and Save stay focusable when they can't be pressed, and say their keys (`aria-keyshortcuts`). The
+  parameters are a group ("Parameters"); a value that isn't of its type is said in its field's hint, the field
+  `aria-invalid`, and Run puts the keyboard there. The tabs under the editor are named ("What the query gives"),
+  Messages' count said in words (", 2 to read", the badge drawn, not read; an error's colour only for errors); a
+  message's place is a button ("Go to line 2, column 10") that puts the keyboard there in the editor. Each NULL
+  says whose it is ("$min is NULL"). The SQL's tabs are named too ("The SQL each source runs"), each editor labelled
+  by its source. Links in the results' cells are `role="link"`, followed by Enter on the cell. What was done (saved,
+  deleted, the link copied, a group's rows followed) is said politely, a run stopped by its notice (a status);
+  problems are alerts. Where what had the keyboard goes, the keyboard goes on: to Run after Stop, to the editor
+  after New query, deleting, or following a group's rows.
 - **The path** is a navigation landmark ("Path"), a list of links, the crumb shown marked `aria-current="page"`;
   the `›` between crumbs is drawn by the style sheet, with no text for screen readers (`content: '›' / ''`).
 - **The catalog's tree** is a tree as WAI-ARIA describes one. It is one stop in the tab order.
@@ -570,7 +643,7 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
 
 ## The editor
 
-Code is edited in Monaco (`monaco-editor`, `CodeEditor` in `core/editor`): the commit dialog's scripts, and F8's
+Code is edited in Monaco (`monaco-editor`, `CodeEditor` in `core/editor`): the commit dialog's scripts, and
 queries.
 
 - **Loaded when first shown** (`MonacoLoader`): its ESM modules, those the application uses (`monaco-modules.ts`:
@@ -581,12 +654,19 @@ queries.
   `tsconfig.worker.json`) is a file of the application's (the policy's `worker-src 'self'`).
 - **The theme** follows the page's colour scheme (`vs`, `vs-dark`); the font is the page's code font, measured
   again once loaded.
-- **The text** is two-way (`[(text)]`): as typed, and set from outside as an edit that can be undone. Markers
-  (`EditorMarker`: an offset, a length, a message) are placed by offsets in the text. A read-only editor says why
-  when typed in.
+- **The text** is two-way (`[(text)]`): as typed, and set from outside as an edit that can be undone. Its line
+  breaks are line feeds (Monaco would take the system's for an empty text: Windows' `\r\n`), unless the text it is
+  given has `\r\n`. Markers (`EditorMarker`: an offset, a length, a message, and an error unless said: a warning,
+  or what is only said) are placed by offsets in the text; `reveal(offset)` puts the keyboard there. A read-only
+  editor says why when typed in.
+- **The query language** (`gdq`, `core/editor/gdq-language.ts`, registered as Monaco loads): a Monarch grammar of
+  its comments (`#` and `//` to the line's end, `/* … */`), text in quotes with its escapes (one that isn't, and
+  text left open at the line's end, marked), raw text over lines, numbers, parameters, the language's words and
+  those it refuses, operators, and names called (methods and functions); Ctrl+/ comments lines.
 - **Keys:** Tab inserts a tab; Ctrl+M (Ctrl+Shift+M on macOS) switches Tab to moving the keyboard on, and back
   (Monaco's tab focus mode). The editor says so under itself, and is described by it, when it may be typed in.
-  Escape is the editor's. Monaco's text area is labelled (`label`) and described (`describedBy`); its edit context
+  With `submitHint` ("runs the query"), Ctrl+Enter (Cmd+Enter on macOS) submits the text (`submitted`), and the
+  hint says so. Escape is the editor's. Monaco's text area is labelled (`label`) and described (`describedBy`); its edit context
   (experimental) is off. The font is read from the page (an editor in a tab not shown is made outside it).
 - **Should Monaco fail to load,** the text is edited in a plain text area, labelled and described the same.
 - **Packages:** `monaco-editor` (MIT) brings `marked` and `dompurify`; an npm override gives Monaco dompurify
@@ -623,17 +703,18 @@ policy refuses:
 This is why the build doesn't inline critical CSS (`inlineCritical: false` in `angular.json`). Angular would load
 the rest of the stylesheet with an inline script, which the policy refuses.
 
-**Size.** The first load holds the framework, the Material parts of the shell, and the shell: about 718 kB, 168 kB
+**Size.** The first load holds the framework, the Material parts of the shell, and the shell: about 721 kB, 170 kB
 compressed (the pending changes' store and badge are in it; their drawer, about 13 kB, and the commit dialog, about
 25 kB, load when first opened). It grows as the features use more of Angular's core (resources, for one), which every page shares, and
 of modules the shell uses: the CDK's virtual scrolling is in the module of the scrolling the shell's navigation
 uses, so it loads at first though only browsing uses it. Pages not needed at first are loaded when opened (lazy
-routes): the sign-in and password pages, the administrators' pages (about 255 kB), browsing (about 1.32 MB, 297 kB
-compressed; its picker loads when first wanted), and the features' pages as they come. The editor (Monaco) is a
+routes): the sign-in and password pages, the administrators' pages (about 255 kB), browsing (about 100 kB; its
+picker loads when first wanted), the query editor (about 65 kB), and a chunk they share of 1.22 MB (275 kB
+compressed), nearly all AG Grid. The editor (Monaco) is a
 chunk of 3.3 MB (660 kB compressed), with its stylesheet (`monaco.css`, 390 kB, 108 kB compressed, its icons'
-font in it) and worker (300 kB), loaded when an editor is first shown. Browsing's chunk is nearly
-all AG Grid: its core and the modules the grid registers (its infinite row model, pages, filters, choosing rows,
-tooltips, refreshing cells, its state and words, its editors, rows' classes, pinned rows, scrolling). The build
+font in it) and worker (300 kB), loaded when an editor is first shown. The grids' chunk holds AG Grid's core and
+the modules the grids register (the infinite row model, pages, filters, choosing rows, tooltips, refreshing cells,
+the grid's state and words, its editors, rows' classes, pinned rows, scrolling). The build
 warns above 750 kB (700 kB until F6) and fails above 1 MB for the first load (`budgets` in `angular.json`). GalaxyData isn't meant
 for slow networks, so these can be raised when a feature needs it.
 
@@ -675,9 +756,13 @@ for slow networks, so these can be raised when a feature needs it.
     `.ag-grid-pinned-top-rows` (`newRowCells`; `gridCells` leaves them out too). Key events a test makes are
     `cancelable`, or `preventDefault` does nothing.
   - **Editors** are on a fake Monaco in tests (`fakeMonacoProviders` in `src/testing/monaco.ts`): its editors and
-    models hold their options, text, edits and markers, and a test types in a model (`type`); without one
-    (`fakeMonacoProviders(null)`), Monaco fails to load and editors are text areas. Monaco itself isn't loaded in
-    jsdom (it lays out what jsdom doesn't).
+    models hold their options, text, edits, markers, line breaks, commands and the keyboard's place, and a test
+    types in a model (`type`) or presses Ctrl+Enter (`submit`); without one (`fakeMonacoProviders(null)`), Monaco
+    fails to load and editors are text areas. Monaco's editors aren't made in jsdom (they lay out what jsdom
+    doesn't), but its tokenizer runs there: the query language's grammar is tested with it (with a stand-in for
+    `matchMedia`, which Monaco's theme asks for).
+  - **Queries:** the page waits `QUERY_WAITS` before it checks a query and writes its address (a millisecond in
+    tests); `src/testing/query.ts` makes the API's answers (pages of rows, explanations, saved queries, checks).
   - **Back and forward:** the router follows the browser's history only once it listens, which an application's
     first navigation sets up and a test's router harness doesn't: a test that goes back calls
     `router.setUpLocationChangeListener()` first.
@@ -686,7 +771,7 @@ for slow networks, so these can be raised when a feature needs it.
 - **Layout:**
   - `src/app/core` holds what the whole application uses: the API, problems, the session, the theme, forms'
     helpers, the catalog (its version, the tree's state, following it), the pending changes (`core/changes`),
-    browsing's addresses (`core/browse`), the editor (`core/editor`), the
+    browsing's addresses (`core/browse`), the query editor's (`core/query`), the editor (`core/editor`), the
     browser's storage (`core/browser/stored.ts`), and the pieces pages share (`core/ui`: messages, the confirmation
     dialog, the unsaved-changes guard, `debounced`);
   - `src/app/shell` holds the shell;

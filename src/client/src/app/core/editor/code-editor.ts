@@ -4,10 +4,12 @@ import {
   DestroyRef,
   ElementRef,
   afterNextRender,
+  computed,
   effect,
   inject,
   input,
   model,
+  output,
   signal,
   untracked,
   viewChild,
@@ -15,11 +17,12 @@ import {
 import { MatProgressBar } from '@angular/material/progress-bar';
 import { type Monaco, MonacoLoader } from './monaco-loader';
 
-/** Something wrong in the text: from an offset (in UTF-16 units), for a length, and why. */
+/** Something wrong in the text: from an offset (in UTF-16 units), for a length, and why (an error, unless said). */
 export interface EditorMarker {
   readonly start: number;
   readonly length: number;
   readonly message: string;
+  readonly severity?: 'error' | 'warning' | 'info';
 }
 
 type Editor = ReturnType<Monaco['editor']['create']>;
@@ -34,7 +37,8 @@ let editors = 0;
  * A text edited as code, in Monaco (loaded when an editor is first shown): highlighted in its language, with what is
  * wrong in it marked (and said when pointed at, or with F8). The text is two-way: the editor's as it is edited, and
  * the editor's when set from outside (an edit that can be undone). Should Monaco fail to load, the text is edited in
- * a plain text area. Tab inserts a tab, unless Ctrl+M makes it move the keyboard on.
+ * a plain text area. Tab inserts a tab, unless Ctrl+M makes it move the keyboard on. With `submitHint`, Ctrl+Enter
+ * (Cmd+Enter on macOS) submits the text (`submitted`): runs a query.
  */
 @Component({
   selector: 'gd-code-editor',
@@ -50,6 +54,7 @@ let editors = 0;
           [readOnly]="readOnly()"
           [value]="text()"
           (input)="typed($event)"
+          (keydown)="plainKey($event)"
           #plain
         ></textarea>
       } @else {
@@ -60,7 +65,7 @@ let editors = 0;
       }
     </div>
     @if (ready() && !readOnly()) {
-      <p class="keys" [id]="keysId">Tab inserts a tab; {{ tabKeys }} makes it move on, and back.</p>
+      <p class="keys" [id]="keysId">{{ keysText() }}</p>
     }
   `,
   styles: `
@@ -130,14 +135,24 @@ export class CodeEditor {
   readonly markers = input<readonly EditorMarker[]>([]);
   /** The ids of what describes the editor (hints, problems). */
   readonly describedBy = input<string | null>(null);
+  /** What Ctrl+Enter does, as the keys' hint says it ("runs the query"); without it, Ctrl+Enter is Monaco's. */
+  readonly submitHint = input<string | null>(null);
+  /** Ctrl+Enter was pressed in it (with `submitHint`). */
+  readonly submitted = output<void>();
 
   protected readonly keysId = `gd-code-editor-${editors++}-keys`;
   /** The keys of Monaco's tab focus mode (Tab moving the keyboard on): on macOS, with Shift. */
-  protected readonly tabKeys = /Mac|iPhone|iPad/.test(
+  private readonly mac = /Mac|iPhone|iPad/.test(
     this.document.defaultView?.navigator.platform ?? '',
-  )
-    ? 'Ctrl+Shift+M'
-    : 'Ctrl+M';
+  );
+  protected readonly tabKeys = this.mac ? 'Ctrl+Shift+M' : 'Ctrl+M';
+  protected readonly submitKeys = this.mac ? 'Cmd+Enter' : 'Ctrl+Enter';
+  /** What the editor's keys do, as said under it. */
+  protected readonly keysText = computed(() => {
+    const submit = this.submitHint();
+    const tab = `Tab inserts a tab; ${this.tabKeys} makes it move on, and back.`;
+    return submit ? `${tab} ${this.submitKeys} ${submit}.` : tab;
+  });
   protected readonly ready = signal(false);
   /** Whether Monaco couldn't be loaded: the text is edited as plain text. */
   protected readonly failed = signal(false);
@@ -162,6 +177,12 @@ export class CodeEditor {
       untracked(() => {
         const model = this.textModel;
         if (model && model.getValue() !== text) {
+          // Its line breaks as the text has them (Monaco makes those of a text set the model's).
+          const eol = text.includes('\r\n') ? '\r\n' : text.includes('\n') ? '\n' : null;
+          if (eol !== null && this.monaco && model.getEOL() !== eol) {
+            const { EndOfLineSequence } = this.monaco.editor;
+            model.setEOL(eol === '\n' ? EndOfLineSequence.LF : EndOfLineSequence.CRLF);
+          }
           model.pushEditOperations([], [{ range: model.getFullModelRange(), text }], () => null);
         }
       });
@@ -220,8 +241,37 @@ export class CodeEditor {
     }
   }
 
+  /** Puts the keyboard at an offset of the text (in UTF-16 units), shown. */
+  reveal(offset: number): void {
+    const { editor, textModel: model } = this;
+    if (editor && model) {
+      const position = model.getPositionAt(offset);
+      editor.setPosition(position);
+      editor.revealPositionInCenter(position);
+      editor.focus();
+      return;
+    }
+    const plain = this.plain()?.nativeElement;
+    plain?.setSelectionRange(offset, offset);
+    plain?.focus();
+  }
+
   protected typed(event: Event): void {
     this.text.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  protected plainKey(event: KeyboardEvent): void {
+    const modifier = this.mac ? event.metaKey : event.ctrlKey;
+    if (
+      this.submitHint() &&
+      event.key === 'Enter' &&
+      modifier &&
+      !event.shiftKey &&
+      !event.altKey
+    ) {
+      event.preventDefault();
+      this.submitted.emit();
+    }
   }
 
   private async start(): Promise<void> {
@@ -239,7 +289,13 @@ export class CodeEditor {
       return;
     }
     this.monaco = monaco;
-    const model = monaco.editor.createModel(untracked(this.text), untracked(this.language));
+    const initial = untracked(this.text);
+    const model = monaco.editor.createModel(initial, untracked(this.language));
+    // Line breaks are line feeds (Monaco would take the system's for an empty text: Windows' \r\n), unless the text
+    // given has others.
+    if (!initial.includes('\r\n')) {
+      model.setEOL(monaco.editor.EndOfLineSequence.LF);
+    }
     // The page's (an editor in a tab not shown is made outside the page, where styles don't reach).
     const font = getComputedStyle(this.document.documentElement)
       .getPropertyValue('--gd-code-font-family')
@@ -258,6 +314,11 @@ export class CodeEditor {
       fixedOverflowWidgets: true,
     });
     this.textModel = model;
+    if (untracked(this.submitHint)) {
+      this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () =>
+        this.submitted.emit(),
+      );
+    }
     model.onDidChangeContent(() => {
       const value = model.getValue();
       if (value !== untracked(this.text)) {
@@ -284,7 +345,12 @@ export class CodeEditor {
         const start = model.getPositionAt(marker.start);
         const end = model.getPositionAt(marker.start + Math.max(marker.length, 1));
         return {
-          severity: monaco.MarkerSeverity.Error,
+          severity:
+            marker.severity === 'warning'
+              ? monaco.MarkerSeverity.Warning
+              : marker.severity === 'info'
+                ? monaco.MarkerSeverity.Info
+                : monaco.MarkerSeverity.Error,
           message: marker.message,
           startLineNumber: start.lineNumber,
           startColumn: start.column,

@@ -5,7 +5,9 @@ describe('safeReturnUrl', () => {
     expect(safeReturnUrl('/browse/shop.customers;f=country:eq:ZA/orders?at=1')).toBe(
       '/browse/shop.customers;f=country:eq:ZA/orders?at=1',
     );
-    expect(safeReturnUrl('/query/7#plan')).toBe('/query/7#plan');
+    // A fragment is the browser's alone: in the sign-in page's query, it would go to the server.
+    expect(safeReturnUrl('/query/7#plan')).toBe('/query/7');
+    expect(safeReturnUrl('/query#{"text":"shop.orders"}')).toBe('/query');
     expect(safeReturnUrl('/')).toBe('/');
   });
 

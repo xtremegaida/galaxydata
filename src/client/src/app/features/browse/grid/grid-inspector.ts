@@ -29,6 +29,15 @@ export interface InspectedColumn {
   readonly display: string | null;
   /** The cell's change and its row's, when the rows may be changed. */
   readonly edit: CellEdit | null;
+  /** Where the cell's value leads, when the server says (a query's rows). */
+  readonly leadsTo?: InspectedLink | null;
+}
+
+/** Where a cell's value leads: in a sentence, and whether it has a link to follow (or why not). */
+export interface InspectedLink {
+  readonly text: string;
+  readonly linked: boolean;
+  readonly why: string | null;
 }
 
 /** What is changed of a cell and its row, not committed yet. */
@@ -174,6 +183,17 @@ const lineageKinds: Readonly<Record<GridColumn['lineage']['kind'], string>> = {
           }
           @if (inspected.edit?.editable) {
             <p class="aside">F2, or a double click, chooses the row it refers to.</p>
+          }
+        </section>
+      }
+      @if (inspected.leadsTo; as leads) {
+        <section aria-labelledby="gd-inspector-leads">
+          <h3 id="gd-inspector-leads">Leads to</h3>
+          <p>{{ leads.text }}</p>
+          @if (leads.linked) {
+            <p class="aside">Enter, or a click on the link, shows them.</p>
+          } @else if (leads.why) {
+            <p class="aside">{{ leads.why }}</p>
           }
         </section>
       }

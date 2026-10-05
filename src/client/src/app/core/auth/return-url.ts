@@ -24,7 +24,9 @@ export function safeReturnUrl(url: string | null | undefined): string {
   if (resolved.origin !== base) {
     return '/';
   }
-  const path = resolved.pathname + resolved.search + resolved.hash;
+  // Without its fragment, the browser's alone (the query editor's holds its query): kept in the sign-in page's
+  // query, it would be sent to the server. The editor shows the query left there again.
+  const path = resolved.pathname + resolved.search;
   return isAuthPage(path) ? '/' : path;
 }
 

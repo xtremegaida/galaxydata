@@ -59,7 +59,8 @@ public sealed class QueryApiTests
          parameters = new[] { new { name = "$min", value = (object)50 } },
       })).JsonAsync(HttpStatusCode.OK);
       wrong.GetProperty("success").GetBoolean().ShouldBeFalse();
-      wrong.GetProperty("parameters").GetRawText().ShouldBe("""[{"name":"min","given":true,"type":"int64"}]""", "as given");
+      wrong.GetProperty("parameters").GetRawText().ShouldBe("""[{"name":"min","given":true,"type":"decimal(10,2)"}]""",
+         "the type the query takes, whatever the value given (a whole number)");
       JsonElement diagnostic = wrong.GetProperty("diagnostics")[0];
       (diagnostic.GetProperty("code").GetString(), diagnostic.GetProperty("start").GetInt32(), diagnostic.GetProperty("end").GetInt32()).ShouldBe(("GDQ2001", 35, 42));
       wrong.GetProperty("columns").ValueKind.ShouldBe(JsonValueKind.Null);
@@ -79,6 +80,17 @@ public sealed class QueryApiTests
          parameters = new object[] { new { name = "n", value = 2 }, new { name = "since", type = "date", value = "2026-01-01" } },
       })).JsonAsync(HttpStatusCode.OK);
       (given.GetProperty("success").GetBoolean(), given.GetProperty("complete").GetBoolean()).ShouldBe((true, true));
+      given.GetProperty("parameters").GetRawText().ShouldBe(
+         """[{"name":"n","given":true,"type":"int64"},{"name":"since","given":true,"type":"date"}]""",
+         "as given, where the query can't be checked without values");
+      JsonElement text = await (await admin.PostAsync("/api/query/validate", new
+      {
+         text = "shop.orders.where(status == $s and order_date > $since)",
+         parameters = new object[] { new { name = "s", value = 5 }, new { name = "since", value = "2026-01-01" } },
+      })).JsonAsync(HttpStatusCode.OK);
+      text.GetProperty("success").GetBoolean().ShouldBeFalse("a number isn't text");
+      text.GetProperty("parameters").EnumerateArray().Select(p => p.GetProperty("type").GetString()).ShouldBe(["string", "date"],
+         "what the query takes for them");
 
       // A text too long to run is told so, at once, however many parameters it has.
       string many = "shop.orders.where(" + string.Join(" + ", Enumerable.Range(0, 30_000).Select(i => "$p" + i)) + " > 0)";

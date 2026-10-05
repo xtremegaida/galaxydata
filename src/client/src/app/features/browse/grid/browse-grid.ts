@@ -1,7 +1,6 @@
 import {
   Component,
   ElementRef,
-  InjectionToken,
   Injector,
   LOCALE_ID,
   afterNextRender,
@@ -135,13 +134,11 @@ import {
   linkedColumnDefsOf,
   referenceOf,
 } from './grid-links';
+import { BROWSE_PAGE_SIZE, inspectorKey } from './grid-settings';
 import { gridTheme } from './grid-theme';
 import type { NavPicked, NavPickerData } from './nav-picker';
 
-/** How many rows a page of the grid has. */
-export const BROWSE_PAGE_SIZE = new InjectionToken<number>('BROWSE_PAGE_SIZE', {
-  factory: () => 100,
-});
+export { BROWSE_PAGE_SIZE };
 
 /**
  * What the grid needs of the grid's library: the infinite row model, pages, filters, sorting, choosing rows,
@@ -279,7 +276,7 @@ const displayLength = 1000;
   styleUrl: './browse-grid.scss',
 })
 export class BrowseGrid {
-  static readonly inspectorKey = 'gd.inspector';
+  static readonly inspectorKey = inspectorKey;
 
   private readonly api = inject(ApiClient);
   private readonly router = inject(Router);
@@ -836,7 +833,7 @@ export class BrowseGrid {
   }
 
   /** Whether the grid's pages are a datasource's: the grid shown's, or the one made last's, before it shows. */
-  private shows(datasource: BrowseDatasource): boolean {
+  private shows(datasource: object): boolean {
     const live = this.current();
     return live ? live.datasource === datasource : untracked(this.made)?.datasource === datasource;
   }

@@ -44,6 +44,17 @@ export class FakeModel {
     return { lineNumber: lines.length, column: (lines.at(-1)?.length ?? 0) + 1 };
   }
 
+  /** The line breaks set (Monaco's EndOfLineSequence: 0 for \n, 1 for \r\n); null when left as they were. */
+  eol: number | null = null;
+
+  setEOL(eol: number): void {
+    this.eol = eol;
+  }
+
+  getEOL(): string {
+    return this.eol === 1 || (this.eol === null && this.value.includes('\r\n')) ? '\r\n' : '\n';
+  }
+
   onDidChangeContent(listener: () => void): { dispose(): void } {
     this.listeners.push(listener);
     return { dispose: () => undefined };
@@ -83,8 +94,31 @@ export class FakeEditor {
     return this.options['model'] as FakeModel;
   }
 
+  /** Where the keyboard is: a line and column, from 1. */
+  position: { lineNumber: number; column: number } | null = null;
+  /** The commands added (by their keys, as Monaco's KeyMod and KeyCode make them). */
+  readonly commands = new Map<number, () => void>();
+
   updateOptions(options: Record<string, unknown>): void {
     Object.assign(this.options, options);
+  }
+
+  addCommand(keys: number, handler: () => void): string {
+    this.commands.set(keys, handler);
+    return String(keys);
+  }
+
+  setPosition(position: { lineNumber: number; column: number }): void {
+    this.position = position;
+  }
+
+  revealPositionInCenter(): void {
+    // Nothing to scroll here.
+  }
+
+  /** Ctrl+Enter (Cmd+Enter on macOS) pressed in it. */
+  submit(): void {
+    this.commands.get(FakeMonaco.ctrlCmd | FakeMonaco.enter)?.();
   }
 
   getDomNode(): HTMLElement {
@@ -103,10 +137,30 @@ export class FakeEditor {
 
 /** Monaco, as far as the application uses it: the editors and models it made, and its theme. */
 export class FakeMonaco {
+  static readonly ctrlCmd = 2048;
+  static readonly enter = 3;
   readonly editors: FakeEditor[] = [];
   theme = '';
   fontsMeasured = 0;
-  readonly MarkerSeverity = { Error: 8 };
+  readonly MarkerSeverity = { Error: 8, Warning: 4, Info: 2 };
+  readonly KeyMod = { CtrlCmd: FakeMonaco.ctrlCmd };
+  readonly KeyCode = { Enter: FakeMonaco.enter };
+  /** The languages registered, by id: their highlighting and configuration. */
+  readonly languages = {
+    registered: new Map<string, { tokens?: unknown; configuration?: unknown }>(),
+    register: ({ id }: { id: string }) => {
+      this.languages.registered.set(id, {});
+    },
+    setMonarchTokensProvider: (id: string, tokens: unknown) => {
+      this.languages.registered.set(id, { ...this.languages.registered.get(id), tokens });
+    },
+    setLanguageConfiguration: (id: string, configuration: unknown) => {
+      this.languages.registered.set(id, {
+        ...this.languages.registered.get(id),
+        configuration,
+      });
+    },
+  };
   readonly editor = {
     create: (host: HTMLElement, options: Record<string, unknown>) => {
       const editor = new FakeEditor(host, options);
@@ -114,6 +168,7 @@ export class FakeMonaco {
       return editor;
     },
     createModel: (value: string, language: string) => new FakeModel(value, language),
+    EndOfLineSequence: { LF: 0, CRLF: 1 },
     setModelMarkers: (model: FakeModel, _owner: string, markers: FakeMarker[]) => {
       model.markers = markers;
     },

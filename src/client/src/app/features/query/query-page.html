@@ -1,0 +1,262 @@
+<div class="query-page">
+  <header class="page-header">
+    <div class="title">
+      <h1>
+        {{ heading() }}
+        @if (edited() && saved()) {
+          <span class="edited">(edited)</span>
+        }
+      </h1>
+      <p class="subtitle">
+        @if (saved(); as saved) {
+          {{ saved.isMine ? 'Yours' : (saved.owner || 'No one') + "'s"
+          }}{{ saved.isShared ? ', shared with everyone' : '' }}
+          @if (saved.description) {
+            · {{ saved.description }}
+          }
+        } @else if (id() === null) {
+          Not saved
+        } @else if (loadProblem()) {
+          The saved query couldn't be read
+        } @else {
+          Reading the saved query…
+        }
+      </p>
+    </div>
+    <div class="actions">
+      <button
+        #runButton
+        matButton="filled"
+        type="button"
+        aria-keyshortcuts="Control+Enter"
+        matTooltip="Ctrl+Enter"
+        disabledInteractive
+        [disabled]="text().trim() === '' || reading()"
+        (click)="runQuery()"
+      >
+        <mat-icon>play_arrow</mat-icon>
+        Run
+      </button>
+      <button
+        matButton="tonal"
+        type="button"
+        disabledInteractive
+        [disabled]="text().trim() === '' || explaining() || reading()"
+        (click)="explain()"
+      >
+        <mat-icon>account_tree</mat-icon>
+        Explain
+      </button>
+      <button
+        matButton
+        type="button"
+        aria-keyshortcuts="Control+S"
+        matTooltip="Ctrl+S"
+        disabledInteractive
+        [disabled]="saving() || reading()"
+        (click)="save()"
+      >
+        <mat-icon>save</mat-icon>
+        Save
+      </button>
+      <button matButton type="button" (click)="open()">
+        <mat-icon>folder_open</mat-icon>
+        Open…
+      </button>
+      <button
+        matIconButton
+        type="button"
+        aria-label="More for the query"
+        matTooltip="More"
+        [matMenuTriggerFor]="more"
+      >
+        <mat-icon>more_vert</mat-icon>
+      </button>
+      <mat-menu #more="matMenu">
+        <button mat-menu-item type="button" (click)="newQuery()">
+          <mat-icon>add</mat-icon>
+          New query
+        </button>
+        <button mat-menu-item type="button" [disabled]="reading()" (click)="saveAs()">
+          <mat-icon>save_as</mat-icon>
+          {{ saved() ? 'Save a copy…' : 'Save as…' }}
+        </button>
+        @if (saved()?.canEdit) {
+          <button mat-menu-item type="button" (click)="editDetails()">
+            <mat-icon>edit_note</mat-icon>
+            Name, description and sharing…
+          </button>
+        }
+        <button mat-menu-item type="button" (click)="copyLink()">
+          <mat-icon>link</mat-icon>
+          Copy a link to the query
+        </button>
+        @if (saved() && edited()) {
+          <button mat-menu-item type="button" (click)="undoEdits()">
+            <mat-icon>undo</mat-icon>
+            Undo my edits
+          </button>
+        }
+        @if (saved()?.canEdit) {
+          <button mat-menu-item type="button" (click)="deleteQuery()">
+            <mat-icon>delete</mat-icon>
+            Delete…
+          </button>
+        }
+      </mat-menu>
+    </div>
+  </header>
+
+  <div role="alert">
+    @if (loadProblem(); as problem) {
+      @if (problem.status === 404) {
+        <gd-message kind="problem">
+          There is no saved query {{ unread() }} you can see (any more): the editor's query isn't
+          saved.
+        </gd-message>
+      } @else {
+        <gd-message kind="problem">
+          Couldn't read the saved query: {{ message(problem) }}
+          <button gdMessageAction matButton type="button" (click)="readAgain()">Try again</button>
+        </gd-message>
+      }
+    }
+    @if (saveProblem(); as problem) {
+      <gd-message kind="problem">
+        {{ problem.text }}
+        @if (problem.conflict && saved()) {
+          <button gdMessageAction matButton type="button" (click)="readAgain()">
+            Read it again
+          </button>
+        }
+        @if (problem.conflict) {
+          <button gdMessageAction matButton type="button" (click)="saveAs()">Save a copy</button>
+        } @else {
+          <button gdMessageAction matButton type="button" (click)="saveProblem.set(null)">
+            Dismiss
+          </button>
+        }
+      </gd-message>
+    }
+  </div>
+  @if (addressProblem(); as problem) {
+    <gd-message kind="warning">{{ problem }}</gd-message>
+  }
+  @if (notice(); as notice) {
+    <p class="notice">{{ notice }}</p>
+  }
+
+  <gd-code-editor
+    #editor
+    class="editor"
+    label="The query"
+    submitHint="runs the query"
+    [(text)]="text"
+    [language]="languageId"
+    [markers]="markers()"
+    [readOnly]="reading()"
+    [readOnlyMessage]="readOnlyMessage()"
+    (submitted)="runQuery()"
+  />
+
+  <gd-query-parameters
+    class="parameters"
+    [used]="used()"
+    [problems]="parameterProblems()"
+    [(values)]="values"
+  />
+
+  <mat-tab-group
+    class="tabs"
+    mat-stretch-tabs="false"
+    animationDuration="0ms"
+    preserveContent
+    aria-label="What the query gives"
+    [selectedIndex]="tabIndex()"
+    (selectedIndexChange)="tabChanged($event)"
+  >
+    <mat-tab label="Results">
+      <div class="tab-body">
+        @if (waitingToRun()) {
+          <mat-progress-bar mode="indeterminate" aria-label="Checking the query before it runs" />
+        }
+        @if (run(); as run) {
+          <gd-query-results
+            class="results"
+            [run]="run"
+            (followed)="follow($event)"
+            (outcome)="outcomeOf($event)"
+          />
+        } @else if (!waitingToRun()) {
+          <p class="empty">Run the query (Ctrl+Enter) to see its rows.</p>
+        }
+      </div>
+    </mat-tab>
+    <mat-tab label="Plan">
+      <div class="tab-body scrolled">
+        <ng-container *ngTemplateOutlet="explanation" />
+        @if (explained(); as explained) {
+          <mat-checkbox [checked]="verbose()" (change)="explain($event.checked)">
+            With the plan after each phase of the optimizer
+          </mat-checkbox>
+          <gd-query-plan [explain]="explained.explain" />
+        }
+      </div>
+    </mat-tab>
+    <mat-tab label="SQL">
+      <div class="tab-body scrolled">
+        <ng-container *ngTemplateOutlet="explanation" />
+        @if (explained(); as explained) {
+          <gd-query-sql [explain]="explained.explain" />
+        }
+      </div>
+    </mat-tab>
+    <mat-tab>
+      <ng-template mat-tab-label>
+        Messages
+        @if (messageCount(); as messages) {
+          @if (messages.count > 0) {
+            <span class="badge" [class.errors]="messages.errors" aria-hidden="true">{{
+              messages.count
+            }}</span>
+            <span class="cdk-visually-hidden">, {{ messages.count }} to read</span>
+          }
+        }
+      </ng-template>
+      <div class="tab-body scrolled">
+        <gd-query-messages
+          [text]="text()"
+          [checked]="checked()"
+          [outcome]="outcome()"
+          (goTo)="goTo($event)"
+        />
+      </div>
+    </mat-tab>
+  </mat-tab-group>
+</div>
+
+<ng-template #explanation>
+  @if (explaining()) {
+    <mat-progress-bar mode="indeterminate" aria-label="Explaining the query" />
+  }
+  <div role="alert">
+    @if (explainProblem(); as problem) {
+      <gd-message kind="problem">Couldn't explain the query: {{ message(problem) }}</gd-message>
+    }
+  </div>
+  @if (explained(); as explained) {
+    @if (!explainedNow(explained)) {
+      <gd-message kind="notice">
+        Explained before the query's last changes.
+        <button gdMessageAction matButton type="button" (click)="explain()">Explain again</button>
+      </gd-message>
+    }
+  } @else if (!explaining() && !explainProblem()) {
+    <p class="empty">
+      Explain the query to see how it would run: its plan, and the SQL each source runs.
+      <button matButton type="button" [disabled]="text().trim() === ''" (click)="explain()">
+        Explain
+      </button>
+    </p>
+  }
+</ng-template>

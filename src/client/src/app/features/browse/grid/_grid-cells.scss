@@ -1,0 +1,55 @@
+// What grids' cells add to their theme: numbers to the right, nulls set apart, links, the key's headers marked.
+@mixin cells {
+  .gd-number {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .gd-null {
+    color: var(--mat-sys-on-surface-variant);
+    font-style: italic;
+  }
+
+  // A cell whose values refer to a row: that row's display value (a link to it), the value itself beside it.
+  .gd-linked {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    min-width: 0;
+  }
+
+  .gd-display {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .gd-raw {
+    flex: none;
+    margin-inline-start: auto;
+    color: var(--mat-sys-on-surface-variant);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .gd-link {
+    color: var(--mat-sys-primary);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+    text-underline-offset: 2px;
+
+    &:hover {
+      text-decoration-color: currentColor;
+    }
+  }
+
+  .gd-key-column .ag-header-cell-text::before {
+    content: 'key';
+    margin-inline-end: 4px;
+    font-family: 'Material Symbols Outlined';
+    font-size: 16px;
+    font-style: normal;
+    vertical-align: -3px;
+    color: var(--mat-sys-primary);
+  }
+}

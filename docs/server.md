@@ -457,8 +457,10 @@ Anyone who reads data may write queries in the language (see the language refere
 **Checking a query.** `POST /api/query/validate` says what is wrong with a query as it is written: every diagnostic,
 placed in its text. It runs nothing, and answers 200 whatever is wrong with the query.
 
-- **Its parameters:** those the text uses, whether each has a value, and the `type` it takes (a parameter compared
-  with a date column is a date), to ask for a value of.
+- **Its parameters:** those the text uses, whether each has a value, and the `type` the query takes for it (a
+  parameter compared with a date column is a date), to ask for a value of: the type it takes without a value,
+  whatever value was given (a whole number given for a decimal column is still a decimal). Where the query can't be
+  checked without values (`-$n`), the type is the value's.
 - **Parameters without values** are taken as null to check the rest. Where a null doesn't fit (`-$n`, `$a == $b`),
   the problem is `info`, not an error, saying the parameter wants a value: `success` says there is no error, and
   `complete` whether the query was checked to the end.

@@ -32,6 +32,7 @@ import {
   PendingChanges,
 } from '../../core/changes/pending-changes';
 import { CodeEditor, type EditorMarker } from '../../core/editor/code-editor';
+import { sqlLanguageOf } from '../../core/editor/sql-languages';
 import { Confirmer } from '../../core/ui/confirmer';
 import { Message } from '../../core/ui/message';
 
@@ -69,12 +70,6 @@ interface ShownIssue {
   readonly where: string;
   readonly message: string;
 }
-
-/** Monaco's language for a dialect's SQL. */
-const languages: Readonly<Record<string, string>> = {
-  PostgreSQL: 'pgsql',
-  DuckDB: 'pgsql',
-};
 
 const statusTexts: Readonly<Record<CommitResult['scripts'][number]['status'], string>> = {
   committed: 'committed',
@@ -146,7 +141,7 @@ export class CommitDialog {
         id: `${this.id}-script-${index}`,
         text,
         edited: normalized(text) !== normalized(script.text),
-        language: languages[script.dialect] ?? 'sql',
+        language: sqlLanguageOf(script.dialect),
         summary: summaryOf(script),
         refusal,
         markers:

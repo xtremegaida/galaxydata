@@ -1,0 +1,76 @@
+<div class="toolbar">
+  <span class="count" role="status">
+    {{ countText() }}
+    @if (countText() && statsText()) {
+      <span class="stats">{{ statsText() }}</span>
+    }
+  </span>
+  @if (loading()) {
+    <button matButton type="button" (click)="stop()">
+      <mat-icon>stop</mat-icon>
+      Stop
+    </button>
+  }
+  <button
+    matIconButton
+    type="button"
+    aria-controls="gd-inspector"
+    [attr.aria-pressed]="inspecting()"
+    [matTooltip]="inspecting() ? 'Hide the inspector' : 'Show the inspector'"
+    [attr.aria-label]="'Inspector'"
+    (click)="toggleInspector()"
+  >
+    <mat-icon>info</mat-icon>
+  </button>
+</div>
+
+<div role="alert">
+  @if (primeProblem(); as problem) {
+    <gd-message kind="problem">The query couldn't run: {{ message(problem) }}</gd-message>
+  } @else if (problem(); as problem) {
+    <gd-message kind="problem">
+      Couldn't read the rows: {{ message(problem) }}
+      <button gdMessageAction matButton type="button" (click)="retry()">Try again</button>
+    </gd-message>
+  }
+  @if (linkProblem(); as said) {
+    <gd-message kind="warning">
+      {{ said }}
+      <button gdMessageAction matButton type="button" (click)="linkProblem.set(null)">
+        Dismiss
+      </button>
+    </gd-message>
+  }
+</div>
+
+<div role="status">
+  @if (stopped()) {
+    <gd-message kind="notice">Stopped before its rows came. Run it again to see them.</gd-message>
+  }
+</div>
+
+@if (loading()) {
+  <mat-progress-bar mode="indeterminate" aria-label="Running the query" />
+}
+
+<div class="body">
+  @if (made(); as made) {
+    @for (grid of [made]; track grid.key) {
+      <ag-grid-angular
+        class="grid"
+        [gridOptions]="grid.options"
+        [modules]="modules"
+        (gridReady)="gridReady($event, grid)"
+        (sortChanged)="changed()"
+        (filterChanged)="changed()"
+        (cellFocused)="cellFocused($event)"
+      />
+    }
+  }
+  <gd-grid-inspector
+    id="gd-inspector"
+    class="inspector"
+    [hidden]="!inspecting()"
+    [inspected]="inspected()"
+  />
+</div>

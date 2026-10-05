@@ -24,6 +24,7 @@ export interface NavSection {
 export const navItems: readonly NavItem[] = [
   { label: 'Start', icon: 'home', link: '/', exact: true },
   { label: 'Browse', icon: 'account_tree', link: '/browse', needs: 'canRead' },
+  { label: 'Query', icon: 'code', link: '/query', needs: 'canRead' },
   {
     label: 'Users',
     icon: 'group',

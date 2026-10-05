@@ -1,0 +1,123 @@
+// The page fills its place: the results take the height the editor and the parameters leave.
+
+:host {
+  display: block;
+  height: 100%;
+  min-height: 640px;
+}
+
+.query-page {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  padding: 16px 24px;
+  box-sizing: border-box;
+}
+
+.page-header {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.title {
+  min-width: 0;
+}
+
+h1 {
+  margin: 0;
+  font: var(--mat-sys-headline-small);
+  overflow-wrap: anywhere;
+}
+
+.edited,
+.subtitle {
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.edited {
+  font: var(--mat-sys-title-medium);
+}
+
+.subtitle {
+  margin: 2px 0 0;
+  font: var(--mat-sys-body-medium);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.notice {
+  flex: none;
+  margin: 0;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-medium);
+  overflow-wrap: anywhere;
+}
+
+// The editor may be made taller (or shorter) by its corner.
+.editor {
+  flex: none;
+  height: 220px;
+  min-height: 120px;
+  max-height: 70vh;
+  overflow: hidden;
+  resize: vertical;
+}
+
+.parameters {
+  flex: none;
+}
+
+.tabs {
+  flex: 1;
+  min-height: 320px;
+
+  ::ng-deep .mat-mdc-tab-body-wrapper {
+    flex: 1;
+  }
+}
+
+.tab-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-top: 8px;
+  box-sizing: border-box;
+}
+
+.scrolled {
+  overflow: auto;
+}
+
+.results {
+  flex: 1;
+  min-height: 0;
+}
+
+.empty {
+  margin: 16px 0;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.badge {
+  margin-inline-start: 6px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--mat-sys-tertiary-container);
+  color: var(--mat-sys-on-tertiary-container);
+  font: var(--mat-sys-label-small);
+}
+
+.badge.errors {
+  background: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+}
