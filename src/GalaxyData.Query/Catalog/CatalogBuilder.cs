@@ -221,6 +221,7 @@ public sealed class CatalogBuilder
                continue;
             }
             resolved.Add((settings, entity, item));
+            entity.SettingsItem = item;
          }
          return resolved;
       }
@@ -495,6 +496,7 @@ public sealed class CatalogBuilder
                   $"{entity.DisplayName}'s navigation '{navigation.ConventionName}' is renamed or hidden already, so this is left out", entity.DisplayName, item);
                continue;
             }
+            navigation.OverrideItem = item;
             navigation.Hidden = spec.Hidden;
             if (spec.RenameTo == null || string.Equals(spec.RenameTo, navigation.Name, StringComparison.Ordinal)) { continue; }
             if (entity.HasMemberNamed(spec.RenameTo) && !string.Equals(spec.RenameTo, navigation.Name, StringComparison.OrdinalIgnoreCase))

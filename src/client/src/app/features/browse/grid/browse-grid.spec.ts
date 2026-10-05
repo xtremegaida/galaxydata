@@ -37,6 +37,7 @@ import { keyOf } from './grid-columns';
     [source]="source()"
     [crumb]="crumb()"
     [linkTo]="linkTo()"
+    [focusChosen]="focusChosen()"
     (crumbChange)="said($event)"
   />`,
 })
@@ -44,6 +45,7 @@ class Host {
   readonly source = signal<BrowseSource>({ entity: 'shop.orders' });
   readonly crumb = signal<BrowseCrumb>(crumbOf('shop.orders'));
   readonly linkTo = signal<LinkTo | null>(null);
+  readonly focusChosen = signal(false);
   readonly says: BrowseCrumb[] = [];
 
   said(crumb: BrowseCrumb): void {
@@ -251,11 +253,14 @@ describe('BrowseGrid', () => {
     expect(host.crumb().row).toEqual(['1003']);
   });
 
-  it('chooses the row the address says when its page comes', async () => {
+  it('chooses the row the address says when its page comes, in view, the keyboard left where it was', async () => {
     const { element } = await opened(crumbOf('shop.orders', { row: ['1002'] }));
     expect(
       [...element.querySelectorAll('.ag-row-selected')].map((row) => row.getAttribute('row-index')),
     ).toEqual(['1']);
+    // Scrolled to: the second row is below the top.
+    expect([...element.querySelectorAll('*')].some((part) => part.scrollTop > 0)).toBe(true);
+    expect(element.contains(document.activeElement)).toBe(false);
   });
 
   it('follows the address to another page in place, and to other filters with a grid made for them', async () => {
@@ -566,6 +571,45 @@ describe('BrowseGrid', () => {
       where: null,
       offset: 0,
     });
+  });
+
+  it('puts the keyboard on the row the address chooses, once, when asked to: as it is found, or once asked', async () => {
+    const it = await opened(crumbOf('shop.orders', { row: ['1002'] }));
+    const row = () => it.element.querySelector('.ag-row[row-index="1"]')!;
+    expect(row().classList).toContain('ag-row-selected');
+    expect(it.element.contains(document.activeElement)).toBe(false);
+    // Found before: the keyboard goes there once asked.
+    it.host.focusChosen.set(true);
+    await it.shown();
+    expect(row().contains(document.activeElement)).toBe(true);
+
+    // Once: another row chosen by the address takes it no more.
+    (document.activeElement as HTMLElement).blur();
+    it.host.crumb.set({ ...it.host.crumb(), row: ['1003'] });
+    await it.shown();
+    expect(it.element.querySelector('.ag-row[row-index="2"]')!.classList).toContain(
+      'ag-row-selected',
+    );
+    expect(it.element.contains(document.activeElement)).toBe(false);
+    // Nor do rows loaded later (another page, with the row the address chooses).
+    it.host.crumb.set({ ...it.host.crumb(), page: 1, row: ['1005'] });
+    await it.shown();
+    await it.answer(pageOf(orderRows(3, 3), { offset: 3, total: 7, hasMore: true }));
+    expect(it.element.querySelector('.ag-row[row-index="4"]')!.classList).toContain(
+      'ag-row-selected',
+    );
+    expect(it.element.contains(document.activeElement)).toBe(false);
+  });
+
+  it('puts the keyboard on the row once its rows come, when asked as the grid was made', async () => {
+    const it = await open(crumbOf('shop.orders', { row: ['1002'] }));
+    it.host.focusChosen.set(true);
+    await it.shown();
+    expect(it.element.contains(document.activeElement)).toBe(false);
+    await it.answer(pageOf(orderRows(3), { total: 3 }, orderColumns()));
+    expect(
+      it.element.querySelector('.ag-row[row-index="1"]')!.contains(document.activeElement),
+    ).toBe(true);
   });
 
   it("chooses no row when the address's row isn't among those loaded", async () => {

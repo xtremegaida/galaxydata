@@ -13,6 +13,7 @@ export type ScalarKind = Schema<'ScalarKind'>;
 
 /** Where the grid asks for its pages. */
 export const pageUrl = '/api/browse/page';
+export const positionUrl = '/api/browse/position';
 
 /** How each kind's type is written, as the server writes them. */
 const typeTexts: Partial<Record<ScalarKind, string>> = {
@@ -211,6 +212,16 @@ export async function answerPage(
   const request = await pageRequest(http);
   request.flush(page, { headers: { [catalogVersionHeader]: version } });
   return request.request.body as BrowsePageRequest;
+}
+
+/** Answers a picker's request for where the row a reference refers to is (by default, none has its values). */
+export async function answerPosition(
+  http: HttpTestingController,
+  position: Schema<'BrowsePositionDto'> = { id: null, index: null },
+): Promise<Schema<'BrowsePositionRequest'>> {
+  const request = await requestTo(http, positionUrl, 'POST');
+  request.flush(position);
+  return request.request.body as Schema<'BrowsePositionRequest'>;
 }
 
 /** Answers the grid's first request (an entity's page opened): shop.orders' columns, and no rows. */

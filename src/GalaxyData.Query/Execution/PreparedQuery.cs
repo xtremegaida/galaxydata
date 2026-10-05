@@ -58,6 +58,12 @@ public sealed class PreparedQuery
 
    public LogicalPlan? Plan { get; }
 
+   /// <summary>
+   /// Whether the query's rows come in an order of their own (a sort, or rows taken from sorted ones), which paging
+   /// keeps, breaking its ties by the rows' key; rows in no order are paged in the key's order.
+   /// </summary>
+   public bool IsOrdered => Plan != null && PlanAnalysis.OrderOf(Plan.Root).Sorted;
+
    public ResultSchema? Schema => Plan?.Schema;
 
    /// <summary>The SQL each source runs: the whole query, or each source's part when the query combines sources.</summary>

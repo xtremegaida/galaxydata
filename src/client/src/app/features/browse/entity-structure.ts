@@ -3,6 +3,7 @@ import { MatIcon } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import type { Schema } from '../../core/api/api-client';
 import { entityUrl } from '../../core/browse/browse-url';
+import { itemLink, newItemLink } from '../../core/catalog/overlay-paths';
 import { Message } from '../../core/ui/message';
 
 export type Entity = Schema<'EntityDto'>;
@@ -63,7 +64,8 @@ function sentence(text: string): string {
 /**
  * What an entity is: its facts (full name, rows, keys, the column that shows its rows, triggers, what the user may do
  * with its rows), its columns (their types, keys, and what may be done with them), the navigations to the rows its
- * rows are linked to, and for a virtual entity its query.
+ * rows are linked to, and for a virtual entity its query. For administrators (the server gives them the overlay's
+ * items), links to the items that make and set it and its navigations, and to new ones.
  */
 @Component({
   selector: 'gd-entity-structure',
@@ -85,6 +87,8 @@ export class EntityStructure {
   protected readonly throughOf = throughOf;
   protected readonly multiplicities = multiplicities;
   protected readonly entityUrl = entityUrl;
+  protected readonly itemLink = itemLink;
+  protected readonly newItemLink = newItemLink;
 
   protected rows(count: number): string {
     return `About ${count.toLocaleString(this.locale)} ${count === 1 ? 'row' : 'rows'}, as the database estimates`;

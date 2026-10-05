@@ -2768,6 +2768,127 @@
         }
       }
     },
+    "/api/browse/position": {
+      "post": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "Where a row is among its entity's rows: its key, and how many rows come before it in the key's order",
+        "operationId": "BrowsePosition",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowsePositionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowsePositionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway Timeout",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/overlay": {
       "get": {
         "tags": [
@@ -6137,6 +6258,50 @@
           }
         }
       },
+      "BrowsePositionDto": {
+        "required": [
+          "id",
+          "index"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "index": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "BrowsePositionRequest": {
+        "required": [
+          "entity",
+          "columns",
+          "values"
+        ],
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "values": {
+            "type": "array"
+          }
+        }
+      },
       "BrowseSchemaDto": {
         "required": [
           "entity",
@@ -7678,7 +7843,8 @@
           "navigations",
           "capabilities",
           "query",
-          "problem"
+          "problem",
+          "overlay"
         ],
         "type": "object",
         "properties": {
@@ -7773,6 +7939,16 @@
               "null",
               "string"
             ]
+          },
+          "overlay": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EntityOverlayDto"
+              }
+            ]
           }
         }
       },
@@ -7782,6 +7958,29 @@
           "view",
           "virtual"
         ]
+      },
+      "EntityOverlayDto": {
+        "required": [
+          "virtualEntity",
+          "settings"
+        ],
+        "type": "object",
+        "properties": {
+          "virtualEntity": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "settings": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          }
+        }
       },
       "EntitySettingsDto": {
         "required": [
@@ -8813,7 +9012,8 @@
           "isEnforced",
           "isCrossSource",
           "hidden",
-          "inherited"
+          "inherited",
+          "overlay"
         ],
         "type": "object",
         "properties": {
@@ -8855,6 +9055,16 @@
           },
           "inherited": {
             "type": "boolean"
+          },
+          "overlay": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NavigationOverlayDto"
+              }
+            ]
           }
         }
       },
@@ -8878,6 +9088,29 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "NavigationOverlayDto": {
+        "required": [
+          "relation",
+          "override"
+        ],
+        "type": "object",
+        "properties": {
+          "relation": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "override": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
           }
         }
       },

@@ -799,4 +799,20 @@ describe('RelationPage', () => {
     await page.shown();
     expect(alertsOf(page.page)).toBe('');
   });
+
+  it('starts from the entity a link gives, which leaving keeps as it was', async () => {
+    const page = overlayPage(await openPage('/admin/overlay/relations/new?from=wh.orders'));
+    await page.shown();
+    await answerLookups(page.http, entities, { 'wh.orders': ['wh.orders'] });
+    await page.shown();
+    await page.closePanels();
+    expect(page.field('From').value).toBe('wh.orders');
+    expect(page.field('To').value).toBe('');
+    expect(wordsOf(page.page.querySelector('gd-overlay-check'))).toContain(
+      'Name the entities it relates, and it is tried as you go.',
+    );
+
+    expect(await TestBed.inject(Router).navigateByUrl('/admin/overlay')).toBe(true);
+    (await requestTo(page.http, overlayUrl)).flush(overlayOf());
+  });
 });

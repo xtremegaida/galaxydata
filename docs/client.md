@@ -234,7 +234,9 @@ chosen in it.
     what's wrong.
   - **Pages** are asked for as the grid shows them; the rows are counted with the first page of each query
     ("1,234 rows"), or, when counting takes too long, the grid says how many it has seen ("At least 101 rows", and
-    "of more" in its pages). A query changed (sorted, filtered) is a datasource of its own: pages of the one before
+    "of more" in its pages). The address's row, chosen when its page comes, is scrolled to
+    (`ensureIndexVisible`: `ensureNodeVisible` looks at each row before it, which, in the infinite row model, asks
+    for their pages). A query changed (sorted, filtered) is a datasource of its own: pages of the one before
     that are under way are let go. An address's page past the rows' end shows the last page (the first, when they
     weren't counted), and the address follows. A first page fetched ahead answers one grid only.
   - **Columns** are named by their places (names may be any text), the key's marked, numbers on the right, NULL set
@@ -293,7 +295,12 @@ chosen in it.
     versions, hidden; and, when its rows may be changed, what may be done with each;
   - its navigations: where they lead, how many rows, through which columns, and whether they are inverse, added by
     the overlay, not enforced, across connections, hidden or inherited;
-  - a virtual entity's query, and what is wrong with it.
+  - a virtual entity's query, and what is wrong with it;
+  - for administrators (the server names the overlay's items to them alone), links to the overlay: the virtual
+    entity's definition, its settings (or a new one's, for the entity), a new relation from it; and, for each
+    navigation, the relation that makes it, and its override (or a new one's, for it: not for one inherited, renamed
+    or hidden where its entity is). A new item's page starts with what its link gives (`?entity=`, `?from=`,
+    `?navigation=`).
 
   It is read again when the catalog changes, and shown meanwhile (and when reading it again fails).
 - **Reading again** what was read of the catalog: `followCatalog(reload)` gives an operator a resource reads its
@@ -368,7 +375,14 @@ would run ([Committing](#committing)).
   - **References** are set by choosing the row they refer to: F2 or a double click (away from the link) opens the
     picker (`NavPicker`, loaded when first wanted): the target's rows in a grid of their own (filtered, sorted and
     paged as in browsing, without links or changes), one chosen and confirmed with Choose, a double click or Enter;
-    or "No row", when the reference's columns all may be NULL. Its columns (all of a composite key's, though one of
+    or "No row", when the reference's columns all may be NULL. It opens at the row the reference refers to: found
+    first by its values (`POST /api/browse/position`, a progress bar meanwhile), the grid opens at its page with it
+    chosen, in view, the keyboard on it (the dialog takes the keyboard as it opens, `autoFocus: 'dialog'`, and the
+    grid puts it on the row once the dialog has opened and its rows have come, `focusChosen`, unless the user has
+    put it elsewhere meanwhile; on the condition's field when the page hasn't the row). When it refers to none (a
+    NULL, a new row's default) it opens at the first page, the keyboard on its first field; when no row has the
+    values, they can't be found, or where the row is can't be told (the server gives no index), it opens there and
+    says so (the row chosen, if it is on it). Its columns (all of a composite key's, though one of
     them shows another reference) are set to the row's values for the columns they match (the schema's
     `targetColumns`), with the row's display value (`displayColumn`) for the cell to show (none when the target
     has no such column, or the rows chosen from don't show it: then nothing is shown for it). Delete (or Backspace)
@@ -553,7 +567,14 @@ administrators (`allowedTo('canAdmin')` as a `canMatch` guard).
   again elsewhere breaks or mends items). New items of each kind start from it; Export downloads the overlay as
   `gdq --overlay` reads it (`GET /api/overlay/export`).
 - **An item's page** (`/admin/overlay/<kind>/new`, `/admin/overlay/<kind>/<id>`) is a form of the kind's on what the
-  four share (`OverlayItemPage`, a directive they extend):
+  four share (`OverlayItemPage`, a directive they extend). A new one starts with what the address gives, as an
+  entity's page links to it: settings' and overrides' entity (`?entity=`), an override's navigation
+  (`?navigation=`), a relation's entity it is from (`?from=`); an item read is as it was saved, whatever its
+  address gives (`given`). So started, nothing counts as changed (leaving
+  doesn't ask), and it is tried as soon as it says enough (settings at once; a relation once it names what it leads
+  to, an override once it renames or hides); another address of the page asks before edits made are let go
+  (`runGuardsAndResolvers: 'paramsOrQueryParamsChange'`). Paths to items' pages are in
+  `core/catalog/overlay-paths.ts`.
   - **Saved** as made (then shown at its address), or to the version read: someone else's change in between says
     so, with "Read it again". While it is saved, what is edited is read-only (`readonly`), as edits made meanwhile
     would be lost, and nothing else is done to it. The server's errors go on their fields (an update's are named
@@ -636,6 +657,8 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
   labelled and described, and its problems are an alert tied to it (`aria-describedby`, `aria-invalid`); Apply
   stays focusable when there is nothing to apply (`disabledInteractive`), and clearing the condition leaves the
   keyboard in its field. The count is a status.
+- **Key columns' headers** mark the key with an icon (CSS generated content), whose alternative text is a word:
+  the header is named "Key: id", not "keyid" (`content: 'key' / 'Key: '`).
 - **Changing rows:** the grid's keys are AG Grid's (Enter, F2 or typing edits; Escape cancels; Enter or Tab ends
   an edit) and ours: Delete sets a cell to NULL, Ctrl+Z reverts a cell's change, Ctrl+Delete deletes or restores a
   row, F2 on a reference opens the picker (`suppressKeyboardEvent`, before the grid does anything with the key; not
@@ -643,7 +666,8 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
   buttons act on the row the keyboard is on, which their names say ("Delete the row: row 1003"; Ctrl+Delete is
   the delete button's `aria-keyshortcuts`), a disabled one's tooltip why. What was done is said (`LiveAnnouncer`,
   politely), a change refused is an alert, and the inspector's Revert gives the keyboard back to the cell. The column saying rows' changes draws an icon and says its words to screen readers. The
-  picker is a dialog titled by what it chooses; closed, focus goes back to the cell. The drawer is a region
+  picker is a dialog titled by what it chooses, the keyboard on the row the reference refers to (or its first
+  field); closed, focus goes back to the cell. The drawer is a region
   ("Pending changes"); its buttons say what they revert (`aria-label`: "Revert status of shop.orders Row 1001"),
   and a column's change reads as a sentence ("status: open becomes paid", the arrow drawn, not read).
 - **Committing:** the dialog takes the keyboard as it opens (the dialog itself, titled), and gives it back to the
@@ -769,6 +793,54 @@ the modules the grids register (the infinite row model, pages, filters, choosing
 the grid's state and words, its editors, rows' classes, pinned rows, scrolling). The build
 warns above 750 kB (700 kB until F6) and fails above 1 MB for the first load (`budgets` in `angular.json`). GalaxyData isn't meant
 for slow networks, so these can be raised when a feature needs it.
+
+## The smoke test
+
+`tests/e2e` runs the published application in a browser, as an administrator uses it (Playwright, in a package of
+its own: the client's `npm ci`, which publishing runs, doesn't install it). In order, on one page:
+
+1. it signs in, and changes the first password;
+2. makes a SQLite connection (the shop), writable, and waits for its schema to be read;
+3. finds the orders in the catalog's search;
+4. filters (a where), sorts and pages them, and reloads: the address keeps all three;
+5. follows an order's customer, back and forward;
+6. changes a value, adds a row and deletes one;
+7. previews and commits them: they stay, read again, and the commit is in the audit;
+8. opens the reference picker at the row a reference refers to (on its second page, chosen, the keyboard on it);
+9. makes an entity's settings from its page (a column's label), which its page shows;
+10. runs a query, and explains it;
+11. and the browser's console said nothing all along (no errors, nothing the content security policy refused).
+
+**Running it**, in `tests/e2e`:
+
+| Command | What it does |
+|---|---|
+| `npm ci` | Installs Playwright (`@playwright/test` 1.62.1), once. |
+| `npm run publish-app` | Publishes the application, its client built in, into `.app`, anew (for this machine's runtime, with `MSBUILDCOPYTASKPARALLELISM=1`). Publishing runs `npm ci` in `src/client`: stop its development server first (see [Developing](#developing)). |
+| `npm test` | Runs the smoke test against `.app`, or the published folder `GD_E2E_APP` names. |
+| `npm run e2e` | Publishes, then runs it. |
+
+It needs the Node.js the client does (`engines`). Playwright 1.62.1 drives its Chromium 151 (build 1234, in
+`%LOCALAPPDATA%\ms-playwright` on Windows); where it isn't installed, `npx playwright install chromium` downloads it.
+
+**What it runs against.** The global setup (`global-setup.ts`) makes a data directory of its own in the system's
+temporary folder, with the shop's database in its `files`, where connections may be: the engine's fixture
+(`tests/fixtures/shop.sqlite.sql`) and rows enough for pages (`fixtures/more-orders.sql`: 250 orders, 153
+customers). It starts the published application on it (`dotnet GalaxyData.Web.dll`, in Production, at
+`http://localhost:5199`; `GD_E2E_PORT` for another), with a first administrator's password made up for the run,
+waits for `/api/health`, and once the tests are done stops it (killed after 10 s) and removes the folder. The port
+must be free (an application a run cut short left would answer for this one). The application's log is
+`logs/server.log`.
+
+**Its passwords aren't written down.** Playwright names a step by what it fills, so the run writes no HTML report
+and no traces, which would hold the passwords it types (`--trace retain-on-failure` asks for traces all the same).
+A failure skips the tests after it and keeps a screenshot (password fields show dots) and the page's structure in
+`test-results`; a failure while a password field holds one may keep it there. The passwords are made up for the
+run, and the application they open is gone with its data.
+
+**Finding things** as people do, by roles and names (`getByRole`, `getByLabel`), but for AG Grid's cells (a row by
+its key's cell, a column by its header's text: AG Grid writes rows' ids into the page escaped) and Monaco's editor
+(its text area focused, the query inserted as text, as typing it would meet Monaco's closing brackets).
 
 ## Conventions
 

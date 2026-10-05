@@ -477,6 +477,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/browse/position": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Where a row is among its entity's rows: its key, and how many rows come before it in the key's order */
+        post: operations["BrowsePosition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/overlay": {
         parameters: {
             query?: never;
@@ -915,6 +932,16 @@ export interface components {
             /** @default false */
             includeCount: boolean;
         };
+        BrowsePositionDto: {
+            id: null | string;
+            /** Format: int64 */
+            index: null | number;
+        };
+        BrowsePositionRequest: {
+            entity: string;
+            columns: string[];
+            values: unknown[];
+        };
         BrowseSchemaDto: {
             entity: string;
             key: null | string[];
@@ -1300,9 +1327,16 @@ export interface components {
             capabilities: components["schemas"]["CapabilitiesDto"];
             query: null | string;
             problem: null | string;
+            overlay: null | components["schemas"]["EntityOverlayDto"];
         };
         /** @enum {unknown} */
         EntityKind: "table" | "view" | "virtual";
+        EntityOverlayDto: {
+            /** Format: int32 */
+            virtualEntity: null | number;
+            /** Format: int32 */
+            settings: null | number;
+        };
         EntitySettingsDto: {
             /** Format: int32 */
             id: number;
@@ -1547,11 +1581,18 @@ export interface components {
             isCrossSource: boolean;
             hidden: boolean;
             inherited: boolean;
+            overlay: null | components["schemas"]["NavigationOverlayDto"];
         };
         NavigationNamingOptions: {
             separatedSuffixes?: string[];
             camelSuffixes?: string[];
             displayColumnNames?: string[];
+        };
+        NavigationOverlayDto: {
+            /** Format: int32 */
+            relation: null | number;
+            /** Format: int32 */
+            override: null | number;
         };
         NavigationOverrideDto: {
             /** Format: int32 */
@@ -2144,6 +2185,8 @@ export type AdminEventDto = components['schemas']['AdminEventDto'];
 export type BrowseFromDto = components['schemas']['BrowseFromDto'];
 export type BrowsePageDto = components['schemas']['BrowsePageDto'];
 export type BrowsePageRequest = components['schemas']['BrowsePageRequest'];
+export type BrowsePositionDto = components['schemas']['BrowsePositionDto'];
+export type BrowsePositionRequest = components['schemas']['BrowsePositionRequest'];
 export type BrowseSchemaDto = components['schemas']['BrowseSchemaDto'];
 export type BrowseSourceDto = components['schemas']['BrowseSourceDto'];
 export type BrowseTrailDto = components['schemas']['BrowseTrailDto'];
@@ -2194,6 +2237,7 @@ export type EditTargetDto = components['schemas']['EditTargetDto'];
 export type EntityColumnDto = components['schemas']['EntityColumnDto'];
 export type EntityDto = components['schemas']['EntityDto'];
 export type EntityKind = components['schemas']['EntityKind'];
+export type EntityOverlayDto = components['schemas']['EntityOverlayDto'];
 export type EntitySettingsDto = components['schemas']['EntitySettingsDto'];
 export type EntitySettingsInput = components['schemas']['EntitySettingsInput'];
 export type ExplainFragmentDto = components['schemas']['ExplainFragmentDto'];
@@ -2232,6 +2276,7 @@ export type LinkKind = components['schemas']['LinkKind'];
 export type Multiplicity = components['schemas']['Multiplicity'];
 export type NavigationDto = components['schemas']['NavigationDto'];
 export type NavigationNamingOptions = components['schemas']['NavigationNamingOptions'];
+export type NavigationOverlayDto = components['schemas']['NavigationOverlayDto'];
 export type NavigationOverrideDto = components['schemas']['NavigationOverrideDto'];
 export type NavigationOverrideInput = components['schemas']['NavigationOverrideInput'];
 export type OverlayCheckDto = components['schemas']['OverlayCheckDto'];
@@ -4560,6 +4605,111 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    BrowsePosition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowsePositionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowsePositionDto"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

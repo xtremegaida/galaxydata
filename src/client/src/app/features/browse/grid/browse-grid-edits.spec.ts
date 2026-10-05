@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { MatDialog } from '@angular/material/dialog';
 import { MATERIAL_ANIMATIONS } from '@angular/material/core';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
@@ -10,6 +11,7 @@ import { AgGridAngular } from 'ag-grid-angular';
 import { fakeBrowserProviders, problemBody, sessionOf } from '../../../../testing/auth';
 import {
   answerPage,
+  answerPosition,
   customerReference,
   editablePageOf,
   gridCells,
@@ -652,12 +654,22 @@ describe('BrowseGrid, changing rows', () => {
     });
     api().setFocusedCell(0, 'c1');
     await shown();
+    const open = vi.spyOn(TestBed.inject(MatDialog), 'open');
     document.activeElement?.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'F2', bubbles: true, cancelable: true }),
     );
     await shown();
     const dialog = document.querySelector<HTMLElement>('mat-dialog-container')!;
     expect(textOf(dialog.querySelector('h2'))).toBe('Choose a row of shop.customers');
+    // It opens at the row the reference refers to: the dialog takes the keyboard (not its first field) till the
+    // row is found.
+    expect(open.mock.calls[0][1]).toMatchObject({ autoFocus: 'dialog' });
+    expect(await answerPosition(http)).toEqual({
+      entity: 'shop.customers',
+      columns: ['id'],
+      values: ['42'],
+    });
+    await shown();
     const asked = await answerPage(
       http,
       pageOf([rowOf(['42', 'Acme']), rowOf(['43', 'Beta'])], { entity: 'shop.customers' }, [
@@ -694,6 +706,74 @@ describe('BrowseGrid, changing rows', () => {
     request.flush(setOf([], 2));
     await shown();
   });
+
+  it('opens the picker at the row the reference refers to as changed', async () => {
+    const columns = linkedColumns().map((column, index) =>
+      index === 1 ? { ...column, canUpdate: true } : column,
+    );
+    const page = editablePageOf(
+      [{ ...rowOf(['1001', '42', 'open']), r: ['Acme'] }],
+      { total: 1 },
+      columns,
+    );
+    const { http, api, shown } = await opened({
+      page: { ...page, schema: page.schema && { ...page.schema, references: [customerReference] } },
+      changes: setOf([
+        changeOf({ key: ['1001'], values: { customer_id: '43' }, original: { customer_id: '42' } }),
+      ]),
+    });
+    api().setFocusedCell(0, 'c1');
+    await shown();
+    press({ key: 'F2' });
+    await shown();
+    expect((await answerPosition(http)).values).toEqual(['43']);
+    await shown();
+    await answerPage(
+      http,
+      pageOf([rowOf(['43', 'Beta'])], { entity: 'shop.customers' }, [
+        { ...columns[0], name: 'id' },
+        { ...columns[2], name: 'name' },
+      ]),
+    );
+    await shown();
+    clickButton(document.querySelector<HTMLElement>('mat-dialog-container')!, 'Cancel');
+    await shown();
+  });
+
+  it('opens the picker at its first page, nothing looked for, for a reference to no row', async () => {
+    const columns = linkedColumns().map((column, index) =>
+      index === 1 ? { ...column, canUpdate: true } : column,
+    );
+    const page = editablePageOf(
+      [{ ...rowOf(['1001', null, 'open']), r: [null] }],
+      { total: 1 },
+      columns,
+    );
+    const { http, api, shown } = await opened({
+      page: { ...page, schema: page.schema && { ...page.schema, references: [customerReference] } },
+    });
+    api().setFocusedCell(0, 'c1');
+    await shown();
+    const open = vi.spyOn(TestBed.inject(MatDialog), 'open');
+    press({ key: 'F2' });
+    await shown();
+    expect(open.mock.calls[0][1]).toMatchObject({
+      autoFocus: 'first-tabbable',
+      data: { values: null },
+    });
+    const asked = await answerPage(
+      http,
+      pageOf([rowOf(['42', 'Acme'])], { entity: 'shop.customers' }, [
+        { ...columns[0], name: 'id' },
+        { ...columns[2], name: 'name' },
+      ]),
+    );
+    expect(asked.grid?.offset ?? 0).toBe(0);
+    await shown();
+    clickButton(document.querySelector<HTMLElement>('mat-dialog-container')!, 'Cancel');
+    await shown();
+  });
+
   /** shop.orders' rows with a composite reference: customer by (customer_id, tenant_id), and tenant by tenant_id. */
   function tenantsPage(nullable = false) {
     const type = { kind: 'int64' as const, nullable, text: nullable ? 'int64?' : 'int64' };
@@ -732,6 +812,13 @@ describe('BrowseGrid, changing rows', () => {
     press({ key: 'F2' });
     await it.shown();
     expect(document.querySelectorAll('mat-dialog-container').length).toBe(1);
+    // Found by the target's columns, in their order.
+    expect(await answerPosition(it.http)).toEqual({
+      entity: 'shop.customers',
+      columns: ['id', 'tenant_id'],
+      values: ['5', '1'],
+    });
+    await it.shown();
     await answerPage(it.http, pageOf(rows, { entity: 'shop.customers' }, columns));
     await it.shown();
     return document.querySelector<HTMLElement>('mat-dialog-container')!;
@@ -801,7 +888,7 @@ describe('BrowseGrid, changing rows', () => {
 
   it("says a new row's reference not given is its default, not NULL", async () => {
     const page = tenantsPage(true);
-    const { element, api, shown } = await opened({
+    const { element, api, shown, http } = await opened({
       page,
       changes: setOf([insertOf('t1')]),
     });
@@ -811,5 +898,18 @@ describe('BrowseGrid, changing rows', () => {
     expect(inspector).toContain("The column's default");
     expect(inspector).not.toContain('refers to no row');
     expect(inspector).toContain('F2, or a double click, chooses the row it refers to.');
+
+    // The picker for it opens at the first page, nothing looked for, the keyboard on its first field.
+    const open = vi.spyOn(TestBed.inject(MatDialog), 'open');
+    press({ key: 'F2' });
+    await shown();
+    expect(open.mock.calls[0][1]).toMatchObject({
+      autoFocus: 'first-tabbable',
+      data: { values: null },
+    });
+    await answerPage(http, pageOf([], { entity: 'shop.customers' }, customers(['id', 'name'])));
+    await shown();
+    clickButton(document.querySelector<HTMLElement>('mat-dialog-container')!, 'Cancel');
+    await shown();
   });
 });

@@ -100,3 +100,17 @@ public sealed record BrowseTrailRequest([Required] List<TrailCrumbDto> Crumbs);
 public sealed record TrailStepDto(string? Entity, string Label, object? Title, bool? Found, string? Problem);
 
 public sealed record BrowseTrailDto(IReadOnlyList<TrailStepDto> Crumbs);
+
+/// <summary>
+/// A row to find among an entity's rows by the values of some of its columns, as a reference holds them (values as in
+/// <see cref="BrowseFromDto.Key"/>).
+/// </summary>
+public sealed record BrowsePositionRequest([Required] string Entity, [Required] List<string> Columns, [Required] List<object?> Values);
+
+/// <summary>
+/// Where a row is among its entity's rows as a grid shows them unsorted (in its key's order): its id (as pages give
+/// rows' ids), and how many rows come before it. No id when no row holds the values (or a value is NULL, or the
+/// entity has no key); no index when the rows' order by key can't be told (a key's value that doesn't compare in
+/// order, or is NULL; a count that takes too long).
+/// </summary>
+public sealed record BrowsePositionDto(string? Id, long? Index);

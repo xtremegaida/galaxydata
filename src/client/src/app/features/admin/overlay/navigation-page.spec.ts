@@ -151,12 +151,14 @@ describe('NavigationPage', () => {
   });
 
   it('edits an override to the version read, and deletes it once sure', async () => {
-    const page = await opened('/admin/overlay/navigations/4');
+    // What an address gives starts a new override only: this one is as it was saved.
+    const page = await opened('/admin/overlay/navigations/4?entity=shop.customers&navigation=x');
     (await requestTo(page.http, `${navigationsUrl}/4`)).flush(overrideOf());
     await page.shown();
     await answerLookups(page.http, entities);
     (await requestTo(page.http, validateUrl(navigationsUrl, 4), 'POST')).flush(checkOf());
     await page.shown();
+    expect(page.field('Entity').value).toBe('shop.orders');
     expect(page.field('Navigation').value).toBe('bill_address');
 
     await page.typeIn(page.field('Rename it to'), 'billed_to');
@@ -218,5 +220,45 @@ describe('NavigationPage', () => {
     expect(page.options()).toEqual(['customer to shop.customers']);
     await page.closePanels();
     (await requestTo(page.http, validateUrl(navigationsUrl, 4), 'POST')).flush(checkOf());
+  });
+
+  it('starts with the entity and navigation a link gives, which leaving keeps as they were', async () => {
+    const page = await opened(
+      '/admin/overlay/navigations/new?entity=shop.orders&navigation=order_lines',
+    );
+    await answerLookups(page.http, entities, { 'shop.orders': ['shop.orders'] });
+    await page.shown();
+    await page.closePanels();
+    expect(page.field('Entity').value).toBe('shop.orders');
+    expect(page.field('Navigation').value).toBe('order_lines');
+    expect(wordsOf(page.page.querySelector('gd-overlay-check'))).toContain(
+      'Rename the navigation or hide it, and it is tried as you go.',
+    );
+
+    // Nothing was changed: leaving doesn't ask.
+    expect(await TestBed.inject(Router).navigateByUrl('/admin/overlay')).toBe(true);
+    (await requestTo(page.http, overlayUrl)).flush(overlayOf());
+  });
+
+  it('asks before another address lets go of what was typed in one a link gave', async () => {
+    const page = await opened(
+      '/admin/overlay/navigations/new?entity=shop.orders&navigation=order_lines',
+    );
+    await answerLookups(page.http, entities, { 'shop.orders': ['shop.orders'] });
+    await page.shown();
+    await page.closePanels();
+    await page.typeIn(page.field('Rename it to'), 'lines');
+    await page.closePanels();
+    const left = TestBed.inject(Router).navigateByUrl(
+      '/admin/overlay/navigations/new?entity=shop.orders&navigation=customer',
+    );
+    await page.shown();
+    const dialog = document.querySelector('mat-dialog-container')!;
+    expect(textOf(dialog.querySelector('h2'))).toBe('Leave without saving?');
+    clickButton(dialog, 'Stay');
+    expect(await left).toBe(false);
+    expect(page.field('Navigation').value).toBe('order_lines');
+    expect(page.field('Rename it to').value).toBe('lines');
+    page.http.match((request) => request.url.endsWith('/validate'));
   });
 });

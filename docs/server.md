@@ -339,7 +339,11 @@ after anything it is built from changes. A request after a change waits for it, 
   - Each hit has the ids of its ancestors, to open them. At most 200 are given; `more` says there were more.
 
 **Entities.** `GET /api/catalog/entity?name=shop.orders` describes one: its kind (table, view, virtual), its columns
-with their logical types, its keys and navigations, and what the user may do with its rows.
+with their logical types, its keys and navigations, and what the user may do with its rows. For administrators, it
+also names the overlay's items that make and set it (`overlay`: the virtual entity it is, its settings) and each
+navigation (`overlay`: the relation that makes it, the override that renames or hides it), by their ids; for
+others, `overlay` is null. An entity knows its settings, and a navigation its override, even when some of what
+they say can't be applied.
 
 - **Changing rows** takes three things: a table with a primary key of its own, a connection that isn't read-only,
   and a role that edits data (data managers and administrators). A key with a column of a type the language has no
@@ -440,6 +444,21 @@ anti-forgery token.
   among the rows the crumb leads to (`found`). A crumb that can't be followed says why (`problem`, no `entity`),
   and is the last. So is a crumb whose row isn't one (a key that can't be read, or an entity without a key): it has
   its entity, `found` is false, and `problem` says why. A trail has at most 50 crumbs.
+
+**Where a row is.** `POST /api/browse/position` takes an entity, some of its columns and their values (a reference's
+target columns, and what it holds), and finds the row with those values: its id (as pages give rows' ids), and how
+many rows come before it as a grid shows them unsorted, in the key's order (`index`): those less in the key's first
+column (NULLs, which a declared key's columns may hold, are less: they sort first), or equal in it and less in the
+next, and so on. A grid of pages of `n` rows shows it on page `index / n`.
+
+- **No id** when no row has the values, a value is NULL, or the entity has no key.
+- **No index** when the key's values don't compare in order (a GUID's or binary), the row's own key holds a NULL,
+  the rows have an order of their own (a virtual entity's sort, which pages keep, the key only breaking its ties),
+  the rows are put together in the merge engine and the key holds text (the merge engine sorts text as DuckDB
+  compares it, while the count's comparisons may run in a source that ignores case, or follows a locale), or
+  counting takes longer than `Query:CountTimeout`.
+- Columns are named in any case; at most 32. A column it hasn't, or a value that isn't of its column's type, is a
+  400 by field (`columns[0]`, `values[0]`). Readers may ask, as they browse.
 
 ## Queries
 

@@ -24,6 +24,8 @@ function overlayItemRoutes(path: string, noun: string, component: Type<unknown>)
       title: `New ${noun}`,
       component,
       canDeactivate: [unsavedChangesGuard],
+      // What the address gives starts the item (`?entity=`): another address asks before edits are let go.
+      runGuardsAndResolvers: 'paramsOrQueryParamsChange',
     },
     {
       path: `overlay/${path}/:id`,

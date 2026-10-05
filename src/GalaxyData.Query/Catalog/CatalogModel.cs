@@ -96,6 +96,9 @@ public abstract class EntityDef : CatalogItem
 
    public bool Hidden { get; internal set; }
 
+   /// <summary>The overlay's settings for it, whether or not all of them could be applied.</summary>
+   public OverlayItemRef? SettingsItem { get; internal set; }
+
    public string? Comment { get; internal set; }
 
    public NameMatch<ColumnDef> FindColumn(string name) => columnsByName.Find(name);
@@ -409,6 +412,9 @@ public sealed class NavigationDef
    public bool IsCollection => Multiplicity == Multiplicity.Many;
 
    public bool Hidden { get; internal set; }
+
+   /// <summary>The overlay's override that renames or hides it, whether or not the rename could be made.</summary>
+   public OverlayItemRef? OverrideItem { get; internal set; }
 
    public EntityDef Owner => IsInverse ? Relation.To : Relation.From;
 

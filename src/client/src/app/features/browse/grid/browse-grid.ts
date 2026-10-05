@@ -40,6 +40,7 @@ import {
   type GridOptions,
   type GridReadyEvent,
   GridStateModule,
+  type IRowNode,
   InfiniteRowModelModule,
   LargeTextEditorModule,
   LocaleModule,
@@ -226,6 +227,10 @@ interface Live {
   datasource: BrowseDatasource;
   page: number;
   row: readonly string[] | null;
+  /** Whether rows were loaded (a page answered). */
+  loaded: boolean;
+  /** Whether the keyboard was placed (`focusChosen`), or left where the user had put it: done once. */
+  keyboardPlaced: boolean;
 }
 
 /** The cell the keyboard is on (or clicked), for the inspector and the row's actions. */
@@ -322,6 +327,12 @@ export class BrowseGrid {
   readonly insertDefaults = input<InsertDefaults | null>(null);
   /** Whether the inspector may be shown beside the rows. */
   readonly inspectable = input(true);
+  /**
+   * Whether the keyboard goes, once, to the row the crumb chooses, or to the condition's field when the rows first
+   * loaded don't hold it (a picker opened at the row): as they load, or as this becomes true with them loaded (once
+   * the picker's dialog has taken the keyboard); only while the keyboard isn't elsewhere (the user may have moved it).
+   */
+  readonly focusChosen = input(false);
   /** The row chosen (clicked), or none. */
   readonly rowChosen = output<ChosenRow | null>();
   /** A row double-clicked, or Enter on it, in a grid without links or changes (a picker's). */
@@ -537,6 +548,17 @@ export class BrowseGrid {
       const crumb = this.crumb();
       untracked(() => this.follow(crumb));
     });
+    // The rows loaded before the keyboard may go to them.
+    effect(() => {
+      if (this.focusChosen()) {
+        untracked(() => {
+          const live = this.current();
+          if (live) {
+            this.placeKeyboard(live);
+          }
+        });
+      }
+    });
     // The catalog changed, but not the columns: the rows are asked for anew (and counted), from the page the
     // schema came with.
     effect(() => {
@@ -585,6 +607,8 @@ export class BrowseGrid {
       datasource: made.datasource,
       page: made.page,
       row: made.row,
+      loaded: false,
+      keyboardPlaced: false,
     };
     // The grid sets its filters (asking for its first page again) before its page: the pages it asked for go
     // before they are fetched (see blockLoadDebounceMillis), and only the page shown is.
@@ -1092,6 +1116,13 @@ export class BrowseGrid {
       return;
     }
     const nullable = reference.columns.every((index) => schema.columns[index].type.nullable);
+    // What it refers to now, by the target's columns, for the picker to open at that row: none when a column is
+    // NULL or a new row's default. (The page shows all its columns: references it doesn't aren't picked.)
+    const change = edits.changeOf(row);
+    const held = reference.columns.map((index) =>
+      shownValue(schema.columns[index], index, row, change),
+    );
+    const refersTo = held.every((value) => value !== null && value !== undefined) ? held : null;
     let picked: NavPicked | undefined;
     this.picking = true;
     try {
@@ -1100,7 +1131,9 @@ export class BrowseGrid {
       picked = await firstValueFrom(
         this.dialog
           .open<InstanceType<typeof NavPicker>, NavPickerData, NavPicked>(NavPicker, {
-            data: { entity, reference, nullable },
+            data: { entity, reference, nullable, values: refersTo },
+            // At a row, the keyboard goes to it (the dialog takes it first, and gives it up): not to the first field.
+            autoFocus: refersTo ? 'dialog' : 'first-tabbable',
             width: '90vw',
             maxWidth: '1200px',
           })
@@ -1301,8 +1334,10 @@ export class BrowseGrid {
         this.problem.set(null);
         const live = this.current();
         if (live) {
+          live.loaded = true;
           clearFailure(live.api);
           this.selectRow(live);
+          this.placeKeyboard(live);
           this.refreshFocused(live);
         }
       },
@@ -1344,7 +1379,10 @@ export class BrowseGrid {
     live.api.setGridOption('activeOverlay', 'agNoRowsOverlay');
   }
 
-  /** Chooses in the grid the row the address chose, when it is among those loaded. */
+  /**
+   * Chooses in the grid the row the address chose, when it is among those loaded, and scrolls to it; with
+   * `focusChosen`, the keyboard goes to it the first time.
+   */
   private selectRow(live: Live): void {
     const wanted = live.row === null ? null : JSON.stringify(live.row);
     const selected = live.api.getSelectedRows()[0]?.id;
@@ -1353,19 +1391,49 @@ export class BrowseGrid {
     }
     this.following = true;
     try {
-      let found = false;
+      let found = null as IRowNode<GridRow> | null;
       live.api.forEachNode((node) => {
         if (wanted !== null && node.data?.id && JSON.stringify(keyOf(node.data.id)) === wanted) {
           node.setSelected(true, true, 'api');
-          found = true;
+          found = node;
         }
       });
-      // The row the address chose isn't among those loaded (or none is): none is chosen in the grid.
-      if (!found && selected) {
+      if (found) {
+        // By its index: ensureNodeVisible looks at each row before it, which asks for their pages.
+        if (found.rowIndex !== null) {
+          live.api.ensureIndexVisible(found.rowIndex, 'middle');
+        }
+      } else if (selected) {
+        // The row the address chose isn't among those loaded (or none is): none is chosen in the grid.
         live.api.deselectAll('all', 'api');
       }
     } finally {
       this.following = false;
+    }
+  }
+
+  /**
+   * With `focusChosen`, once rows are loaded: the keyboard on the row chosen, or on the condition's field when none
+   * is; unless the user has put it elsewhere in what holds the grid (its dialog), outside the grid. (Outside what
+   * holds it, the keyboard is where it was as the dialog opened, which the dialog moves.)
+   */
+  private placeKeyboard(live: Live): void {
+    if (!this.focusChosen() || live.keyboardPlaced || !live.loaded) {
+      return;
+    }
+    live.keyboardPlaced = true;
+    const host = this.host.nativeElement;
+    const scope = host.closest('[role="dialog"], [role="alertdialog"]') ?? host.ownerDocument.body;
+    const active = host.ownerDocument.activeElement;
+    if (active && active !== scope && scope.contains(active) && !host.contains(active)) {
+      return;
+    }
+    const node = live.api.getSelectedNodes()[0];
+    const first = live.api.getAllDisplayedColumns()[0];
+    if (node?.rowIndex != null && first) {
+      live.api.setFocusedCell(node.rowIndex, first);
+    } else {
+      this.whereField()?.nativeElement.focus();
     }
   }
 

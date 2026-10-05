@@ -8,7 +8,9 @@ import {
   answerLookups,
   checkOf,
   columnsNamed,
+  overlayOf,
   overlayPage,
+  overlayUrl,
   settingsOf,
   settingsUrl,
   validateUrl,
@@ -260,5 +262,22 @@ describe('EntitySettingsPage', () => {
     await page.press('Add its settings');
     expect(page.table()).toHaveLength(2);
     expect(document.activeElement).toBe(page.cell('Amount’s label'));
+  });
+
+  it('starts with the entity a link gives, tried as it is, and leaving keeps it as it was', async () => {
+    const page = await opened('/admin/overlay/entity-settings/new?entity=shop.customers');
+    await answerLookups(page.http, entities, { 'shop.customers': ['shop.customers'] });
+    await page.shown();
+    await page.closePanels();
+    expect(page.field('Entity').value).toBe('shop.customers');
+    expect(page.table().map((row) => row[0])).toEqual(['id', 'name', 'city']);
+    // Settings that set nothing yet, tried as made: the entity as it is.
+    const check = await requestTo(page.http, validateUrl(settingsUrl), 'POST');
+    expect(check.request.body).toEqual(inputOf({}));
+    check.flush(checkOf({ entity: customers }));
+    await page.shown();
+
+    expect(await TestBed.inject(Router).navigateByUrl('/admin/overlay')).toBe(true);
+    (await requestTo(page.http, overlayUrl)).flush(overlayOf());
   });
 });

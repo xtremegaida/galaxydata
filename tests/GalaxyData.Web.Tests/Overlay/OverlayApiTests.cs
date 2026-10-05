@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Web.Catalog;
+using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Problems;
 using GalaxyData.Web.Tests.Catalog;
 using Microsoft.Extensions.DependencyInjection;
@@ -369,6 +370,43 @@ public sealed class OverlayApiTests
       JsonElement relation = await (await admin.PostAsync("/api/overlay/relations",
          new { from = "shop.orders", fromColumns = new[] { "customer_id" }, to = "Broken.things", toColumns = new[] { "id" } })).JsonAsync(HttpStatusCode.Created);
       Issues(relation).ShouldBe(["GDQ5004 error: There is no entity 'Broken.things' (relation target): Broken's schema isn't read"]);
+   }
+
+   /// <summary>Administrators are told which items make and set an entity and its navigations, so its page leads to them; others aren't.</summary>
+   [Fact]
+   public async Task EntitiesNameTheirItemsForAdministrators()
+   {
+      (WebAppFactory factory, TestApi admin) = await ShopAsync();
+      await using WebAppFactory _ = factory;
+      await WarehouseAsync(factory, admin);
+      async Task<int> MadeAsync(string kind, object item) =>
+         (await (await admin.PostAsync($"/api/overlay/{kind}", item)).JsonAsync(HttpStatusCode.Created)).GetProperty("id").GetInt32();
+      int relation = await MadeAsync("relations", Shipments);
+      int settings = await MadeAsync("entity-settings", new { entity = "shop.orders", displayColumn = "id" });
+      int renamed = await MadeAsync("navigations", new { entity = "shop.orders", navigation = "customer", renameTo = "buyer" });
+      int big = await MadeAsync("virtual-entities", new { name = "reports.big", query = "shop.orders.where(total > 100)" });
+
+      JsonElement orders = await EntityAsync(admin, "shop.orders");
+      orders.GetProperty("overlay").GetRawText().ShouldBe($$"""{"virtualEntity":null,"settings":{{settings}}}""");
+      NavigationOf(orders, "buyer").GetProperty("overlay").GetRawText().ShouldBe($$"""{"relation":null,"override":{{renamed}}}""");
+      NavigationOf(orders, "shipments").GetProperty("overlay").GetRawText().ShouldBe($$"""{"relation":{{relation}},"override":null}""");
+      NavigationOf(orders, "order_lines").GetProperty("overlay").GetRawText().ShouldBe("""{"relation":null,"override":null}""");
+      NavigationOf(await EntityAsync(admin, "wh.shipments"), "order").GetProperty("overlay").GetProperty("relation").GetInt32().ShouldBe(relation, "both ways");
+      JsonElement report = await EntityAsync(admin, "reports.big");
+      report.GetProperty("overlay").GetRawText().ShouldBe($$"""{"virtualEntity":{{big}},"settings":null}""");
+      JsonElement inherited = NavigationOf(report, "buyer");
+      inherited.GetProperty("inherited").GetBoolean().ShouldBeTrue();
+      inherited.GetProperty("overlay").GetProperty("override").GetInt32().ShouldBe(renamed, "its entity's navigation, renamed there");
+
+      await admin.CreateUserAsync("rae", nameof(UserRole.Read), "first-password-of-a-user");
+      TestApi rae = await TestApi.SignedInAsync(factory, "rae", "first-password-of-a-user", changeTo: "second-password-of-a-user");
+      JsonElement read = await EntityAsync(rae, "shop.orders");
+      read.GetProperty("overlay").ValueKind.ShouldBe(JsonValueKind.Null);
+      read.GetProperty("navigations").EnumerateArray().ShouldAllBe(n => n.GetProperty("overlay").ValueKind == JsonValueKind.Null);
+      // Data managers change data, not the overlay: they aren't told either.
+      await admin.CreateUserAsync("dee", nameof(UserRole.DataManager), "first-password-of-a-user");
+      TestApi dee = await TestApi.SignedInAsync(factory, "dee", "first-password-of-a-user", changeTo: "second-password-of-a-user");
+      (await EntityAsync(dee, "shop.orders")).GetProperty("overlay").ValueKind.ShouldBe(JsonValueKind.Null);
    }
 
    /// <summary>Log messages, as written.</summary>

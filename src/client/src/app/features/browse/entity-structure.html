@@ -57,6 +57,37 @@
       <span class="sentence">{{ sentence }}</span>
     }
   </dd>
+  @if (described.overlay; as overlay) {
+    <dt>Overlay</dt>
+    <dd>
+      <ul class="plain">
+        @if (overlay.virtualEntity !== null) {
+          <li>
+            <a [routerLink]="itemLink('virtualEntity', overlay.virtualEntity)">Its definition</a>
+          </li>
+        }
+        <li>
+          @if (overlay.settings !== null) {
+            <a [routerLink]="itemLink('entitySettings', overlay.settings)">Its settings</a>
+          } @else {
+            <a
+              [routerLink]="newItemLink('entitySettings')"
+              [queryParams]="{ entity: described.name }"
+            >
+              Make settings for it
+            </a>
+          }
+          <span class="aside">its columns' labels and types, what is hidden, its key</span>
+        </li>
+        <li>
+          <a [routerLink]="newItemLink('relation')" [queryParams]="{ from: described.name }">
+            Make a relation from it
+          </a>
+          <span class="aside">to the rows of another entity, of any connection</span>
+        </li>
+      </ul>
+    </dd>
+  }
 </dl>
 
 <section class="section" aria-labelledby="gd-entity-columns">
@@ -144,6 +175,9 @@
             <th scope="col">Rows</th>
             <th scope="col">Through</th>
             <th scope="col">Notes</th>
+            @if (described.overlay) {
+              <th scope="col">Overlay</th>
+            }
           </tr>
         </thead>
         <tbody>
@@ -170,6 +204,40 @@
                   }
                 }
               </td>
+              @if (described.overlay) {
+                <td>
+                  <ul class="plain">
+                    @if (navigation.overlay?.relation; as relation) {
+                      <li>
+                        <a [routerLink]="itemLink('relation', relation)"
+                          >Its relation<span class="cdk-visually-hidden"
+                            >: {{ navigation.name }}</span
+                          ></a
+                        >
+                      </li>
+                    }
+                    @if (navigation.overlay?.override; as override) {
+                      <li>
+                        <a [routerLink]="itemLink('navigation', override)"
+                          >Its override<span class="cdk-visually-hidden"
+                            >: {{ navigation.name }}</span
+                          ></a
+                        >
+                      </li>
+                    } @else if (!navigation.inherited) {
+                      <li>
+                        <a
+                          [routerLink]="newItemLink('navigation')"
+                          [queryParams]="{ entity: described.name, navigation: navigation.name }"
+                          >Rename or hide<span class="cdk-visually-hidden">
+                            {{ navigation.name }}</span
+                          ></a
+                        >
+                      </li>
+                    }
+                  </ul>
+                </td>
+              }
             </tr>
           }
         </tbody>

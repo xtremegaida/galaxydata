@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
 import {
   FormField,
   FormRoot,
@@ -73,6 +73,10 @@ export class NavigationPage extends OverlayItemPage<
   OverrideModel,
   NavigationOverrideInput
 > {
+  /** For a new override, the entity and the navigation (`?entity=&navigation=`, as an entity's page links to it). */
+  readonly entity = input<string>();
+  readonly navigation = input<string>();
+
   protected readonly kind: OverlayItemKind = 'navigation';
   protected readonly bodyField = 'navigation';
   protected readonly deleteMessage =
@@ -102,7 +106,7 @@ export class NavigationPage extends OverlayItemPage<
   );
 
   protected readonly entitySearch = new EntitySearch(() => this.model().entity, this.waits.lookup);
-  protected readonly entity = new EntityLookup(() => this.model().entity, this.waits.lookup);
+  protected readonly entityLookup = new EntityLookup(() => this.model().entity, this.waits.lookup);
 
   /**
    * The entity's navigations, to choose from (those holding what is typed), by the names the convention gives them:
@@ -113,7 +117,7 @@ export class NavigationPage extends OverlayItemPage<
     const stored = this.stored();
     const renamed =
       stored?.renameTo && stored.entity === this.model().entity.trim() ? stored : null;
-    return (this.entity.entity()?.navigations ?? [])
+    return (this.entityLookup.entity()?.navigations ?? [])
       .map((navigation) =>
         renamed && navigation.name === renamed.renameTo
           ? { ...navigation, name: renamed.navigation }
@@ -127,8 +131,8 @@ export class NavigationPage extends OverlayItemPage<
 
   protected modelOf(override: NavigationOverride | undefined): OverrideModel {
     return {
-      entity: override?.entity ?? '',
-      navigation: override?.navigation ?? '',
+      entity: override?.entity ?? this.given(this.entity()) ?? '',
+      navigation: override?.navigation ?? this.given(this.navigation()) ?? '',
       renameTo: override?.renameTo ?? '',
       hidden: override?.hidden ?? false,
     };

@@ -12,6 +12,7 @@ using GalaxyData.Query.Execution;
 using GalaxyData.Query.Language;
 using GalaxyData.Query.Results;
 using GalaxyData.Query.Sql;
+using GalaxyData.Query.Types;
 using GalaxyData.Web.Catalog;
 using GalaxyData.Web.Hosting;
 using GalaxyData.Web.Problems;
@@ -34,6 +35,9 @@ public sealed class BrowseService(CatalogService catalogs, QueryEngines engines,
 
    /// <summary>The most crumbs a trail may have: each is a query.</summary>
    public const int MaxCrumbs = 50;
+
+   /// <summary>The most columns a row is found by (a reference's).</summary>
+   public const int MaxPositionColumns = 32;
 
    public async Task<BrowsePageDto> PageAsync(BrowsePageRequest request, bool canEdit, HttpResponse response, CancellationToken cancellationToken)
    {
@@ -146,6 +150,108 @@ public sealed class BrowseService(CatalogService catalogs, QueryEngines engines,
          steps.Add(new TrailStepDto(rows!.Entity.DisplayName, label, title, key == null ? null : found, null));
       }
       return new BrowseTrailDto(steps);
+   }
+
+   /// <summary>
+   /// Where the row of an entity whose columns hold the values given is among the entity's rows as a grid shows them
+   /// unsorted, in its key's order (the engine's paging orders by it): its id, and how many rows come before it, those
+   /// less in the key's first column (NULLs are less: they sort first), or equal in it and less in the next, and so
+   /// on. A grid opens at its page. Where the rows aren't paged in the key's order alone (a virtual entity's own
+   /// sort), or the count may compare text otherwise than the page's sort (rows put together in the merge engine), the
+   /// row is found but not where.
+   /// </summary>
+   public async Task<BrowsePositionDto> PositionAsync(BrowsePositionRequest request, HttpResponse response, CancellationToken cancellationToken)
+   {
+      ArgumentNullException.ThrowIfNull(request);
+      if (request.Columns.Count == 0) { throw Invalid("columns", "Name the columns whose values find the row"); }
+      if (request.Columns.Count > MaxPositionColumns) { throw Invalid("columns", $"A row is found by at most {MaxPositionColumns} columns"); }
+      if (request.Values.Count != request.Columns.Count) { throw Invalid("values", $"Give a value for each column ({request.Columns.Count})"); }
+      CatalogState state = await catalogs.GetAsync(response, cancellationToken);
+      QueryEngine engine = engines.For(state);
+      EntityDef entity = Entity(state.Catalog, request.Entity, "entity");
+      QueryParameters parameters = new();
+      List<string> conditions = [];
+      bool none = false;
+      for (int i = 0; i < request.Columns.Count; i++)
+      {
+         string? name = request.Columns[i];
+         if (name == null) { throw Invalid($"columns[{i}]", "A column's name can't be null"); }
+         NameMatch<ColumnDef> match = entity.FindColumn(name);
+         if (!match.IsFound) { throw Invalid($"columns[{i}]", $"{entity.DisplayName} has no column '{name}'"); }
+         ColumnDef column = match.Item!;
+         object? value;
+         try
+         {
+            value = ValueCodec.Decode(ValueCodec.Json(request.Values[i]), column.Type);
+         }
+         catch (ValueFormatException e)
+         {
+            throw Invalid($"values[{i}]", $"'{column.Name}': {e.Message}");
+         }
+         // A NULL refers to no row.
+         none |= value == null;
+         string parameter = "at" + (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+         parameters.Add(parameter, value, column.Type.AsNonNullable());
+         conditions.Add($"{QueryText.QuoteName(column.Name)} == ${parameter}");
+      }
+      if (none || entity.Key is not { } key) { return new BrowsePositionDto(null, null); }
+
+      // The row's key.
+      string rows = entity.DisplayName;
+      string keys = string.Join(", ", key.Columns.Select((c, k) => $"k{k}: {QueryText.QuoteName(c.Name)}"));
+      PreparedQuery find = engine.Prepare(new QueryRequest(QueryText.Compose(rows, [string.Join(" and ", conditions)]) + $".select({keys}).take(1)")
+      {
+         Parameters = parameters,
+      });
+      // Columns whose values don't compare (of unknown types) find no row.
+      if (!find.Success) { return new BrowsePositionDto(null, null); }
+      IReadOnlyList<object?[]> found;
+      await using (QueryResult result = await find.ExecuteAsync(cancellationToken))
+      {
+         found = await result.ToListAsync(cancellationToken);
+      }
+      if (found.Count == 0) { return new BrowsePositionDto(null, null); }
+      object?[] at = found[0];
+      string id = ValueCodec.RowId(key.Columns.Select((c, k) => (at[k], c.Type)));
+      // A declared key may hold NULLs, which sort before the rest: where among them isn't told.
+      if (at.Any(v => v == null)) { return new BrowsePositionDto(id, null); }
+      PreparedQuery all = engine.Prepare(new QueryRequest(rows));
+      // Rows in an order of their own are paged in it, the key only breaking its ties.
+      if (all.IsOrdered) { return new BrowsePositionDto(id, null); }
+      // Rows put together in the merge engine are sorted there, as DuckDB compares text, while the count's comparisons
+      // may run in their sources, which may compare it otherwise (ignoring case, by a locale).
+      if (all.Merge != null && key.Columns.Any(c => c.Type.Kind == ScalarKind.String)) { return new BrowsePositionDto(id, null); }
+
+      // The rows before it.
+      QueryParameters before = new();
+      List<string> alternatives = [];
+      for (int k = 0; k < key.Columns.Count; k++)
+      {
+         string parameter = "key" + (k + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+         before.Add(parameter, at[k], key.Columns[k].Type.AsNonNullable());
+         IEnumerable<string> equal = key.Columns.Take(k).Select((c, j) => $"{QueryText.QuoteName(c.Name)} == $key{(j + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+         string column = QueryText.QuoteName(key.Columns[k].Name);
+         // A declared key's column may hold NULLs, which sort before every value.
+         string less = key.Columns[k].Type.Nullable ? $"({column} < ${parameter} or {column} == null)" : $"{column} < ${parameter}";
+         alternatives.Add("(" + string.Join(" and ", equal.Append(less)) + ")");
+      }
+      PreparedQuery count = engine.Prepare(new QueryRequest(QueryText.Compose(rows, [string.Join(" or ", alternatives)]))
+      {
+         Parameters = before,
+         Timeout = options.Value.Query.CountTimeout,
+      }).ForCount();
+      // Keys whose values don't compare in order (guids, binary values): the row is found, but not where.
+      if (!count.Success) { return new BrowsePositionDto(id, null); }
+      try
+      {
+         await using QueryResult result = await count.ExecuteAsync(cancellationToken);
+         IReadOnlyList<object?[]> counted = await result.ToListAsync(cancellationToken);
+         return new BrowsePositionDto(id, counted.Count == 1 ? Convert.ToInt64(counted[0][0], System.Globalization.CultureInfo.InvariantCulture) : null);
+      }
+      catch (QueryTimeoutException)
+      {
+         return new BrowsePositionDto(id, null);
+      }
    }
 
    /// <summary>The query of the rows to browse; a problem when there is no such entity, row or navigation.</summary>

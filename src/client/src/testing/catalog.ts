@@ -167,6 +167,7 @@ export function entityOf(changes: Partial<EntityDto> = {}): EntityDto {
         isCrossSource: false,
         hidden: false,
         inherited: false,
+        overlay: null,
       },
       {
         name: 'order_lines',
@@ -180,11 +181,13 @@ export function entityOf(changes: Partial<EntityDto> = {}): EntityDto {
         isCrossSource: false,
         hidden: false,
         inherited: false,
+        overlay: null,
       },
     ],
     capabilities: { canInsert: true, canUpdate: true, canDelete: true },
     query: null,
     problem: null,
+    overlay: null,
     ...changes,
   };
 }

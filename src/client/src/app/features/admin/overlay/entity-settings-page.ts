@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, signal } from '@angular/core';
+import { Component, computed, input, signal } from '@angular/core';
 import {
   FormField,
   FormRoot,
@@ -122,6 +122,9 @@ export class EntitySettingsPage extends OverlayItemPage<
   SettingsModel,
   EntitySettingsInput
 > {
+  /** For new settings, the entity they are for (`?entity=`, as an entity's page links to them). */
+  readonly entity = input<string>();
+
   protected readonly kind: OverlayItemKind = 'entitySettings';
   protected readonly bodyField = 'settings';
   protected readonly deleteMessage = 'The entity is as its database declares it again.';
@@ -155,7 +158,7 @@ export class EntitySettingsPage extends OverlayItemPage<
   );
 
   protected readonly entitySearch = new EntitySearch(() => this.model().entity, this.waits.lookup);
-  protected readonly entity = new EntityLookup(() => this.model().entity, this.waits.lookup);
+  protected readonly entityLookup = new EntityLookup(() => this.model().entity, this.waits.lookup);
 
   /**
    * The entity's columns, then the columns the settings name that it hasn't (or that aren't known, the entity not
@@ -163,7 +166,7 @@ export class EntitySettingsPage extends OverlayItemPage<
    */
   protected readonly columnRows = computed<ColumnRow[]>(() => {
     const settings = this.model().columns;
-    const entity = this.entity.entity();
+    const entity = this.entityLookup.entity();
     const known = entity?.columns ?? [];
     const rows: ColumnRow[] = known.map((column) => ({
       name: column.name,
@@ -248,7 +251,7 @@ export class EntitySettingsPage extends OverlayItemPage<
 
   protected modelOf(settings: EntitySettings | undefined): SettingsModel {
     return {
-      entity: settings?.entity ?? '',
+      entity: settings?.entity ?? this.given(this.entity()) ?? '',
       hidden: settings?.hidden ?? false,
       displayColumn: settings?.displayColumn ?? '',
       key: [...(settings?.key ?? [])],

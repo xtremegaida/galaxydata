@@ -67,18 +67,29 @@ public sealed record KeyDto(string? Name, IReadOnlyList<string> Columns, bool Is
 public sealed record EntityColumnDto(string Name, int Ordinal, TypeDto Type, string? NativeType, bool IsKey, bool IsIdentity, bool IsComputed, bool HasDefault,
                                      bool IsRowVersion, bool Hidden, string? Label, string? Comment, bool CanUpdate, InsertMode Insert, string? ReadOnlyReason);
 
-/// <summary>A navigation to the rows a row is linked to: along a foreign key, or a relation the overlay adds.</summary>
+/// <summary>
+/// A navigation to the rows a row is linked to: along a foreign key, or a relation the overlay adds. For administrators,
+/// the overlay's items that make it and rename or hide it (<see cref="Overlay"/>).
+/// </summary>
 public sealed record NavigationDto(string Name, string Target, Multiplicity Multiplicity, IReadOnlyList<string> Columns, IReadOnlyList<string> TargetColumns,
-                                   bool IsInverse, RelationOrigin Origin, bool IsEnforced, bool IsCrossSource, bool Hidden, bool Inherited);
+                                   bool IsInverse, RelationOrigin Origin, bool IsEnforced, bool IsCrossSource, bool Hidden, bool Inherited,
+                                   NavigationOverlayDto? Overlay);
+
+/// <summary>The ids of the overlay's relation that makes a navigation, and of the override that renames or hides it.</summary>
+public sealed record NavigationOverlayDto(int? Relation, int? Override);
+
+/// <summary>The ids of the overlay's virtual entity an entity is, and of its settings.</summary>
+public sealed record EntityOverlayDto(int? VirtualEntity, int? Settings);
 
 /// <summary>
 /// An entity: what it is (a table or view of a source, or a virtual entity of the overlay), its columns, keys and
-/// navigations, and what the user may do with its rows.
+/// navigations, and what the user may do with its rows. For administrators, the overlay's items that make it and set
+/// it (<see cref="Overlay"/>; null for others).
 /// </summary>
 public sealed record EntityDto(string Name, string QualifiedName, EntityKind Kind, string? Source, string? Schema, string? Table, string? Comment,
                                long? RowCountEstimate, bool HasTriggers, KeyDto? Key, IReadOnlyList<KeyDto> UniqueKeys, string? DisplayColumn,
                                IReadOnlyList<EntityColumnDto> Columns, IReadOnlyList<NavigationDto> Navigations, CapabilitiesDto Capabilities,
-                               string? Query, string? Problem);
+                               string? Query, string? Problem, EntityOverlayDto? Overlay);
 
 /// <summary>
 /// The catalog, for anyone who reads data: its sources, its tree (children of a node, search) and its entities.
@@ -181,7 +192,7 @@ public static class CatalogEndpoints
       {
          return ApiProblems.Result(StatusCodes.Status404NotFound, ProblemCodes.NotFound, "There is no such entity", $"There is no entity {name} in the catalog");
       }
-      return TypedResults.Ok(Describe(entity, providers, CanEditData(me)));
+      return TypedResults.Ok(Describe(entity, providers, CanEditData(me), me.IsInRole(nameof(UserRole.Admin)) ? state.Overlay : null));
    }
 
    private static Task<CatalogState> StateAsync(HttpResponse response, CatalogService catalogs, CancellationToken cancellationToken) =>
@@ -208,7 +219,11 @@ public static class CatalogEndpoints
       return dto;
    }
 
-   internal static EntityDto Describe(EntityDef entity, SourceProviders providers, bool canEdit)
+   /// <summary>
+   /// The entity as the API describes it; with the overlay the catalog was built with, the ids of its items that make
+   /// and set the entity and its navigations.
+   /// </summary>
+   internal static EntityDto Describe(EntityDef entity, SourceProviders providers, bool canEdit, StoredOverlay? overlay = null)
    {
       TableEntity? table = entity as TableEntity;
       SqlDialect? dialect = table == null ? null : providers.For(table.Source.ProviderKind).Dialect;
@@ -217,9 +232,12 @@ public static class CatalogEndpoints
       return new EntityDto(entity.DisplayName, entity.QualifiedName.ToString(), entity.Kind, table?.Source.Alias, table?.Schema, table?.Table, entity.Comment,
          table?.RowCountEstimate, table?.HasTriggers ?? false, entity.Key is { } key ? Key(key) : null, entity.UniqueKeys.Select(Key).ToList(),
          entity.DisplayColumn?.Name, entity.Columns.Select(c => Column(c, dialect, capabilities)).ToList(),
-         [.. entity.Navigations.Select(n => Navigation(n, inherited: false)), .. entity.InheritedNavigations.Select(n => Navigation(n, inherited: true))],
-         capabilities, defined?.QueryText, defined?.Problem);
+         [.. entity.Navigations.Select(n => Navigation(n, inherited: false, overlay)), .. entity.InheritedNavigations.Select(n => Navigation(n, inherited: true, overlay))],
+         capabilities, defined?.QueryText, defined?.Problem,
+         overlay == null ? null : new EntityOverlayDto(IdOf(overlay, defined?.OverlayItem), IdOf(overlay, entity.SettingsItem)));
    }
+
+   private static int? IdOf(StoredOverlay overlay, OverlayItemRef? item) => item == null ? null : overlay.IdOf(item);
 
    private static KeyDto Key(KeyDef key) => new(key.Name, key.Columns.Select(c => c.Name).ToList(), key.IsDeclared);
 
@@ -230,8 +248,9 @@ public static class CatalogEndpoints
          column.HasDefault, column.IsRowVersion, column.Hidden, column.Label, column.Comment, can.CanUpdate, can.Insert, can.Reason);
    }
 
-   private static NavigationDto Navigation(NavigationDef navigation, bool inherited) =>
+   private static NavigationDto Navigation(NavigationDef navigation, bool inherited, StoredOverlay? overlay) =>
       new(navigation.Name, navigation.Target.DisplayName, navigation.Multiplicity, navigation.OwnerColumns.Select(c => c.Name).ToList(),
          navigation.TargetColumns.Select(c => c.Name).ToList(), navigation.IsInverse, navigation.Relation.Origin, navigation.Relation.IsEnforced,
-         navigation.Relation.IsCrossSource, navigation.Hidden, inherited);
+         navigation.Relation.IsCrossSource, navigation.Hidden, inherited,
+         overlay == null ? null : new NavigationOverlayDto(IdOf(overlay, navigation.Relation.OverlayItem), IdOf(overlay, navigation.OverrideItem)));
 }

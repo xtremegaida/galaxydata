@@ -368,6 +368,12 @@ public sealed class CatalogBuilderTests
       ColumnDef name = catalog.Entity("shop.customers").Columns.Single(c => c.Name == "name");
       (name.Label, name.Hidden).ShouldBe(("Name", false), "the first settings of a column apply, the second are left out");
       catalog.FindEntity("reports.fine").ShouldBeOfType<VirtualEntity>().OverlayItem.ShouldBe(new OverlayItemRef(OverlayItemKind.VirtualEntity, 0));
+      catalog.Entity("shop.orders").SettingsItem.ShouldBe(new OverlayItemRef(OverlayItemKind.EntitySettings, 0), "the first settings of an entity are its");
+      catalog.Entity("shop.customers").SettingsItem.ShouldBe(new OverlayItemRef(OverlayItemKind.EntitySettings, 1), "some of them not applied");
+      catalog.FindEntity("reports.bad")!.SettingsItem.ShouldBe(new OverlayItemRef(OverlayItemKind.EntitySettings, 3), "not applied, as it doesn't work");
+      catalog.Entity("shop.addresses").SettingsItem.ShouldBeNull();
+      catalog.Entity("shop.addresses").Nav("client").OverrideItem.ShouldBe(new OverlayItemRef(OverlayItemKind.Navigation, 0), "the second is left out");
+      catalog.Entity("shop.orders").Nav("customer").OverrideItem.ShouldBeNull();
    }
 
    [Fact]

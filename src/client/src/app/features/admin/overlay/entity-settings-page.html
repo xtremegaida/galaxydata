@@ -78,13 +78,13 @@
           spellcheck="false"
         />
         <mat-autocomplete #displayChoices="matAutocomplete">
-          @for (name of suggest(entity.columns(), model().displayColumn); track name) {
+          @for (name of suggest(entityLookup.columns(), model().displayColumn); track name) {
             <mat-option [value]="name">{{ name }}</mat-option>
           }
         </mat-autocomplete>
         <mat-hint>
           The column that shows a row where others refer to it; the convention's when empty
-          @if (entity.entity()?.displayColumn; as shown) {
+          @if (entityLookup.entity()?.displayColumn; as shown) {
             (now {{ shown }})
           }
         </mat-hint>
@@ -96,7 +96,7 @@
         <p class="aside">
           For views and tables without one: the columns that tell its rows apart. It serves
           navigation, never changing rows.
-          @if (entity.key(); as key) {
+          @if (entityLookup.key(); as key) {
             Its key now: {{ key.join(', ') }}.
           }
         </p>
@@ -113,7 +113,7 @@
                 spellcheck="false"
               />
               <mat-autocomplete #keyColumn="matAutocomplete">
-                @for (name of suggest(entity.columns(), column); track name) {
+                @for (name of suggest(entityLookup.columns(), column); track name) {
                   <mat-option [value]="name">{{ name }}</mat-option>
                 }
               </mat-autocomplete>

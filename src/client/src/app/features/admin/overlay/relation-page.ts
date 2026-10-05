@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
 import {
   FormField,
   FormRoot,
@@ -72,6 +72,9 @@ interface RelationModel {
   styleUrls: ['../admin-page.scss', './overlay-page.scss'],
 })
 export class RelationPage extends OverlayItemPage<Relation, RelationModel, RelationInput> {
+  /** For a new relation, the entity it is from (`?from=`, as an entity's page links to it). */
+  readonly from = input<string>();
+
   protected readonly kind: OverlayItemKind = 'relation';
   protected readonly bodyField = 'relation';
   protected readonly deleteMessage =
@@ -164,7 +167,7 @@ export class RelationPage extends OverlayItemPage<Relation, RelationModel, Relat
   protected modelOf(relation: Relation | undefined): RelationModel {
     const count = Math.max(relation?.fromColumns.length ?? 0, relation?.toColumns.length ?? 0, 1);
     return {
-      from: relation?.from ?? '',
+      from: relation?.from ?? this.given(this.from()) ?? '',
       to: relation?.to ?? '',
       pairs: Array.from({ length: count }, (_, at) => ({
         from: relation?.fromColumns[at] ?? '',

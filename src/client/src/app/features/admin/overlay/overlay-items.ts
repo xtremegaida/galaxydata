@@ -1,6 +1,8 @@
 import { InjectionToken } from '@angular/core';
 import type { Schema } from '../../../core/api/api-client';
 
+export { itemLink, kindPaths } from '../../../core/catalog/overlay-paths';
+
 export type Overlay = Schema<'OverlayDto'>;
 export type Relation = Schema<'RelationDto'>;
 export type RelationInput = Schema<'RelationInput'>;
@@ -28,14 +30,6 @@ export const OVERLAY_WAITS = new InjectionToken<{
   readonly lookup: number;
 }>('OVERLAY_WAITS', { factory: () => ({ check: 400, lookup: 250 }) });
 
-/** Each kind's part of the API's and the pages' paths. */
-export const kindPaths: Readonly<Record<OverlayItemKind, string>> = {
-  relation: 'relations',
-  navigation: 'navigations',
-  virtualEntity: 'virtual-entities',
-  entitySettings: 'entity-settings',
-};
-
 /** Each kind, in messages: "the relation", "the virtual entity". */
 export const kindNouns: Readonly<Record<OverlayItemKind, string>> = {
   relation: 'relation',
@@ -43,11 +37,6 @@ export const kindNouns: Readonly<Record<OverlayItemKind, string>> = {
   virtualEntity: 'virtual entity',
   entitySettings: 'entity settings',
 };
-
-/** An item's page. */
-export function itemLink(kind: OverlayItemKind, id: number): string[] {
-  return ['/admin/overlay', kindPaths[kind], String(id)];
-}
 
 /** A relation in words: `shop.orders (customer_id) → crm.customers (id)`. */
 export function relationText(relation: {

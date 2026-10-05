@@ -283,6 +283,87 @@ public sealed class BrowseApiTests
       (await Trail(new { entity = "shop.nothing" })).ShouldBe("shop.nothing:    There is no entity shop.nothing");
    }
 
+   /// <summary>A row found by a reference's values: its id, and how many rows come before it, so a grid opens at its page.</summary>
+   [Fact]
+   public async Task ARowIsFoundWithWhereItIs()
+   {
+      (WebAppFactory factory, TestApi admin) = await ShopAsync();
+      await using WebAppFactory _ = factory;
+      async Task<string> Position(string entity, string[] columns, object?[] values)
+      {
+         JsonElement position = await (await admin.PostAsync("/api/browse/position", new { entity, columns, values })).JsonAsync(HttpStatusCode.OK);
+         return $"{position.GetProperty("id").GetString() ?? "null"} {position.GetProperty("index").GetRawText()}";
+      }
+      JsonElement page;
+      (await Position("shop.customers", ["id"], ["2"])).ShouldBe("[\"2\"] 1");
+      (await Position("shop.customers", ["id"], [3])).ShouldBe("[\"3\"] 2");
+      (await Position("shop.customers", ["NAME"], ["Acme Ltd"])).ShouldBe("[\"1\"] 0", "by another unique column, named in any case");
+      (await Position("shop.customers", ["credit_limit"], ["1000.0"])).ShouldBe("[\"2\"] 1", "a decimal, however it is written");
+      // A composite key: the rows less in its first column, or equal in it and less in the second.
+      (await Position("shop.order_lines", ["order_id", "line_no"], ["1001", "2"])).ShouldBe("[\"1001\",\"2\"] 1");
+      (await Position("shop.order_lines", ["line_no", "order_id"], [1, 1003])).ShouldBe("[\"1003\",\"1\"] 3", "the columns in any order");
+      // None: no row holds the values, a NULL refers to none, rows without a key aren't told apart.
+      (await Position("shop.customers", ["id"], ["77"])).ShouldBe("null null");
+      (await Position("shop.customers", ["id"], [null])).ShouldBe("null null");
+      (await Position("shop.customers", ["city"], [null])).ShouldBe("null null", "a NULL refers to no row, though Gamma's city is NULL");
+      (await Position("shop.audit_log", ["message"], ["x"])).ShouldBe("null null");
+
+      // A key declared over a column with NULLs, which sort first: rows that start with one come before.
+      await (await admin.PostAsync("/api/overlay/virtual-entities", new { name = "reports.shipped", query = "shop.orders.select(ship_address_id, id)" }))
+         .JsonAsync(HttpStatusCode.Created);
+      await (await admin.PostAsync("/api/overlay/entity-settings", new { entity = "reports.shipped", key = new[] { "ship_address_id", "id" } }))
+         .JsonAsync(HttpStatusCode.Created);
+      page = await PageAsync(admin, Entity("reports.shipped"));
+      page.GetProperty("rows").EnumerateArray().Select(r => r.GetProperty("id").GetString()).ShouldBe(
+         ["[null,\"1004\"]", "[\"1\",\"1001\"]", "[\"1\",\"1002\"]", "[\"2\",\"1003\"]"]);
+      (await Position("reports.shipped", ["id"], ["1001"])).ShouldBe("[\"1\",\"1001\"] 1");
+      (await Position("reports.shipped", ["id"], ["1003"])).ShouldBe("[\"2\",\"1003\"] 3");
+      (await Position("reports.shipped", ["id"], ["1004"])).ShouldBe("[null,\"1004\"] null", "where among the NULLs isn't told");
+
+      // Rows in an order of their own are paged in it: the row is found, but not where.
+      await (await admin.PostAsync("/api/overlay/virtual-entities", new { name = "reports.by_total", query = "shop.orders.orderBy(total)" }))
+         .JsonAsync(HttpStatusCode.Created);
+      Firsts(await PageAsync(admin, Entity("reports.by_total"))).ShouldBe(["1004", "1003", "1002", "1001"]);
+      (await Position("reports.by_total", ["id"], ["1002"])).ShouldBe("[\"1002\"] null");
+      // Nor are rows put together in the merge engine with a text key: their sources may compare text otherwise.
+      string vip = Path.Combine(TestSources.Files(factory), "vip.db");
+      await TestSources.SqliteAsync(vip, "CREATE TABLE vip (name TEXT PRIMARY KEY); INSERT INTO vip VALUES ('Acme Ltd'), ('Beta Corp'); " +
+         "CREATE TABLE tokens (id GUID PRIMARY KEY, label TEXT); INSERT INTO tokens VALUES ('0F8FAD5B-D9CB-469F-A165-70867728950E', 'one')");
+      await TestSources.AddSqliteAsync(admin, "crm", vip);
+      await (await admin.PostAsync("/api/overlay/virtual-entities", new { name = "reports.vips", query = "shop.customers.where(c => crm.vip.any(v => v.name == c.name))" }))
+         .JsonAsync(HttpStatusCode.Created);
+      await (await admin.PostAsync("/api/overlay/entity-settings", new { entity = "reports.vips", key = new[] { "name" } }))
+         .JsonAsync(HttpStatusCode.Created);
+      (await Position("reports.vips", ["name"], ["Beta Corp"])).ShouldBe("[\"Beta Corp\"] null");
+      (await Position("shop.customers", ["name"], ["Beta Corp"])).ShouldBe("[\"2\"] 1", "one source's numbers compare alike");
+      // Keys whose values don't compare in order: found, but not where.
+      (await Position("crm.tokens", ["label"], ["one"])).ShouldBe("[\"0f8fad5b-d9cb-469f-a165-70867728950e\"] null");
+
+      // Readers find rows too, as they browse them.
+      await admin.CreateUserAsync("rae", nameof(UserRole.Read), "first-password-of-a-user");
+      TestApi rae = await TestApi.SignedInAsync(factory, "rae", "first-password-of-a-user", changeTo: "second-password-of-a-user");
+      (await (await rae.PostAsync("/api/browse/position", new { entity = "shop.customers", columns = new[] { "id" }, values = new[] { "3" } }))
+         .JsonAsync(HttpStatusCode.OK)).GetProperty("index").GetInt64().ShouldBe(2);
+
+      // The page of a grid of two rows a page that holds the row.
+      page = await PageAsync(admin, Entity("shop.order_lines", new { offset = 2, limit = 2 }));
+      page.GetProperty("rows")[1].GetProperty("id").GetString().ShouldBe("[\"1003\",\"1\"]");
+
+      async Task<Dictionary<string, string>> Refused(object request) =>
+         (await (await admin.PostAsync("/api/browse/position", request)).ProblemAsync(400, ProblemCodes.InvalidRequest))
+            .GetProperty("errors").EnumerateObject().ToDictionary(e => e.Name, e => e.Value[0].GetString()!);
+      (await Refused(new { entity = "shop.customers", columns = new[] { "nope" }, values = new[] { "1" } }))["columns[0]"]
+         .ShouldBe("shop.customers has no column 'nope'");
+      (await Refused(new { entity = "shop.customers", columns = new[] { "id" }, values = new[] { "abc" } }))["values[0]"]
+         .ShouldBe("'id': \"abc\" isn't a whole number");
+      (await Refused(new { entity = "shop.customers", columns = new[] { "id" }, values = new[] { "1", "2" } }))["values"]
+         .ShouldBe("Give a value for each column (1)");
+      (await Refused(new { entity = "shop.customers", columns = System.Array.Empty<string>(), values = System.Array.Empty<string>() }))["columns"]
+         .ShouldBe("Name the columns whose values find the row");
+      await (await admin.PostAsync("/api/browse/position", new { entity = "shop.nothing", columns = new[] { "id" }, values = new[] { "1" } }))
+         .ProblemAsync(404, ProblemCodes.NotFound);
+   }
+
    /// <summary>Counting that takes longer than allowed leaves the total out; the rows come all the same.</summary>
    [Fact]
    public async Task CountingThatTakesTooLongIsLeftOut()

@@ -1,0 +1,17 @@
+{
+  "name": "galaxydata-e2e",
+  "private": true,
+  "type": "module",
+  "description": "GalaxyData's end-to-end smoke test: the published application in a browser.",
+  "engines": {
+    "node": "^22.22.3 || ^24.15.0 || >=26"
+  },
+  "scripts": {
+    "publish-app": "node scripts/publish-app.mjs",
+    "test": "playwright test",
+    "e2e": "node scripts/publish-app.mjs && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}

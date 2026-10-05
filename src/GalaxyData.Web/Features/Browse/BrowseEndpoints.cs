@@ -14,7 +14,8 @@ namespace GalaxyData.Web.Features.Browse;
 
 /// <summary>
 /// Browsing, for anyone who reads data: pages of an entity's rows, or of those a navigation leads to from a row,
-/// as a grid shows them (filtered, sorted, paged), and the crumbs of a trail of such steps. POST, for their bodies.
+/// as a grid shows them (filtered, sorted, paged), the crumbs of a trail of such steps, and where a row is among its
+/// entity's rows. POST, for their bodies.
 /// </summary>
 public static class BrowseEndpoints
 {
@@ -41,6 +42,14 @@ public static class BrowseEndpoints
          .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
          .ProducesProblem(StatusCodes.Status502BadGateway)
          .ProducesProblem(StatusCodes.Status504GatewayTimeout);
+      browse.MapPost("/position", PositionAsync).WithName("BrowsePosition")
+         .WithSummary("Where a row is among its entity's rows: its key, and how many rows come before it in the key's order")
+         .Produces<BrowsePositionDto>()
+         .ProducesValidationProblem()
+         .ProducesProblem(StatusCodes.Status404NotFound)
+         .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+         .ProducesProblem(StatusCodes.Status502BadGateway)
+         .ProducesProblem(StatusCodes.Status504GatewayTimeout);
       return api;
    }
 
@@ -62,6 +71,18 @@ public static class BrowseEndpoints
       try
       {
          return TypedResults.Ok(await browse.TrailAsync(request, response, cancellationToken));
+      }
+      catch (ProblemResultException problem)
+      {
+         return problem.Result;
+      }
+   }
+
+   private static async Task<IResult> PositionAsync(BrowsePositionRequest request, HttpResponse response, BrowseService browse, CancellationToken cancellationToken)
+   {
+      try
+      {
+         return TypedResults.Ok(await browse.PositionAsync(request, response, cancellationToken));
       }
       catch (ProblemResultException problem)
       {

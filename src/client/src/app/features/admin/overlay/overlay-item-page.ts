@@ -80,6 +80,11 @@ export abstract class OverlayItemPage<
   /** The item's id (the route's); none for a new item. */
   readonly id = input<string>();
 
+  /** What the address gives a new item to start with (`?entity=`); an item read is as it was saved. */
+  protected given(value: string | undefined): string | undefined {
+    return this.id() === undefined ? value : undefined;
+  }
+
   /** The kind of item. */
   protected abstract readonly kind: OverlayItemKind;
   /** The field of an update's body that has the item (`relation`): the server names an update's errors under it. */
@@ -92,7 +97,10 @@ export abstract class OverlayItemPage<
   protected abstract update(id: number, input: TInput, version: number): Observable<TItem>;
   protected abstract remove(id: number, version: number): Observable<unknown>;
   protected abstract tryIt(input: TInput, id: number | null): Observable<OverlayCheck>;
-  /** What the form edits: the item's, or a new item's. It mustn't use the page's fields (it is called as they are made). */
+  /**
+   * What the form edits: the item's, or a new item's (started with what the address gives). It is called as the form
+   * is made, among the page's fields: it may use the page's inputs, which the pages declare first, but no other field.
+   */
   protected abstract modelOf(item: TItem | undefined): TModel;
   /** What is sent for what the form holds: names trimmed, blanks left out or null. */
   protected abstract inputOf(model: TModel): TInput;
