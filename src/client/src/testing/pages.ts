@@ -47,6 +47,16 @@ export function textOf(element: Element | null | undefined): string {
   return (element?.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
+/** The text of an element as it is read: without its icons' names (ligatures). */
+export function wordsOf(element: Element | null | undefined): string {
+  if (!element) {
+    return '';
+  }
+  const copy = element.cloneNode(true) as Element;
+  copy.querySelectorAll('mat-icon').forEach((icon) => icon.remove());
+  return textOf(copy);
+}
+
 /**
  * Clicks the button whose text is `text` without waiting for the application to be stable, as Material's harnesses
  * do: for a click that starts what only the test can finish (a request it answers, a dialog a navigation waits for).

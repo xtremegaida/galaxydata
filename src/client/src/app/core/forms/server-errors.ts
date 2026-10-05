@@ -11,11 +11,13 @@ export interface FieldErrors {
 
 /**
  * A problem's errors by field (`invalid-request`), on a form's fields, named as the API's JSON names them
- * (`userName`, `settings.Password`).
+ * (`userName`, `settings.Password`). The messages of fields the form hasn't are as `unplaced` words them (to say
+ * what they are about); as they are, by default.
  */
 export function fieldErrors(
   problem: Problem,
   fields: Readonly<Record<string, ReadonlyFieldTree<unknown>>>,
+  unplaced: (field: string, message: string) => string = (_, message) => message,
 ): FieldErrors {
   const errors: ValidationError.WithFieldTree[] = [];
   const others: string[] = [];
@@ -25,7 +27,7 @@ export function fieldErrors(
       if (fieldTree) {
         errors.push({ kind: 'server', message, fieldTree });
       } else {
-        others.push(message);
+        others.push(unplaced(name, message));
       }
     }
   }

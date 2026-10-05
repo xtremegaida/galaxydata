@@ -544,6 +544,48 @@ administrators (`allowedTo('canAdmin')` as a `canMatch` guard).
   looks again later, waiting twice as long each time (up to 30 seconds); the list keeps the connections it showed.
   A look begun before the connection was saved, or read again, is left aside.
 
+**The overlay** (`/admin/overlay`, `features/admin/overlay`): what the catalog adds to what the databases declare
+(see [server.md](server.md#the-overlay)).
+
+- **The overview** lists the items by kind (relations, virtual entities, entities' settings, navigation
+  overrides), each with what the catalog finds wrong with it now, and says how many don't work (or have warnings
+  only); on asking, only those with issues. It is read again as the catalog changes (`followCatalog`: a schema read
+  again elsewhere breaks or mends items). New items of each kind start from it; Export downloads the overlay as
+  `gdq --overlay` reads it (`GET /api/overlay/export`).
+- **An item's page** (`/admin/overlay/<kind>/new`, `/admin/overlay/<kind>/<id>`) is a form of the kind's on what the
+  four share (`OverlayItemPage`, a directive they extend):
+  - **Saved** as made (then shown at its address), or to the version read: someone else's change in between says
+    so, with "Read it again". While it is saved, what is edited is read-only (`readonly`), as edits made meanwhile
+    would be lost, and nothing else is done to it. The server's errors go on their fields (an update's are named
+    under the item, `relation.from`); one for the same thing there already (`overlay-item-exists`) goes on what
+    names it (the entity, the navigation, the name), the rest above the form. Deleting asks first, saying what it
+    does; changes not saved ask before the page is left.
+  - **Tried as it is edited:** once editing pauses (`OVERLAY_WAITS`), the item is sent to `validate`, in place of
+    the item as saved, and what the catalog makes of it is said under the form: whether it works, its issues, the
+    items that work now and wouldn't with it (named as the overlay names them), and what the kind adds. An item as
+    read (or saved) is tried at once; one that can't be yet says what it needs. What was tried last stays said while
+    it is tried again; what the server refuses in it (a path that isn't one, a type that isn't one) is why it can't
+    be tried, said by field, without a Try again that would fail alike. It is tried again as the catalog changes.
+  - **Entities and columns suggested:** entity paths come from the catalog's search as they are typed
+    (`EntitySearch`), and an entity's columns and navigations from the catalog (`EntityLookup`); any text may be
+    given (an entity whose schema isn't read, a column the catalog hides).
+  - **Another item of the kind** (a link to one it would break) is shown in the same page: what was said of the
+    one before goes, and answers to what was asked for it (a save, a delete) are left aside.
+- **Relations:** the entity whose rows refer to another's, the entity they lead to (in the same source or
+  another), and pairs of columns, each with the column it meets ("Meet its key" pairs them with the key of the
+  entity it leads to); its navigations' names, with the convention's said when they are left empty.
+- **Virtual entities:** a name with a namespace, its query in the query language's editor (what is wrong marked
+  where it is, listed with buttons that go there), a declared key (suggested from its query's columns), and the
+  entity it makes (`EntityStructure`); its rows on asking (Show its rows, or Ctrl+Enter in the editor), in the query
+  editor's results (`QueryResults`), whose links lead to browsing and to the query editor.
+- **Entity settings:** the entity, whether it is hidden, the column that shows its rows, a declared key, and a
+  table of its columns, each hidden, labelled or read as another type; columns the settings name that the entity
+  hasn't (or that aren't known, the entity not in the catalog) are listed till they are dropped, and others can be
+  added by name. Only what is set is sent. The entity as they make it is shown.
+- **Navigation overrides:** the entity, the navigation (suggested from the entity's by the names the convention
+  gives them: the catalog names the one this override renames by its new name), a new name, whether it is hidden;
+  the entity's navigations as it makes them.
+
 **The audit** (`/admin/audit`, `features/admin/audit`), as tabs:
 
 - **Commits of changes** (`/admin/audit/commits`): newest first, who committed, when, the outcome (committed,
@@ -566,8 +608,9 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
   `submit(form, { action })` where one form has two actions (the connection page's Save and Try it). The action
   sends the request, and gives back the server's errors for fields; each field shows its error until its value
   changes.
-  `fieldErrors(problem, fields)` puts a problem's errors by field (`invalid-request`) on the form's fields, named as
-  the API names them, and gives back the messages of the fields the form hasn't.
+  `fieldErrors(problem, fields, unplaced?)` puts a problem's errors by field (`invalid-request`) on the form's
+  fields, named as the API names them, and gives back the messages of the fields the form hasn't, worded by
+  `unplaced` when it is given (an entity's column settings say which column: `city: 'dat' isn't a type`).
 - **Problems with the whole form** (wrong credentials, the server out of reach) are shown above it, with
   `role="alert"`, until it is submitted again.
 - **Focus** goes to the first field with an error, after a submission refused by the form or by the server
@@ -621,6 +664,14 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
   deleted, the link copied, a group's rows followed) is said politely, a run stopped by its notice (a status);
   problems are alerts. Where what had the keyboard goes, the keyboard goes on: to Run after Stop, to the editor
   after New query, deleting, or following a group's rows.
+- **The overlay:** each column pair is a group ("Column pair 1"), and its remove button says which; the columns'
+  table names its controls by column ("Hide city", "city's label", "Read city as", "Drop town's settings"), and
+  its drop column has a header for screen readers. Where a button goes with what it did, the keyboard goes to what
+  takes its place: a pair or key column added takes it, one removed gives it to the one in its place (or to adding
+  one), "Meet its key" to the first column to name, dropping a column's settings to naming another, Read it again
+  to the page's heading, Try again to the heading of what the catalog makes of it, Show them again to the rows'
+  heading. A field the keyboard is put on because it is wrong has its suggestions closed, so they don't cover what
+  is wrong. What the catalog makes of the item is a status, its problems an alert.
 - **The path** is a navigation landmark ("Path"), a list of links, the crumb shown marked `aria-current="page"`;
   the `›` between crumbs is drawn by the style sheet, with no text for screen readers (`content: '›' / ''`).
 - **The catalog's tree** is a tree as WAI-ARIA describes one. It is one stop in the tab order.
@@ -708,8 +759,9 @@ compressed (the pending changes' store and badge are in it; their drawer, about 
 25 kB, load when first opened). It grows as the features use more of Angular's core (resources, for one), which every page shares, and
 of modules the shell uses: the CDK's virtual scrolling is in the module of the scrolling the shell's navigation
 uses, so it loads at first though only browsing uses it. Pages not needed at first are loaded when opened (lazy
-routes): the sign-in and password pages, the administrators' pages (about 255 kB), browsing (about 100 kB; its
-picker loads when first wanted), the query editor (about 65 kB), and a chunk they share of 1.22 MB (275 kB
+routes): the sign-in and password pages, the administrators' pages (about 370 kB, 63 kB compressed, the
+overlay's pages among them), browsing (about 86 kB; its picker loads when first wanted), the query editor (about
+41 kB: its results are in a chunk it shares with the overlay's pages), and a chunk they share of 1.21 MB (272 kB
 compressed), nearly all AG Grid. The editor (Monaco) is a
 chunk of 3.3 MB (660 kB compressed), with its stylesheet (`monaco.css`, 390 kB, 108 kB compressed, its icons'
 font in it) and worker (300 kB), loaded when an editor is first shown. The grids' chunk holds AG Grid's core and
@@ -763,6 +815,18 @@ for slow networks, so these can be raised when a feature needs it.
     `matchMedia`, which Monaco's theme asks for).
   - **Queries:** the page waits `QUERY_WAITS` before it checks a query and writes its address (a millisecond in
     tests); `src/testing/query.ts` makes the API's answers (pages of rows, explanations, saved queries, checks).
+  - **The overlay:** its pages wait `OVERLAY_WAITS` before they try an item and look up what it names (a
+    millisecond in tests); `src/testing/overlay.ts` makes the items and what trying them gives, answers the
+    lookups (`answerLookups`), and finds a page's fields by their labels and buttons by their words or names
+    (`overlayPage`). Autocompletes are driven as the browser does: the keyboard in the field, its value typed
+    (`typeIn`), an option clicked (`choose`).
+  - **Requests let go of** (a resource asked anew, as a check is while typing) are left aside by `requestTo`, which
+    gives the one request still open; `wordsOf` gives an element's text as it is read, without its icons' names.
+  - **Helpers aren't in specs:** a spec that another imports runs its tests in that one's file too (or in neither,
+    as the test build splits its files), so what specs share is in `src/testing` (`userOf` in
+    `src/testing/users.ts`).
+  - **Each test has 15 seconds** (`vitest-base.config.mts`, angular.json's `runnerConfig`): pages through the router
+    and AG Grid in jsdom take a few seconds a test, longer with every file run at once, past Vitest's 5.
   - **Back and forward:** the router follows the browser's history only once it listens, which an application's
     first navigation sets up and a test's router harness doesn't: a test that goes back calls
     `router.setUpLocationChangeListener()` first.

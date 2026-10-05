@@ -1,4 +1,4 @@
-import { userOf } from './user-list.spec';
+import { userOf } from '../../../../testing/users';
 import { generatePassword, userLabel, userStates } from './users';
 
 describe('users', () => {

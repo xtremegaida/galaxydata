@@ -1,0 +1,68 @@
+// Issues, as the overlay's pages list them: an icon by severity, the message, its code.
+
+:host {
+  display: block;
+}
+
+.issues {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.issue {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 0;
+  font: var(--mat-sys-body-medium);
+}
+
+.icon {
+  flex: none;
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+}
+
+.error .icon,
+.verdict.error {
+  color: var(--mat-sys-error);
+}
+
+.warning .icon {
+  color: var(--mat-sys-tertiary);
+}
+
+.code,
+.aside {
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+}
+
+.verdict {
+  margin: 4px 0 8px;
+}
+
+.check {
+  margin-top: 32px;
+}
+
+h3 {
+  margin: 16px 0 4px;
+  font: var(--mat-sys-title-small);
+}
+
+.breaks {
+  margin: 0;
+  padding: 0 0 0 20px;
+
+  li {
+    margin: 4px 0;
+  }
+}
+
+.reasons {
+  margin: 4px 0 0;
+  padding: 0 0 0 20px;
+}

@@ -1,0 +1,212 @@
+<div class="admin-page">
+  <a class="back" matButton routerLink="/admin/overlay">
+    <mat-icon>arrow_back</mat-icon>
+    Overlay
+  </a>
+
+  @if (item.isLoading()) {
+    <mat-progress-bar mode="indeterminate" aria-label="Loading the virtual entity" />
+  }
+  <div role="alert">
+    @if (loadProblem(); as problem) {
+      <gd-message kind="problem">
+        {{ message(problem) }}
+        <button gdMessageAction matButton type="button" (click)="reload()">Try again</button>
+      </gd-message>
+    }
+  </div>
+
+  @if (ready()) {
+    <header class="page-header">
+      <h1 tabindex="-1">{{ heading() }}</h1>
+      <p class="subtitle">
+        An entity whose rows are a query's, used as a table is.
+        @if (stored(); as stored) {
+          Made {{ stored.createdAt | date: 'medium' }}, last changed
+          {{ stored.updatedAt | date: 'medium' }}.
+        }
+      </p>
+    </header>
+
+    <div role="alert">
+      @if (problem(); as problem) {
+        <gd-message kind="problem">
+          {{ message(problem) }}
+          @for (other of unplaced(); track $index) {
+            <div>{{ other }}</div>
+          }
+          @if (stale(problem)) {
+            <button gdMessageAction matButton type="button" (click)="reload()">
+              Read it again
+            </button>
+          }
+        </gd-message>
+      }
+    </div>
+
+    <form class="form wide" [formRoot]="form">
+      <mat-form-field>
+        <mat-label>Name</mat-label>
+        <input matInput [formField]="form.name" autocomplete="off" spellcheck="false" />
+        <mat-hint>A namespace and a name, as queries will write it: reports.big_orders</mat-hint>
+        <mat-error>{{ form.name().errors()[0]?.message }}</mat-error>
+      </mat-form-field>
+
+      <gd-code-editor
+        class="query-editor"
+        label="Its query"
+        submitHint="shows its rows"
+        [text]="model().query"
+        [language]="languageId"
+        [markers]="markers()"
+        [readOnly]="saving()"
+        readOnlyMessage="It is being saved"
+        describedBy="gd-virtual-entity-query"
+        (textChange)="setQuery($event)"
+        (submitted)="showRows()"
+      />
+      <p class="query-hint" id="gd-virtual-entity-query">
+        @if (form.query().touched() && form.query().errors()[0]; as error) {
+          <span class="error">{{ error.message }}</span>
+        } @else {
+          The query whose rows it has: its columns are the query's.
+        }
+      </p>
+
+      <fieldset class="key">
+        <legend>Key</legend>
+        <p class="aside">
+          The columns that tell its rows apart, when the query's aren't the ones wanted (or it has
+          none): it serves navigation, never changing rows.
+        </p>
+        @for (column of model().key; track $index; let i = $index) {
+          <div class="listed">
+            <mat-form-field>
+              <mat-label>Key column {{ i + 1 }}</mat-label>
+              <input
+                matInput
+                [formField]="form.key[i]"
+                [attr.data-at]="'key-' + i"
+                [matAutocomplete]="keyColumn"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <mat-autocomplete #keyColumn="matAutocomplete">
+                @for (name of suggest(columns(), column); track name) {
+                  <mat-option [value]="name">{{ name }}</mat-option>
+                }
+              </mat-autocomplete>
+              <mat-error>{{ form.key[i]().errors()[0]?.message }}</mat-error>
+            </mat-form-field>
+            <button
+              matIconButton
+              type="button"
+              [attr.aria-label]="'Remove key column ' + (i + 1)"
+              [disabled]="saving()"
+              (click)="removeKeyColumn(i)"
+            >
+              <mat-icon>remove_circle_outline</mat-icon>
+            </button>
+          </div>
+        }
+        <div class="actions">
+          <button
+            matButton
+            type="button"
+            data-at="add-key"
+            [disabled]="saving()"
+            (click)="addKeyColumn()"
+          >
+            <mat-icon>add</mat-icon>
+            Add a key column
+          </button>
+        </div>
+      </fieldset>
+
+      <mat-form-field>
+        <mat-label>Description</mat-label>
+        <textarea matInput [formField]="form.description" rows="2"></textarea>
+        <mat-error>{{ form.description().errors()[0]?.message }}</mat-error>
+      </mat-form-field>
+
+      <div class="actions">
+        <button matButton="filled" type="submit" [disabled]="(stored() && !dirty()) || working()">
+          Save
+        </button>
+        <button matButton type="button" [disabled]="!dirty() || working()" (click)="undo()">
+          Undo the changes
+        </button>
+        <button
+          matButton="outlined"
+          type="button"
+          [disabled]="!model().query.trim()"
+          (click)="showRows()"
+        >
+          <mat-icon>table_view</mat-icon>
+          Show its rows
+        </button>
+        @if (stored()) {
+          <button matButton="outlined" type="button" [disabled]="working()" (click)="delete()">
+            <mat-icon>delete</mat-icon>
+            Delete
+          </button>
+        }
+      </div>
+    </form>
+
+    @if (run(); as run) {
+      <section class="section shown-rows" aria-labelledby="gd-virtual-entity-rows">
+        <h2 id="gd-virtual-entity-rows" tabindex="-1">Its rows</h2>
+        @if (run.text !== model().query) {
+          <p class="aside">
+            The query has changed since they were shown.
+            <button matButton type="button" (click)="showAgain()">Show them again</button>
+          </p>
+        }
+        <gd-query-results class="rows" [run]="run" (followed)="follow($event)" />
+      </section>
+    }
+
+    <gd-overlay-check
+      [check]="shownCheck()"
+      [checking]="checking()"
+      [problem]="checkProblem()"
+      [reasons]="checkReasons()"
+      [waiting]="needed()"
+      (retry)="tryAgain()"
+    >
+      @if (diagnostics().length > 0) {
+        <h3>Its query</h3>
+        <ul class="diagnostics">
+          @for (placed of diagnostics(); track $index) {
+            <li [class]="placed.diagnostic.severity">
+              <mat-icon class="icon" aria-hidden="true">{{
+                icons[placed.diagnostic.severity]
+              }}</mat-icon>
+              <span>
+                <span class="cdk-visually-hidden">{{ words[placed.diagnostic.severity] }}:</span>
+                {{ placed.diagnostic.message }}
+                <span class="aside">{{ placed.diagnostic.code }}</span>
+              </span>
+              <button
+                matButton
+                type="button"
+                [attr.aria-label]="'Go to line ' + placed.line + ', column ' + placed.column"
+                (click)="goTo(placed.diagnostic.start)"
+              >
+                Line {{ placed.line }}, column {{ placed.column }}
+              </button>
+            </li>
+          }
+        </ul>
+      }
+      @if (made(); as entity) {
+        <!-- One that doesn't work has nothing to show but its problem, which is said above. -->
+        @if (!entity.problem) {
+          <h3>The entity it makes</h3>
+          <gd-entity-structure [entity]="entity" />
+        }
+      }
+    </gd-overlay-check>
+  }
+</div>

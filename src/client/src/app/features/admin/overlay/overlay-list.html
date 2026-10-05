@@ -1,0 +1,223 @@
+<div class="admin-page">
+  <header class="page-header">
+    <h1>Overlay</h1>
+    <button matButton="filled" type="button" [matMenuTriggerFor]="newItems">
+      <mat-icon>add</mat-icon>
+      New
+    </button>
+    <mat-menu #newItems="matMenu">
+      <a mat-menu-item routerLink="relations/new">Relation</a>
+      <a mat-menu-item routerLink="virtual-entities/new">Virtual entity</a>
+      <a mat-menu-item routerLink="entity-settings/new">Entity settings</a>
+      <a mat-menu-item routerLink="navigations/new">Navigation override</a>
+    </mat-menu>
+    <a matButton="outlined" href="/api/overlay/export" download="overlay.json">
+      <mat-icon>download</mat-icon>
+      Export
+    </a>
+    <p class="subtitle">
+      What the catalog adds to what the databases declare: relations, entities defined by queries,
+      entities' settings, and navigations renamed or hidden. Each is kept whatever the catalog finds
+      wrong with it, and says so.
+    </p>
+  </header>
+
+  @if (overlay.isLoading() && !shown()) {
+    <mat-progress-bar mode="indeterminate" aria-label="Loading the overlay" />
+  }
+  <div role="alert">
+    @if (problem(); as problem) {
+      <gd-message kind="problem">
+        {{ message(problem) }}
+        <button gdMessageAction matButton type="button" (click)="overlay.reload()">
+          Try again
+        </button>
+      </gd-message>
+    }
+  </div>
+
+  @if (shown()) {
+    <div role="status">
+      @if (summary(); as summary) {
+        <gd-message [kind]="summary.kind">{{ summary.text }}</gd-message>
+      }
+    </div>
+
+    @if (empty()) {
+      <p class="empty">
+        Nothing yet: the catalog is as the databases declare it. Add relations they don't declare,
+        entities defined by queries, and settings.
+      </p>
+    } @else {
+      <mat-slide-toggle class="only-issues" [checked]="onlyIssues()" (change)="toggleOnlyIssues()">
+        Only those with issues
+      </mat-slide-toggle>
+
+      <section class="section" aria-labelledby="gd-overlay-relations">
+        <h2 id="gd-overlay-relations">Relations</h2>
+        @if (relations().length === 0) {
+          <p class="none">None{{ onlyIssues() ? ' with issues' : '' }}.</p>
+        } @else {
+          <div class="table-wrap">
+            <table class="items">
+              <thead>
+                <tr>
+                  <th scope="col">Relation</th>
+                  <th scope="col">Navigations</th>
+                  <th scope="col">Issues</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (relation of relations(); track relation.id) {
+                  <tr>
+                    <td>
+                      <a [routerLink]="['relations', relation.id]">{{ relationText(relation) }}</a>
+                      @if (relation.description) {
+                        <div class="aside">{{ relation.description }}</div>
+                      }
+                    </td>
+                    <td>
+                      @if (relation.navigations; as navigations) {
+                        <code>{{ navigations.forward }}</code
+                        >, back
+                        <code>{{ navigations.inverse }}</code>
+                      } @else {
+                        <span class="aside">None made</span>
+                      }
+                    </td>
+                    <td>
+                      @if (relation.issues.length > 0) {
+                        <gd-overlay-issues [issues]="relation.issues" />
+                      } @else {
+                        <span class="aside">None</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </section>
+
+      <section class="section" aria-labelledby="gd-overlay-virtual-entities">
+        <h2 id="gd-overlay-virtual-entities">Virtual entities</h2>
+        @if (virtualEntities().length === 0) {
+          <p class="none">None{{ onlyIssues() ? ' with issues' : '' }}.</p>
+        } @else {
+          <div class="table-wrap">
+            <table class="items">
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Key</th>
+                  <th scope="col">Issues</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (entity of virtualEntities(); track entity.id) {
+                  <tr>
+                    <td>
+                      <a [routerLink]="['virtual-entities', entity.id]">{{ entity.name }}</a>
+                      @if (entity.description) {
+                        <div class="aside">{{ entity.description }}</div>
+                      }
+                    </td>
+                    <td>
+                      @if (entity.key?.length) {
+                        {{ entity.key?.join(', ') }}
+                      } @else {
+                        <span class="aside">Its query's</span>
+                      }
+                    </td>
+                    <td>
+                      @if (entity.issues.length > 0) {
+                        <gd-overlay-issues [issues]="entity.issues" />
+                      } @else {
+                        <span class="aside">None</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </section>
+
+      <section class="section" aria-labelledby="gd-overlay-entity-settings">
+        <h2 id="gd-overlay-entity-settings">Entity settings</h2>
+        @if (entitySettings().length === 0) {
+          <p class="none">None{{ onlyIssues() ? ' with issues' : '' }}.</p>
+        } @else {
+          <div class="table-wrap">
+            <table class="items">
+              <thead>
+                <tr>
+                  <th scope="col">Entity</th>
+                  <th scope="col">Settings</th>
+                  <th scope="col">Issues</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (settings of entitySettings(); track settings.id) {
+                  <tr>
+                    <td>
+                      <a [routerLink]="['entity-settings', settings.id]">{{ settings.entity }}</a>
+                    </td>
+                    <td>{{ settingsParts(settings).join('; ') }}</td>
+                    <td>
+                      @if (settings.issues.length > 0) {
+                        <gd-overlay-issues [issues]="settings.issues" />
+                      } @else {
+                        <span class="aside">None</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </section>
+
+      <section class="section" aria-labelledby="gd-overlay-navigations">
+        <h2 id="gd-overlay-navigations">Navigation overrides</h2>
+        @if (navigations().length === 0) {
+          <p class="none">None{{ onlyIssues() ? ' with issues' : '' }}.</p>
+        } @else {
+          <div class="table-wrap">
+            <table class="items">
+              <thead>
+                <tr>
+                  <th scope="col">Navigation</th>
+                  <th scope="col">Override</th>
+                  <th scope="col">Issues</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (override of navigations(); track override.id) {
+                  <tr>
+                    <td>
+                      <a [routerLink]="['navigations', override.id]"
+                        >{{ override.entity }}.{{ override.navigation }}</a
+                      >
+                    </td>
+                    <td>{{ overrideText(override) }}</td>
+                    <td>
+                      @if (override.issues.length > 0) {
+                        <gd-overlay-issues [issues]="override.issues" />
+                      } @else {
+                        <span class="aside">None</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </section>
+    }
+  }
+</div>

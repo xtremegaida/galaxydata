@@ -1,0 +1,221 @@
+<div class="admin-page">
+  <a class="back" matButton routerLink="/admin/overlay">
+    <mat-icon>arrow_back</mat-icon>
+    Overlay
+  </a>
+
+  @if (item.isLoading()) {
+    <mat-progress-bar mode="indeterminate" aria-label="Loading the relation" />
+  }
+  <div role="alert">
+    @if (loadProblem(); as problem) {
+      <gd-message kind="problem">
+        {{ message(problem) }}
+        <button gdMessageAction matButton type="button" (click)="reload()">Try again</button>
+      </gd-message>
+    }
+  </div>
+
+  @if (ready()) {
+    <header class="page-header">
+      <h1 tabindex="-1">{{ heading() }}</h1>
+      <p class="subtitle">
+        A relation the databases don't declare: rows of one entity refer to rows of another, in the
+        same source or another.
+        @if (stored(); as stored) {
+          Made {{ stored.createdAt | date: 'medium' }}, last changed
+          {{ stored.updatedAt | date: 'medium' }}.
+        }
+      </p>
+    </header>
+
+    <div role="alert">
+      @if (problem(); as problem) {
+        <gd-message kind="problem">
+          {{ message(problem) }}
+          @for (other of unplaced(); track $index) {
+            <div>{{ other }}</div>
+          }
+          @if (stale(problem)) {
+            <button gdMessageAction matButton type="button" (click)="reload()">
+              Read it again
+            </button>
+          }
+        </gd-message>
+      }
+    </div>
+
+    <form class="form wide" [formRoot]="form">
+      <mat-form-field>
+        <mat-label>From</mat-label>
+        <input
+          matInput
+          [formField]="form.from"
+          [matAutocomplete]="fromChoices"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <mat-autocomplete #fromChoices="matAutocomplete">
+          @for (path of fromSearch.paths(); track path) {
+            <mat-option [value]="path">{{ path }}</mat-option>
+          }
+        </mat-autocomplete>
+        <mat-hint
+          >The entity whose rows refer to the others, as queries write it: wh.orders</mat-hint
+        >
+        <mat-error>{{ form.from().errors()[0]?.message }}</mat-error>
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>To</mat-label>
+        <input
+          matInput
+          [formField]="form.to"
+          [matAutocomplete]="toChoices"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <mat-autocomplete #toChoices="matAutocomplete">
+          @for (path of toSearch.paths(); track path) {
+            <mat-option [value]="path">{{ path }}</mat-option>
+          }
+        </mat-autocomplete>
+        <mat-hint>The entity they refer to, in this source or another: shop.customers</mat-hint>
+        <mat-error>{{ form.to().errors()[0]?.message }}</mat-error>
+      </mat-form-field>
+
+      <fieldset class="columns">
+        <legend>Columns</legend>
+        <p class="aside">
+          Each column of the rows that refer, and the column it meets: together, the key or a unique
+          key of the entity they refer to.
+        </p>
+        @for (pair of model().pairs; track $index; let i = $index) {
+          <div class="pair" role="group" [attr.aria-label]="'Column pair ' + (i + 1)">
+            <mat-form-field>
+              <mat-label>Column</mat-label>
+              <input
+                matInput
+                [formField]="form.pairs[i].from"
+                [attr.data-at]="'from-' + i"
+                [matAutocomplete]="fromColumn"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <mat-autocomplete #fromColumn="matAutocomplete">
+                @for (name of suggest(fromEntity.columns(), pair.from); track name) {
+                  <mat-option [value]="name">{{ name }}</mat-option>
+                }
+              </mat-autocomplete>
+              <mat-error>{{ form.pairs[i].from().errors()[0]?.message }}</mat-error>
+            </mat-form-field>
+            <mat-icon class="meets" aria-hidden="true">arrow_forward</mat-icon>
+            <mat-form-field>
+              <mat-label>Meets</mat-label>
+              <input
+                matInput
+                [formField]="form.pairs[i].to"
+                [attr.data-at]="'to-' + i"
+                [matAutocomplete]="toColumn"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <mat-autocomplete #toColumn="matAutocomplete">
+                @for (name of suggest(toEntity.columns(), pair.to); track name) {
+                  <mat-option [value]="name">{{ name }}</mat-option>
+                }
+              </mat-autocomplete>
+              <mat-error>{{ form.pairs[i].to().errors()[0]?.message }}</mat-error>
+            </mat-form-field>
+            @if (model().pairs.length > 1) {
+              <button
+                matIconButton
+                type="button"
+                [attr.aria-label]="'Remove column pair ' + (i + 1)"
+                [disabled]="saving()"
+                (click)="removePair(i)"
+              >
+                <mat-icon>remove_circle_outline</mat-icon>
+              </button>
+            }
+          </div>
+        }
+        <div class="actions">
+          <button matButton type="button" [disabled]="saving()" (click)="addPair()">
+            <mat-icon>add</mat-icon>
+            Add a column
+          </button>
+          @if (keyToMeet(); as key) {
+            <button matButton type="button" [disabled]="saving()" (click)="meetKey(key)">
+              Meet its key: {{ key.join(', ') }}
+            </button>
+          }
+        </div>
+      </fieldset>
+
+      <mat-form-field>
+        <mat-label>Navigation's name</mat-label>
+        <input matInput [formField]="form.name" autocomplete="off" spellcheck="false" />
+        <mat-hint>
+          From the rows that refer to those they refer to.
+          @if (!model().name.trim() && navigations(); as navigations) {
+            As the convention names it: {{ navigations.forward }}
+          }
+        </mat-hint>
+        <mat-error>{{ form.name().errors()[0]?.message }}</mat-error>
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>The way back's name</mat-label>
+        <input matInput [formField]="form.inverseName" autocomplete="off" spellcheck="false" />
+        <mat-hint>
+          From the rows referred to back to those that refer to them.
+          @if (!model().inverseName.trim() && navigations(); as navigations) {
+            As the convention names it: {{ navigations.inverse }}
+          }
+        </mat-hint>
+        <mat-error>{{ form.inverseName().errors()[0]?.message }}</mat-error>
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Description</mat-label>
+        <textarea matInput [formField]="form.description" rows="2"></textarea>
+        <mat-error>{{ form.description().errors()[0]?.message }}</mat-error>
+      </mat-form-field>
+
+      <div class="actions">
+        <button matButton="filled" type="submit" [disabled]="(stored() && !dirty()) || working()">
+          Save
+        </button>
+        <button matButton type="button" [disabled]="!dirty() || working()" (click)="undo()">
+          Undo the changes
+        </button>
+        @if (stored()) {
+          <button matButton="outlined" type="button" [disabled]="working()" (click)="delete()">
+            <mat-icon>delete</mat-icon>
+            Delete
+          </button>
+        }
+      </div>
+    </form>
+
+    <gd-overlay-check
+      [check]="shownCheck()"
+      [checking]="checking()"
+      [problem]="checkProblem()"
+      [reasons]="checkReasons()"
+      [waiting]="needed()"
+      (retry)="tryAgain()"
+    >
+      @if (navigations(); as navigations) {
+        <p>
+          Rows of <code>{{ model().from.trim() }}</code> lead to those they refer to through
+          <code>{{ navigations.forward }}</code
+          >, and rows of <code>{{ model().to.trim() }}</code> back to them through
+          <code>{{ navigations.inverse }}</code
+          >.
+        </p>
+      }
+    </gd-overlay-check>
+  }
+</div>

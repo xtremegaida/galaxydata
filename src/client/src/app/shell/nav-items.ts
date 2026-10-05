@@ -40,6 +40,13 @@ export const navItems: readonly NavItem[] = [
     section: 'Administration',
   },
   {
+    label: 'Overlay',
+    icon: 'layers',
+    link: '/admin/overlay',
+    needs: 'canAdmin',
+    section: 'Administration',
+  },
+  {
     label: 'Audit',
     icon: 'history',
     link: '/admin/audit',

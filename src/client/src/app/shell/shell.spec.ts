@@ -287,6 +287,7 @@ describe('navItemsFor', () => {
       items: [
         { label: 'Users' },
         { label: 'Connections' },
+        { label: 'Overlay', link: '/admin/overlay' },
         { label: 'Audit', link: '/admin/audit' },
       ],
     });

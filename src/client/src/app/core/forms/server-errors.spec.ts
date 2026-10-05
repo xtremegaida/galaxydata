@@ -28,6 +28,21 @@ describe('fieldErrors', () => {
     expect(others).toEqual(['Not a role.', 'Not a field.']);
   });
 
+  it("words the others' messages as asked, to say what they are about", () => {
+    const fields = form(signal({ name: '' }), { injector: TestBed.inject(Injector) });
+    const { others } = fieldErrors(
+      {
+        status: 400,
+        code: 'invalid-request',
+        title: 'One or more validation errors occurred.',
+        errors: { name: ['Taken.'], 'columns[0].type': ["'dat' isn't a type."] },
+      },
+      { name: fields.name },
+      (field, message) => `${field}: ${message}`,
+    );
+    expect(others).toEqual(["columns[0].type: 'dat' isn't a type."]);
+  });
+
   it('has nothing for a problem without errors', () => {
     expect(fieldErrors({ status: 500, code: 'internal-error', title: 'Oops' }, {})).toEqual({
       errors: [],

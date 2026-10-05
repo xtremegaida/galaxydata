@@ -40,6 +40,7 @@ export const ProblemCode = {
   concurrencyConflict: 'concurrency-conflict',
   userNameTaken: 'user-name-taken',
   aliasTaken: 'alias-taken',
+  overlayItemExists: 'overlay-item-exists',
 } as const;
 
 /** The codes the API gives problems without codes of their own, by status. */

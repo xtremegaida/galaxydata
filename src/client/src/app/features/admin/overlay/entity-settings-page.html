@@ -1,0 +1,304 @@
+<div class="admin-page">
+  <a class="back" matButton routerLink="/admin/overlay">
+    <mat-icon>arrow_back</mat-icon>
+    Overlay
+  </a>
+
+  @if (item.isLoading()) {
+    <mat-progress-bar mode="indeterminate" aria-label="Loading the settings" />
+  }
+  <div role="alert">
+    @if (loadProblem(); as problem) {
+      <gd-message kind="problem">
+        {{ message(problem) }}
+        <button gdMessageAction matButton type="button" (click)="reload()">Try again</button>
+      </gd-message>
+    }
+  </div>
+
+  @if (ready()) {
+    <header class="page-header">
+      <h1 tabindex="-1">{{ heading() }}</h1>
+      <p class="subtitle">
+        An entity's settings: a key for views and tables without one, the column that shows its
+        rows, whether it is hidden, and its columns' labels and types.
+        @if (stored(); as stored) {
+          Made {{ stored.createdAt | date: 'medium' }}, last changed
+          {{ stored.updatedAt | date: 'medium' }}.
+        }
+      </p>
+    </header>
+
+    <div role="alert">
+      @if (problem(); as problem) {
+        <gd-message kind="problem">
+          {{ message(problem) }}
+          @for (other of unplaced(); track $index) {
+            <div>{{ other }}</div>
+          }
+          @if (stale(problem)) {
+            <button gdMessageAction matButton type="button" (click)="reload()">
+              Read it again
+            </button>
+          }
+        </gd-message>
+      }
+    </div>
+
+    <form class="form wide" [formRoot]="form">
+      <mat-form-field>
+        <mat-label>Entity</mat-label>
+        <input
+          matInput
+          [formField]="form.entity"
+          [matAutocomplete]="entityChoices"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <mat-autocomplete #entityChoices="matAutocomplete">
+          @for (path of entitySearch.paths(); track path) {
+            <mat-option [value]="path">{{ path }}</mat-option>
+          }
+        </mat-autocomplete>
+        <mat-hint>As queries write it: shop.orders</mat-hint>
+        <mat-error>{{ form.entity().errors()[0]?.message }}</mat-error>
+      </mat-form-field>
+
+      <mat-slide-toggle [formField]="form.hidden">
+        Hidden: left out of the catalog's tree (queries may still name it)
+      </mat-slide-toggle>
+
+      <mat-form-field>
+        <mat-label>Shown by</mat-label>
+        <input
+          matInput
+          [formField]="form.displayColumn"
+          [matAutocomplete]="displayChoices"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <mat-autocomplete #displayChoices="matAutocomplete">
+          @for (name of suggest(entity.columns(), model().displayColumn); track name) {
+            <mat-option [value]="name">{{ name }}</mat-option>
+          }
+        </mat-autocomplete>
+        <mat-hint>
+          The column that shows a row where others refer to it; the convention's when empty
+          @if (entity.entity()?.displayColumn; as shown) {
+            (now {{ shown }})
+          }
+        </mat-hint>
+        <mat-error>{{ form.displayColumn().errors()[0]?.message }}</mat-error>
+      </mat-form-field>
+
+      <fieldset class="key">
+        <legend>Key</legend>
+        <p class="aside">
+          For views and tables without one: the columns that tell its rows apart. It serves
+          navigation, never changing rows.
+          @if (entity.key(); as key) {
+            Its key now: {{ key.join(', ') }}.
+          }
+        </p>
+        @for (column of model().key; track $index; let i = $index) {
+          <div class="listed">
+            <mat-form-field>
+              <mat-label>Key column {{ i + 1 }}</mat-label>
+              <input
+                matInput
+                [formField]="form.key[i]"
+                [attr.data-at]="'key-' + i"
+                [matAutocomplete]="keyColumn"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <mat-autocomplete #keyColumn="matAutocomplete">
+                @for (name of suggest(entity.columns(), column); track name) {
+                  <mat-option [value]="name">{{ name }}</mat-option>
+                }
+              </mat-autocomplete>
+              <mat-error>{{ form.key[i]().errors()[0]?.message }}</mat-error>
+            </mat-form-field>
+            <button
+              matIconButton
+              type="button"
+              [attr.aria-label]="'Remove key column ' + (i + 1)"
+              [disabled]="saving()"
+              (click)="removeKeyColumn(i)"
+            >
+              <mat-icon>remove_circle_outline</mat-icon>
+            </button>
+          </div>
+        }
+        <div class="actions">
+          <button
+            matButton
+            type="button"
+            data-at="add-key"
+            [disabled]="saving()"
+            (click)="addKeyColumn()"
+          >
+            <mat-icon>add</mat-icon>
+            Add a key column
+          </button>
+        </div>
+      </fieldset>
+
+      <fieldset class="columns">
+        <legend>Columns</legend>
+        @if (columnRows().length === 0) {
+          <p class="aside">
+            @if (model().entity.trim()) {
+              Its columns are listed once the catalog has the entity.
+            } @else {
+              Name the entity to list its columns.
+            }
+          </p>
+        } @else {
+          <div class="table-wrap">
+            <table class="column-settings" aria-label="Columns' settings">
+              <thead>
+                <tr>
+                  <th scope="col">Column</th>
+                  <th scope="col">Type</th>
+                  <th scope="col">Hidden</th>
+                  <th scope="col">Label</th>
+                  <th scope="col">Read as</th>
+                  <th scope="col"><span class="cdk-visually-hidden">Drop</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of columnRows(); track row.name) {
+                  <tr>
+                    <th scope="row">
+                      {{ row.name }}
+                      @if (row.gone) {
+                        <div class="gone">Not a column of the entity</div>
+                      }
+                    </th>
+                    <td class="type">{{ row.type }}</td>
+                    <td>
+                      <mat-checkbox
+                        [checked]="row.setting?.hidden ?? false"
+                        [disabled]="saving()"
+                        [aria-label]="'Hide ' + row.name"
+                        (change)="setColumn(row.name, { hidden: $event.checked })"
+                      />
+                    </td>
+                    <td>
+                      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                        <input
+                          matInput
+                          [value]="row.setting?.label ?? ''"
+                          [readonly]="saving()"
+                          [attr.aria-label]="row.name + '’s label'"
+                          [attr.data-at]="'label-' + row.name"
+                          autocomplete="off"
+                          (input)="setColumn(row.name, { label: typedIn($event) })"
+                        />
+                      </mat-form-field>
+                    </td>
+                    <td>
+                      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                        <input
+                          matInput
+                          [value]="row.setting?.type ?? ''"
+                          [readonly]="saving()"
+                          [attr.aria-label]="'Read ' + row.name + ' as'"
+                          [matAutocomplete]="typeChoices"
+                          autocomplete="off"
+                          spellcheck="false"
+                          (input)="setColumn(row.name, { type: typedIn($event) })"
+                        />
+                        <mat-autocomplete
+                          #typeChoices="matAutocomplete"
+                          (optionSelected)="setColumn(row.name, { type: $event.option.value })"
+                        >
+                          @for (type of suggest(types, row.setting?.type ?? ''); track type) {
+                            <mat-option [value]="type">{{ type }}</mat-option>
+                          }
+                        </mat-autocomplete>
+                      </mat-form-field>
+                    </td>
+                    <td>
+                      @if (row.type === null) {
+                        <button
+                          matIconButton
+                          type="button"
+                          [attr.aria-label]="'Drop ' + row.name + '’s settings'"
+                          [disabled]="saving()"
+                          (click)="dropColumn(row.name)"
+                        >
+                          <mat-icon>remove_circle_outline</mat-icon>
+                        </button>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="aside">
+            A type it is read as, such as date for a SQLite text column; its own when empty.
+          </p>
+        }
+        <div class="listed another">
+          <mat-form-field>
+            <mat-label>Another column</mat-label>
+            <input
+              matInput
+              data-at="another-column"
+              autocomplete="off"
+              spellcheck="false"
+              [value]="another()"
+              [readonly]="saving()"
+              (input)="another.set(typedIn($event))"
+              (keydown.enter)="addColumn($event)"
+            />
+            <mat-hint
+              >A column to give settings that isn't listed: the catalog may not have it</mat-hint
+            >
+          </mat-form-field>
+          <button
+            matButton
+            type="button"
+            [disabled]="!another().trim() || saving()"
+            (click)="addColumn()"
+          >
+            <mat-icon>add</mat-icon>
+            Add its settings
+          </button>
+        </div>
+      </fieldset>
+
+      <div class="actions">
+        <button matButton="filled" type="submit" [disabled]="(stored() && !dirty()) || working()">
+          Save
+        </button>
+        <button matButton type="button" [disabled]="!dirty() || working()" (click)="undo()">
+          Undo the changes
+        </button>
+        @if (stored()) {
+          <button matButton="outlined" type="button" [disabled]="working()" (click)="delete()">
+            <mat-icon>delete</mat-icon>
+            Delete
+          </button>
+        }
+      </div>
+    </form>
+
+    <gd-overlay-check
+      [check]="shownCheck()"
+      [checking]="checking()"
+      [problem]="checkProblem()"
+      [reasons]="checkReasons()"
+      [waiting]="needed()"
+      (retry)="tryAgain()"
+    >
+      @if (made(); as entity) {
+        <h3>The entity, with them</h3>
+        <gd-entity-structure [entity]="entity" />
+      }
+    </gd-overlay-check>
+  }
+</div>

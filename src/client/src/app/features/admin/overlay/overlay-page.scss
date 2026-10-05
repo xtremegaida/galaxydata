@@ -1,0 +1,150 @@
+// What the overlay's item pages add to the administrators' pages: lists of columns, and code.
+
+@use '@angular/material' as mat;
+
+.form mat-slide-toggle {
+  margin: 4px 0 12px;
+}
+
+.form.wide {
+  max-width: 720px;
+}
+
+fieldset {
+  margin: 4px 0 16px;
+  padding: 0;
+  border: none;
+
+  legend {
+    padding: 0;
+    margin-bottom: 4px;
+    font: var(--mat-sys-title-small);
+  }
+}
+
+.aside {
+  margin: 4px 0 8px;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+}
+
+.pair,
+.listed {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+
+  mat-form-field {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  button {
+    margin-top: 8px;
+  }
+}
+
+.meets {
+  flex: none;
+  margin-top: 16px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+code {
+  font-family: var(--gd-code-font-family);
+}
+
+h3 {
+  margin: 16px 0 4px;
+  font: var(--mat-sys-title-small);
+}
+
+.navigations {
+  margin: 0;
+  padding: 0 0 0 20px;
+}
+
+.query-hint .error,
+.diagnostics .error .icon {
+  color: var(--mat-sys-error);
+}
+
+.diagnostics .warning .icon {
+  color: var(--mat-sys-tertiary);
+}
+
+// The editor may be made taller (or shorter) by its corner.
+.query-editor {
+  height: 240px;
+  min-height: 120px;
+  max-height: 70vh;
+  margin: 0 0 4px;
+  overflow: hidden;
+  resize: vertical;
+}
+
+.query-hint {
+  margin: 0 0 16px;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+}
+
+.diagnostics {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+// The table's fields are small: a row of them for each column.
+.column-settings {
+  @include mat.form-field-density(-4);
+
+  border-collapse: collapse;
+  width: 100%;
+  font: var(--mat-sys-body-medium);
+
+  th,
+  td {
+    padding: 2px 12px 2px 0;
+    text-align: start;
+    vertical-align: middle;
+  }
+
+  th[scope='row'] {
+    font: var(--mat-sys-body-medium);
+    font-family: var(--gd-code-font-family);
+  }
+
+  th {
+    font: var(--mat-sys-title-small);
+    padding-bottom: 4px;
+  }
+
+  .type {
+    color: var(--mat-sys-on-surface-variant);
+    font-family: var(--gd-code-font-family);
+  }
+
+  mat-form-field {
+    width: 100%;
+  }
+
+  .gone {
+    color: var(--mat-sys-error);
+    font: var(--mat-sys-body-small);
+  }
+}
+
+.shown-rows {
+  margin-top: 32px;
+}
+
+.rows {
+  height: 420px;
+}

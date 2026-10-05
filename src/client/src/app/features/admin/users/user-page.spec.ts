@@ -10,7 +10,7 @@ import { problemBody, sessionOf } from '../../../../testing/auth';
 import { requestTo, settle } from '../../../../testing/http';
 import { alertsOf, clickButton, openPage, pageProviders, textOf } from '../../../../testing/pages';
 import { adminRoutes } from '../admin.routes';
-import { userOf } from './user-list.spec';
+import { userOf } from '../../../../testing/users';
 
 describe('UserPage', () => {
   beforeEach(() => {

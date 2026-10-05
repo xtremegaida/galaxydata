@@ -8,7 +8,7 @@ import { problemBody } from '../../../../testing/auth';
 import { requestTo, settle } from '../../../../testing/http';
 import { clickButton, openPage, pageProviders } from '../../../../testing/pages';
 import { adminRoutes } from '../admin.routes';
-import { userOf } from './user-list.spec';
+import { userOf } from '../../../../testing/users';
 
 describe('NewUser', () => {
   beforeEach(() => {

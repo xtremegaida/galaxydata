@@ -1,0 +1,141 @@
+<div class="admin-page">
+  <a class="back" matButton routerLink="/admin/overlay">
+    <mat-icon>arrow_back</mat-icon>
+    Overlay
+  </a>
+
+  @if (item.isLoading()) {
+    <mat-progress-bar mode="indeterminate" aria-label="Loading the navigation override" />
+  }
+  <div role="alert">
+    @if (loadProblem(); as problem) {
+      <gd-message kind="problem">
+        {{ message(problem) }}
+        <button gdMessageAction matButton type="button" (click)="reload()">Try again</button>
+      </gd-message>
+    }
+  </div>
+
+  @if (ready()) {
+    <header class="page-header">
+      <h1 tabindex="-1">{{ heading() }}</h1>
+      <p class="subtitle">
+        A navigation renamed or hidden, found by the name the convention gives it.
+        @if (stored(); as stored) {
+          Made {{ stored.createdAt | date: 'medium' }}, last changed
+          {{ stored.updatedAt | date: 'medium' }}.
+        }
+      </p>
+    </header>
+
+    <div role="alert">
+      @if (problem(); as problem) {
+        <gd-message kind="problem">
+          {{ message(problem) }}
+          @for (other of unplaced(); track $index) {
+            <div>{{ other }}</div>
+          }
+          @if (stale(problem)) {
+            <button gdMessageAction matButton type="button" (click)="reload()">
+              Read it again
+            </button>
+          }
+        </gd-message>
+      }
+    </div>
+
+    <form class="form" [formRoot]="form">
+      <mat-form-field>
+        <mat-label>Entity</mat-label>
+        <input
+          matInput
+          [formField]="form.entity"
+          [matAutocomplete]="entityChoices"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <mat-autocomplete #entityChoices="matAutocomplete">
+          @for (path of entitySearch.paths(); track path) {
+            <mat-option [value]="path">{{ path }}</mat-option>
+          }
+        </mat-autocomplete>
+        <mat-hint>The entity the navigation is on, as queries write it: shop.orders</mat-hint>
+        <mat-error>{{ form.entity().errors()[0]?.message }}</mat-error>
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Navigation</mat-label>
+        <input
+          matInput
+          [formField]="form.navigation"
+          [matAutocomplete]="navigationList"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <mat-autocomplete #navigationList="matAutocomplete">
+          @for (navigation of navigationChoices(); track navigation.name) {
+            <mat-option [value]="navigation.name">
+              {{ navigation.name }}
+              <span class="aside">to {{ navigation.target }}</span>
+            </mat-option>
+          }
+        </mat-autocomplete>
+        <mat-hint>As the convention names it</mat-hint>
+        <mat-error>{{ form.navigation().errors()[0]?.message }}</mat-error>
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Rename it to</mat-label>
+        <input matInput [formField]="form.renameTo" autocomplete="off" spellcheck="false" />
+        <mat-hint>Its name in queries and links; as the convention has it when empty</mat-hint>
+        <mat-error>{{ form.renameTo().errors()[0]?.message }}</mat-error>
+      </mat-form-field>
+
+      <mat-slide-toggle [formField]="form.hidden">
+        Hidden: it gives no links, and isn't offered (queries may still name it)
+      </mat-slide-toggle>
+
+      <div class="actions">
+        <button matButton="filled" type="submit" [disabled]="(stored() && !dirty()) || working()">
+          Save
+        </button>
+        <button matButton type="button" [disabled]="!dirty() || working()" (click)="undo()">
+          Undo the changes
+        </button>
+        @if (stored()) {
+          <button matButton="outlined" type="button" [disabled]="working()" (click)="delete()">
+            <mat-icon>delete</mat-icon>
+            Delete
+          </button>
+        }
+      </div>
+    </form>
+
+    <gd-overlay-check
+      [check]="shownCheck()"
+      [checking]="checking()"
+      [problem]="checkProblem()"
+      [reasons]="checkReasons()"
+      [waiting]="needed()"
+      (retry)="tryAgain()"
+    >
+      @if (made(); as navigations) {
+        <h3>The entity's navigations, with it</h3>
+        @if (navigations.length === 0) {
+          <p class="aside">None.</p>
+        } @else {
+          <ul class="navigations">
+            @for (navigation of navigations; track $index) {
+              <li>
+                <code>{{ navigation.name }}</code> to {{ navigation.target }}
+                @if (navigation.hidden) {
+                  <span class="aside">(hidden)</span>
+                }
+              </li>
+            }
+          </ul>
+        }
+      }
+    </gd-overlay-check>
+  }
+</div>

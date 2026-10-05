@@ -6,24 +6,7 @@ import { problemBody } from '../../../../testing/auth';
 import { requestTo, settle } from '../../../../testing/http';
 import { alertsOf, openPage, pageProviders, textOf } from '../../../../testing/pages';
 import { adminRoutes } from '../admin.routes';
-import type { User } from './users';
-
-export function userOf(changes: Partial<User> = {}): User {
-  return {
-    id: 2,
-    userName: 'carol',
-    displayName: 'Carol Danvers',
-    role: 'dataManager',
-    isDisabled: false,
-    mustChangePassword: false,
-    lockedOutUntil: null,
-    createdAt: '2026-10-01T09:00:00Z',
-    lastSignInAt: '2026-10-03T10:00:00Z',
-    passwordChangedAt: '2026-10-01T09:00:00Z',
-    version: 4,
-    ...changes,
-  };
-}
+import { userOf } from '../../../../testing/users';
 
 describe('UserList', () => {
   const users = [

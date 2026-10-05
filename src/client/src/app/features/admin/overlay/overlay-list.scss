@@ -1,0 +1,38 @@
+// The overlay's items, in a table for each kind.
+
+.only-issues {
+  display: block;
+  margin: 0 0 16px;
+}
+
+.items {
+  border-collapse: collapse;
+  font: var(--mat-sys-body-medium);
+
+  th,
+  td {
+    padding: 8px 16px 8px 0;
+    text-align: start;
+    vertical-align: top;
+    border-bottom: 1px solid var(--mat-sys-outline-variant);
+  }
+
+  th {
+    font: var(--mat-sys-title-small);
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+.aside,
+.none {
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+}
+
+.none {
+  margin: 0;
+}
+
+code {
+  font-family: var(--gd-code-font-family);
+}
