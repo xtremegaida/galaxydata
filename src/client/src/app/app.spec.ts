@@ -10,6 +10,7 @@ import { firstValueFrom, of } from 'rxjs';
 import { fakeBrowserProviders, problemBody, sessionOf, signedOut } from '../testing/auth';
 import { answerChildren, catalogOf, entityOf, searchUrl, sourceNode } from '../testing/catalog';
 import { answerGrid } from '../testing/browse';
+import { answerChanges } from '../testing/changes';
 import { requestTo, settle } from '../testing/http';
 import { App } from './app';
 import { BrowseGrid } from './features/browse/grid/browse-grid';
@@ -55,6 +56,8 @@ describe('App', () => {
     (await requestTo(http, '/api/auth/sign-in', 'POST')).flush(sessionOf(), {
       headers: { 'X-Catalog-Version': 'v1' },
     });
+    // Those who change data have their pending changes read.
+    await answerChanges(http);
     await settle();
     await fixture.whenStable();
     expect(router.url).toBe('/');
@@ -86,6 +89,7 @@ describe('App', () => {
     (await requestTo(http, '/api/auth/session')).flush(sessionOf('dataManager'));
     await navigating;
     expect(router.url).toBe('/');
+    await answerChanges(http);
   });
 
   it("loads the administrators' pages for administrators", async () => {
@@ -95,6 +99,7 @@ describe('App', () => {
     (await requestTo(http, '/api/auth/session')).flush(sessionOf('admin'));
     await navigating;
     expect(router.url).toBe('/admin/users');
+    await answerChanges(http);
     (await requestTo(http, '/api/users')).flush([]);
     await fixture.whenStable();
     expect((fixture.nativeElement as HTMLElement).querySelector('h1')?.textContent).toBe('Users');

@@ -2,7 +2,9 @@ import {
   Component,
   ElementRef,
   InjectionToken,
+  Injector,
   LOCALE_ID,
+  afterNextRender,
   computed,
   effect,
   inject,
@@ -13,9 +15,11 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { DOCUMENT, LocationStrategy } from '@angular/common';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { MatButton, MatIconButton } from '@angular/material/button';
+import { MatDialog } from '@angular/material/dialog';
 import { MatFormField, MatLabel } from '@angular/material/form-field';
 import { MatIcon } from '@angular/material/icon';
 import { MatInput } from '@angular/material/input';
@@ -25,29 +29,40 @@ import { Router, type UrlTree } from '@angular/router';
 import { AgGridAngular } from 'ag-grid-angular';
 import {
   BigIntFilterModule,
+  type CellDoubleClickedEvent,
   type CellFocusedEvent,
+  type CellKeyDownEvent,
+  type FullWidthCellKeyDownEvent,
   CellStyleModule,
   ColumnApiModule,
+  DateEditorModule,
   DateFilterModule,
   type GridApi,
   type GridOptions,
   type GridReadyEvent,
   GridStateModule,
   InfiniteRowModelModule,
+  LargeTextEditorModule,
   LocaleModule,
   type Module,
   NumberFilterModule,
   PaginationModule,
+  PinnedRowModule,
   RenderApiModule,
   RowApiModule,
+  type RowClassRules,
   RowSelectionModule,
+  RowStyleModule,
+  ScrollApiModule,
+  SelectEditorModule,
   type SelectionChangedEvent,
   type SortModelItem,
+  TextEditorModule,
   TextFilterModule,
   TooltipModule,
   ValidationModule,
 } from 'ag-grid-community';
-import { type Observable, catchError, map, throwError } from 'rxjs';
+import { type Observable, catchError, firstValueFrom, map, throwError } from 'rxjs';
 import { ApiClient } from '../../../core/api/api-client';
 import {
   type Problem,
@@ -58,6 +73,14 @@ import {
 import { readStored, storageOf, writeStored } from '../../../core/browser/stored';
 import type { BrowseCrumb } from '../../../core/browse/browse-url';
 import { followCatalog } from '../../../core/catalog/catalog-changes';
+import {
+  type ChangeRow,
+  type EntityChanges,
+  type Outcome,
+  PendingChanges,
+  type PendingChange,
+  type Values,
+} from '../../../core/changes/pending-changes';
 import { Message } from '../../../core/ui/message';
 import {
   BrowseDatasource,
@@ -70,27 +93,50 @@ import {
   sameQuery,
 } from './browse-datasource';
 import {
+  type GridColumn,
   type GridRow,
+  colIdOf,
   columnStateOf,
   filterModelOf,
   filtersOf,
-  colIdOf,
   indexOfColId,
+  indexOfColumn,
   keyOf,
   sortOf,
 } from './grid-columns';
+import {
+  type Capabilities,
+  type EditRow,
+  type GridEdits,
+  cellEditable,
+  conflicts,
+  editedColumnDefsOf,
+  hasValue,
+  isNew,
+  originalOf,
+  referenceChangesOf,
+  referenceEditable,
+  rowClassRulesOf,
+  rowStateOf,
+  shownValue,
+  stateColId,
+  takesChanges,
+} from './grid-edits';
 import { GridInspector, type Inspected } from './grid-inspector';
 import {
   type CellLink,
   type GridLinks,
   type LinkSchema,
   cellLinkOf,
+  displayOf,
+  displayText,
   indexOfCollectionColId,
   linkedColIdsOf,
   linkedColumnDefsOf,
   referenceOf,
 } from './grid-links';
 import { gridTheme } from './grid-theme';
+import type { NavPicked, NavPickerData } from './nav-picker';
 
 /** How many rows a page of the grid has. */
 export const BROWSE_PAGE_SIZE = new InjectionToken<number>('BROWSE_PAGE_SIZE', {
@@ -98,8 +144,8 @@ export const BROWSE_PAGE_SIZE = new InjectionToken<number>('BROWSE_PAGE_SIZE', {
 });
 
 /**
- * What the grid needs of the grid's library: the infinite row model, pages, filters, sorting, choosing rows, and
- * refreshing cells (their links).
+ * What the grid needs of the grid's library: the infinite row model, pages, filters, sorting, choosing rows,
+ * refreshing cells (their links and changes), editing cells, rows' classes and new rows pinned at the top.
  */
 const modules: Module[] = [
   InfiniteRowModelModule,
@@ -112,18 +158,46 @@ const modules: Module[] = [
   RowApiModule,
   RenderApiModule,
   CellStyleModule,
+  RowStyleModule,
   ColumnApiModule,
   GridStateModule,
   LocaleModule,
   TooltipModule,
+  TextEditorModule,
+  LargeTextEditorModule,
+  SelectEditorModule,
+  DateEditorModule,
+  PinnedRowModule,
+  ScrollApiModule,
   ...(isDevMode() ? [ValidationModule] : []),
 ];
 
 /** Where a navigation followed from a row leads (its key, its values as text). */
 export type LinkTo = (row: readonly string[], navigation: string) => UrlTree;
 
+/** What new rows start with: values by column, and display values by navigation (a navigation's crumb's row). */
+export interface InsertDefaults {
+  readonly values: Values;
+  readonly display: Values;
+}
+
+/** A row chosen in the grid, with the columns its values are of. */
+export interface ChosenRow {
+  readonly row: GridRow;
+  readonly columns: readonly GridColumn[];
+}
+
+/** A change that couldn't be made, and why. */
+interface EditProblem {
+  readonly title: string;
+  readonly reasons: readonly string[];
+}
+
 /** The schema of a source's rows, and their first page in the address's state when that could be asked for. */
 interface Primed extends LinkSchema {
+  /** The entity the rows are of, as changes name it. */
+  readonly entity: string;
+  readonly capabilities: Capabilities;
   readonly keyed: boolean;
   readonly page: PrimedPage | null;
 }
@@ -131,10 +205,13 @@ interface Primed extends LinkSchema {
 /** A grid made for a schema and a state: made again for other columns, or an address the grid can't follow. */
 interface Made {
   readonly key: string;
+  readonly entity: string;
   /** The rows' columns, what they refer to and what refers to them. */
   readonly schema: LinkSchema;
   /** The ids of the columns with links. */
   readonly linked: readonly string[];
+  /** Changing the rows, when they may be. */
+  readonly edits: GridEdits | null;
   readonly options: GridOptions<GridRow>;
   readonly datasource: BrowseDatasource;
   readonly page: number;
@@ -154,7 +231,7 @@ interface Live {
   row: readonly string[] | null;
 }
 
-/** The cell the keyboard is on (or clicked), for the inspector. */
+/** The cell the keyboard is on (or clicked), for the inspector and the row's actions. */
 interface Focused {
   readonly colId: string;
   readonly row: GridRow | null;
@@ -167,12 +244,21 @@ export interface WhereProblem {
   readonly end: number | null;
 }
 
+const noChanges: EntityChanges = { rows: new Map(), inserts: [] };
+
+/** The longest display value sent with a reference chosen, as JSON (the server keeps 1,000 characters of it). */
+const displayLength = 1000;
+
 /**
  * The rows of a source in a grid, a page at a time from the API (AG Grid's infinite row model, with pages): filtered
  * by its columns' filters and by a condition in the query language, sorted by its columns' headers, a row chosen by
  * clicking it. The grid's state is the address's (`crumb`): what changes in the grid is said (`crumbChange`) for the
  * address to follow, and an address gone elsewhere (back, forward, a link) is shown. Beside it, the inspector says
  * what the cell the keyboard is on holds, and where its column's values come from.
+ *
+ * With `editing`, for those who change data, the rows may be changed as their entity allows: cells edited, rows
+ * deleted, new rows added (pinned at the top), each a pending change (`PendingChanges`) shown in the cells until it
+ * is committed or reverted.
  */
 @Component({
   selector: 'gd-browse-grid',
@@ -201,6 +287,10 @@ export class BrowseGrid {
   private readonly locale = inject(LOCALE_ID);
   private readonly pageSize = inject(BROWSE_PAGE_SIZE);
   private readonly storage = storageOf(inject(DOCUMENT));
+  private readonly changes = inject(PendingChanges);
+  private readonly dialog = inject(MatDialog);
+  private readonly announcer = inject(LiveAnnouncer);
+  private readonly injector = inject(Injector);
   protected readonly modules = modules;
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly whereField = viewChild<ElementRef<HTMLInputElement>>('whereField');
@@ -209,6 +299,12 @@ export class BrowseGrid {
   private following = false;
   /** Set when a grid with the keyboard in it is made anew: the keyboard goes to the new one. */
   private refocus = false;
+  /** The changes of the grid's entity, as its cells show them. */
+  private entityChanges: EntityChanges = noChanges;
+  /** New rows as the grid holds them, by their temporary ids (kept, so the grid changes them in place). */
+  private newRows = new Map<string, EditRow>();
+  /** Set while the picker is open (or loading): it opens once at a time. */
+  private picking = false;
 
   /** What the rows are of. */
   readonly source = input.required<BrowseSource>();
@@ -221,6 +317,16 @@ export class BrowseGrid {
    * refer to them. Without it, cells have no links.
    */
   readonly linkTo = input<LinkTo | null>(null);
+  /** Whether the rows may be changed here (for those who change data, as the entity allows). */
+  readonly editing = input(false);
+  /** What new rows start with. */
+  readonly insertDefaults = input<InsertDefaults | null>(null);
+  /** Whether the inspector may be shown beside the rows. */
+  readonly inspectable = input(true);
+  /** The row chosen (clicked), or none. */
+  readonly rowChosen = output<ChosenRow | null>();
+  /** A row double-clicked, or Enter on it, in a grid without links or changes (a picker's). */
+  readonly rowActivated = output<ChosenRow>();
 
   private readonly sourceKey = computed(() => sourceKeyOf(this.source()));
   private readonly followed = followCatalog(() => this.primed.reload());
@@ -232,12 +338,15 @@ export class BrowseGrid {
   private readonly remade = signal(0);
   /** Whether cells have links (where they lead changes with the address; whether they have them, not). */
   private readonly linked = computed(() => this.linkTo() !== null);
+  /** Whether the rows may be changed: here, and by the user. */
+  private readonly editable = computed(() => this.editing() && this.changes.enabled());
   protected readonly made = computed<Made | undefined>(
     () => {
       const primed = this.primed.hasValue() ? this.primed.value() : undefined;
       const remade = this.remade();
       const linked = this.linked();
-      return primed ? untracked(() => this.make(primed, remade, linked)) : undefined;
+      const editable = this.editable();
+      return primed ? untracked(() => this.make(primed, remade, linked, editable)) : undefined;
     },
     { equal: (a, b) => a?.key === b?.key },
   );
@@ -255,6 +364,8 @@ export class BrowseGrid {
   protected readonly inspecting = signal(
     readStored(this.storage, BrowseGrid.inspectorKey) !== 'hidden',
   );
+  /** A change that couldn't be made, and why. */
+  protected readonly editProblem = signal<EditProblem | null>(null);
 
   protected readonly primeProblem = computed(() => {
     const error = this.primed.error();
@@ -271,6 +382,62 @@ export class BrowseGrid {
       return `At least ${rows} rows`;
     }
     return count.rows === 1 ? '1 row' : `${rows} rows`;
+  });
+  /**
+   * The changes the grid shows: its entity's, with the new rows of the crumb's row in a collection's crumb (those
+   * that start as new rows do there), not those of other rows; the same while the entity's are.
+   */
+  private readonly shownChanges = computed(
+    () => {
+      const made = this.made();
+      if (!made?.edits) {
+        return noChanges;
+      }
+      const changes = this.changes.of(made.entity);
+      const defaults = this.insertDefaults()?.values;
+      return defaults
+        ? {
+            rows: changes.rows,
+            inserts: changes.inserts.filter((change) => startsAs(change, defaults)),
+          }
+        : changes;
+    },
+    { equal: sameChanges },
+  );
+  /** The change of the row the keyboard is on (or clicked). */
+  private readonly focusedChange = computed(() => {
+    const row = this.focused()?.row ?? null;
+    return row ? changeIn(this.shownChanges(), row) : null;
+  });
+  /** What can be done with the row the keyboard is on: delete it (or restore it, or drop it), revert its change. */
+  protected readonly rowActions = computed(() => {
+    const made = this.made();
+    const row = this.focused()?.row ?? null;
+    if (!made?.edits || !row) {
+      return null;
+    }
+    const change = this.focusedChange();
+    const state = rowStateOf(row, change);
+    const can = made.edits.capabilities;
+    const canDelete = state === 'new' || state === 'deleted' || (can.canDelete && !!row.id);
+    return {
+      state,
+      /** The row they act on, as they say it. */
+      row: rowLabelOf(row, this.shownChanges()),
+      deleteLabel:
+        state === 'new'
+          ? 'Drop the new row'
+          : state === 'deleted'
+            ? 'Restore the row'
+            : 'Delete the row',
+      canDelete,
+      deleteWhyNot: canDelete
+        ? null
+        : !row.id
+          ? "Rows without a key can't be deleted"
+          : (can.changeReason ?? "The rows can't be deleted"),
+      canRevert: state === 'changed' || state === 'deleted',
+    };
   });
   protected readonly inspected = computed<Inspected | null>(() => {
     const focused = this.focused();
@@ -290,7 +457,40 @@ export class BrowseGrid {
       return null;
     }
     const reference = referenceOf(made.schema, index);
-    return { kind: 'column', column, index, row, reference, linked };
+    const change = this.focusedChange();
+    const edits = made.edits;
+    const changed = row !== null && hasValue(change, column.name);
+    const referenceChanged =
+      reference !== null &&
+      reference.columns.some((at) => hasValue(change, made.schema.columns[at].name));
+    const pendingDisplay = change?.display[reference?.navigation ?? ''];
+    return {
+      kind: 'column',
+      column,
+      index,
+      row,
+      reference,
+      linked: linked && !referenceChanged && !isNew(row),
+      value: row ? shownValue(column, index, row, change) : undefined,
+      display: referenceChanged
+        ? pendingDisplay === null || pendingDisplay === undefined
+          ? null
+          : displayText(pendingDisplay)
+        : displayOf(column, row),
+      edit:
+        edits && row
+          ? {
+              state: rowStateOf(row, change),
+              changed,
+              original: changed ? originalOf(change, column.name) : undefined,
+              conflict: conflicts(column, index, row, change),
+              editable:
+                reference !== null
+                  ? referenceEditable(made.schema, reference, row, edits)
+                  : cellEditable(column, row, edits),
+            }
+          : null,
+    };
   });
   /** Whether the condition typed isn't the one the rows are filtered by. */
   protected readonly whereEdited = computed(
@@ -320,6 +520,7 @@ export class BrowseGrid {
         this.problem.set(null);
         this.whereProblems.set([]);
         this.focused.set(null);
+        this.editProblem.set(null);
         this.appliedWhere.set(made?.datasource.query.where ?? null);
         this.whereText.set(made?.datasource.query.where ?? '');
       });
@@ -351,6 +552,11 @@ export class BrowseGrid {
         }
       });
     });
+    // The entity's changes changed: the cells show them.
+    effect(() => {
+      const changes = this.shownChanges();
+      untracked(() => this.showChanges(changes));
+    });
   }
 
   protected gridReady(event: GridReadyEvent<GridRow>, made: Made): void {
@@ -364,6 +570,7 @@ export class BrowseGrid {
     // The grid sets its filters (asking for its first page again) before its page: the pages it asked for go
     // before they are fetched (see blockLoadDebounceMillis), and only the page shown is.
     event.api.purgeInfiniteCache();
+    this.showChanges(this.entityChanges);
     this.selectRow(this.live);
     if (this.problem() || this.whereProblems().length > 0) {
       this.showFailure(this.live);
@@ -417,10 +624,16 @@ export class BrowseGrid {
 
   protected chosen(event: SelectionChangedEvent<GridRow>): void {
     const live = this.current();
-    if (this.following || !live || event.source === 'api') {
+    const made = this.made();
+    if (!live || !made) {
       return;
     }
-    const id = live.api.getSelectedRows()[0]?.id ?? null;
+    const selected = live.api.getSelectedRows()[0] ?? null;
+    this.rowChosen.emit(selected ? { row: selected, columns: made.schema.columns } : null);
+    if (this.following || event.source === 'api') {
+      return;
+    }
+    const id = selected?.id ?? null;
     const row = id === null ? null : keyOf(id);
     if (!sameRow(row, live.row)) {
       live.row = row;
@@ -431,13 +644,38 @@ export class BrowseGrid {
   protected cellFocused(event: CellFocusedEvent<GridRow>): void {
     const live = this.current();
     const colId = typeof event.column === 'string' ? event.column : event.column?.getColId();
-    if (!live || !colId || event.rowIndex === null || event.rowPinned) {
+    if (!live || !colId || event.rowIndex === null) {
       return;
     }
-    this.focused.set({
-      colId,
-      row: live.api.getDisplayedRowAtIndex(event.rowIndex)?.data ?? null,
-    });
+    this.focused.set({ colId, row: rowAt(live.api, event.rowIndex, event.rowPinned) });
+  }
+
+  /** A double click on a reference's cell chooses the row it refers to; in a picker's grid, it chooses the row. */
+  protected doubleClicked(event: CellDoubleClickedEvent<GridRow>): void {
+    const made = this.made();
+    const row = event.data;
+    if (!made || !row) {
+      return;
+    }
+    if (made.edits) {
+      const reference = referenceOf(made.schema, indexOfColId(event.column.getColId()));
+      if (reference && referenceEditable(made.schema, reference, row, made.edits)) {
+        made.edits.pick(row, made.schema.references.indexOf(reference));
+      }
+      return;
+    }
+    if (!this.linked() && row.id) {
+      this.rowActivated.emit({ row, columns: made.schema.columns });
+    }
+  }
+
+  /** Enter on a row of a picker's grid chooses it. */
+  protected keyDown(event: CellKeyDownEvent<GridRow> | FullWidthCellKeyDownEvent<GridRow>): void {
+    const made = this.made();
+    const key = (event.event as KeyboardEvent | null)?.key;
+    if (made && !made.edits && !this.linked() && key === 'Enter' && event.data?.id) {
+      this.rowActivated.emit({ row: event.data, columns: made.schema.columns });
+    }
   }
 
   protected toggleInspector(): void {
@@ -475,6 +713,98 @@ export class BrowseGrid {
     }
   }
 
+  /**
+   * A new row, with what new rows start with, at the top of the grid: the keyboard goes to its first cell that
+   * takes a value, which is edited.
+   */
+  protected addRow(): void {
+    const made = this.made();
+    if (!made?.edits) {
+      return;
+    }
+    const defaults = this.insertDefaults();
+    const { tempId, done } = this.changes.insert(
+      made.entity,
+      defaults?.values ?? {},
+      defaults?.display ?? {},
+    );
+    this.editProblem.set(null);
+    void done.then((outcome) => this.after(outcome, "Couldn't add the row"));
+    this.announce('A new row, at the top');
+    this.showChanges(this.changes.of(made.entity));
+    const live = this.current();
+    const index = this.entityChanges.inserts.findIndex((change) => change.tempId === tempId);
+    // The first column a value is needed for, else the first that takes one (but the key's, often generated).
+    const editable = (column: GridColumn) => column.insert !== 'never' && column.reference === null;
+    const needed = made.schema.columns.findIndex(
+      (column) => editable(column) && column.insert === 'required',
+    );
+    const first =
+      needed >= 0
+        ? needed
+        : made.schema.columns.findIndex((column) => editable(column) && !column.isKey);
+    if (live && index >= 0) {
+      const colKey = colIdOf(Math.max(first, 0));
+      live.api.ensureColumnVisible(colKey);
+      live.api.setFocusedCell(index, colKey, 'top');
+      if (first >= 0) {
+        live.api.startEditingCell({ rowIndex: index, colKey, rowPinned: 'top' });
+      }
+    }
+  }
+
+  /** Deletes the row the keyboard is on (or clicked), restores it, or drops it when it is new. */
+  protected deleteFocused(): void {
+    const row = this.focused()?.row;
+    const edits = this.made()?.edits;
+    if (row && edits) {
+      edits.toggleDelete(row);
+    }
+  }
+
+  /** Reverts the change of the row the keyboard is on (or clicked). */
+  protected revertFocused(): void {
+    const row = this.focused()?.row;
+    const made = this.made();
+    const target = row ? changeRowOf(row) : null;
+    if (made && target && row) {
+      this.editProblem.set(null);
+      void this.changes
+        .revert(made.entity, target)
+        .then((outcome) => this.after(outcome, "Couldn't revert the row"));
+      this.announce(`The changes of ${rowLabelOf(row, this.entityChanges)} reverted`);
+    }
+  }
+
+  /** Reverts the change of the cell the inspector shows. */
+  protected revertInspected(): void {
+    const focused = this.focused();
+    const edits = this.made()?.edits;
+    if (focused?.row && edits) {
+      edits.revertCell(focused.row, indexOfColId(focused.colId));
+      this.keepKeyboard();
+    }
+  }
+
+  /**
+   * The keyboard goes back to the grid's cell when the button it was on goes (reverted, there is nothing to revert
+   * any more), rather than to the page.
+   */
+  private keepKeyboard(): void {
+    const document = this.host.nativeElement.ownerDocument;
+    afterNextRender(
+      () => {
+        const active = document.activeElement;
+        const lost = !active || active === document.body || !active.isConnected;
+        const cell = this.current()?.api.getFocusedCell();
+        if (lost && cell) {
+          this.current()?.api.setFocusedCell(cell.rowIndex, cell.column, cell.rowPinned);
+        }
+      },
+      { injector: this.injector },
+    );
+  }
+
   /** Whether the grid's pages are a datasource's: the grid shown's, or the one made last's, before it shows. */
   private shows(datasource: BrowseDatasource): boolean {
     const live = this.current();
@@ -501,6 +831,12 @@ export class BrowseGrid {
         body: { source, grid, includeSchema: true, includeCount },
       });
     const primedOf = (page: BrowsePage, first: PrimedPage | null): Primed => ({
+      entity: page.schema?.entity ?? page.entity,
+      capabilities: page.schema?.capabilities ?? {
+        canInsert: false,
+        canUpdate: false,
+        canDelete: false,
+      },
       columns: page.schema?.columns ?? [],
       references: page.schema?.references ?? [],
       collections: page.schema?.collections ?? [],
@@ -523,7 +859,7 @@ export class BrowseGrid {
     );
   }
 
-  private make(primed: Primed, remade: number, linked: boolean): Made {
+  private make(primed: Primed, remade: number, linked: boolean, editable: boolean): Made {
     const crumb = this.crumb();
     const columns = primed.columns;
     const schema: LinkSchema = {
@@ -532,6 +868,8 @@ export class BrowseGrid {
       collections: primed.collections,
     };
     const links = linked ? this.links : null;
+    const edits =
+      editable && takesChanges(primed.capabilities) ? this.gridEdits(primed, schema) : null;
     const filters = filterModelOf(crumb.filters, columns);
     const sort = columnStateOf(crumb.sort, columns);
     const sortModel: SortModelItem[] = sort.state.map((state) => ({
@@ -545,10 +883,16 @@ export class BrowseGrid {
       sort: sortOf(sortModel, columns),
     };
     const datasource = new BrowseDatasource(this.api, query, this.events(), primed.page);
+    const linkedDefs = linkedColumnDefsOf(
+      schema,
+      links,
+      primed.keyed,
+      edits ? referenceChangesOf(schema, edits) : null,
+    );
     const options: GridOptions<GridRow> = {
       theme: gridTheme,
       loadThemeGoogleFonts: false,
-      columnDefs: linkedColumnDefsOf(schema, links, primed.keyed),
+      columnDefs: edits ? editedColumnDefsOf(schema, linkedDefs, edits) : linkedDefs,
       defaultColDef: { resizable: true, minWidth: 72 },
       rowModelType: 'infinite',
       datasource,
@@ -562,13 +906,18 @@ export class BrowseGrid {
       // pages asked for before are let go.
       blockLoadDebounceMillis: 10,
       infiniteInitialRowCount: (crumb.page + 1) * this.pageSize,
-      getRowId: primed.keyed ? ({ data }) => data.id ?? '' : undefined,
+      // New rows (pinned at the top) by their temporary ids, so they are changed in place.
+      getRowId: primed.keyed
+        ? ({ data }) => (isNew(data) ? `new:${data.tempId}` : (data.id ?? ''))
+        : undefined,
       rowSelection: {
         mode: 'singleRow',
         checkboxes: false,
         enableClickSelection: true,
-        isRowSelectable: (node) => primed.keyed && !!node.data?.id,
+        isRowSelectable: (node) => primed.keyed && !!node.data?.id && !node.rowPinned,
       },
+      rowClassRules: edits ? (rowClassRulesOf(edits) as RowClassRules<GridRow>) : undefined,
+      stopEditingWhenCellsLoseFocus: true,
       localeText: {
         noRowsToShow: 'No rows',
         noMatchingRows: 'No rows match the filters',
@@ -581,12 +930,16 @@ export class BrowseGrid {
         filter: { filterModel: filters.model },
         sort: { sortModel },
         pagination: { page: crumb.page },
+        // An initial state unpins the columns it doesn't pin.
+        ...(edits ? { columnPinning: { leftColIds: [stateColId], rightColIds: [] } } : {}),
       },
     };
     return {
-      key: `${this.sourceKey()}|${JSON.stringify(schema)}|${linked}|${remade}`,
+      key: `${this.sourceKey()}|${JSON.stringify(schema)}|${linked}|${edits !== null}|${remade}`,
+      entity: primed.entity,
       schema,
       linked: links ? linkedColIdsOf(schema, primed.keyed) : [],
+      edits,
       options,
       datasource,
       page: crumb.page,
@@ -594,6 +947,210 @@ export class BrowseGrid {
       left: [...filters.left, ...sort.left],
       from: crumb,
     };
+  }
+
+  /** Changing the rows of an entity, through the user's pending changes. */
+  private gridEdits(primed: Primed, schema: LinkSchema): GridEdits {
+    const entity = primed.entity;
+    const capabilities = primed.capabilities;
+    const edits: GridEdits = {
+      capabilities,
+      // The store's, as they are (the cells may be drawn before the grid follows them).
+      changeOf: (row) => untracked(() => changeIn(this.changes.of(entity), row)),
+      set: (row, values, display = {}) => this.setValues(entity, schema, row, values, display),
+      refused: (_, column, reason) =>
+        this.editProblem.set({ title: `Couldn't change ${column.name}`, reasons: [reason] }),
+      pick: (row, at) => void this.pick(entity, schema, edits, row, at),
+      toggleDelete: (row) => this.toggleDelete(entity, schema, capabilities, row),
+      revertCell: (row, index) => this.revertCell(entity, schema, row, index),
+    };
+    return edits;
+  }
+
+  /** Sets columns' values of a row (with the values it had, for those first changed). */
+  private setValues(
+    entity: string,
+    schema: LinkSchema,
+    row: GridRow,
+    values: ReadonlyMap<number, unknown>,
+    display: Values,
+  ): void {
+    const target = changeRowOf(row);
+    if (!target) {
+      return;
+    }
+    const named: Record<string, unknown> = {};
+    const original: Record<string, unknown> = {};
+    for (const [index, value] of values) {
+      const column = schema.columns[index];
+      named[column.name] = value;
+      original[column.name] = row.v[index];
+    }
+    this.editProblem.set(null);
+    void this.changes
+      // A new row has no originals (the store sends them for rows that are there).
+      .set(entity, target, named, original, display)
+      .then((outcome) => this.after(outcome, "Couldn't change the row"));
+  }
+
+  private toggleDelete(
+    entity: string,
+    schema: LinkSchema,
+    capabilities: Capabilities,
+    row: GridRow,
+  ): void {
+    const target = changeRowOf(row);
+    if (!target) {
+      return;
+    }
+    this.editProblem.set(null);
+    let done: Promise<Outcome>;
+    if (isNew(row)) {
+      this.announce(`${capital(rowLabelOf(row, this.entityChanges))} dropped`);
+      done = this.changes.delete(entity, target);
+    } else if (changeIn(this.changes.of(entity), row)?.kind === 'delete') {
+      done = this.changes.revert(entity, target);
+      this.announce(`${capital(rowLabelOf(row, this.entityChanges))} restored`);
+    } else if (!capabilities.canDelete) {
+      this.editProblem.set({
+        title: "Couldn't delete the row",
+        reasons: [capabilities.changeReason ?? "The entity's rows can't be deleted"],
+      });
+      return;
+    } else {
+      done = this.changes.delete(entity, target, originalsOf(schema, row));
+      this.announce(`${capital(rowLabelOf(row, this.entityChanges))} to be deleted`);
+    }
+    void done.then((outcome) => this.after(outcome, "Couldn't change the row"));
+  }
+
+  /** Reverts a cell's change (all a reference's columns'), or restores its row when it is to be deleted. */
+  private revertCell(entity: string, schema: LinkSchema, row: GridRow, index: number): void {
+    const change = changeIn(this.changes.of(entity), row);
+    const target = changeRowOf(row);
+    if (!change || !target) {
+      return;
+    }
+    let done: Promise<Outcome>;
+    if (change.kind === 'delete') {
+      done = this.changes.revert(entity, target);
+      this.announce(`${capital(rowLabelOf(row, this.entityChanges))} restored`);
+    } else {
+      const reference = referenceOf(schema, index);
+      const names = (reference ? reference.columns : [index])
+        .map((at) => schema.columns[at]?.name)
+        .filter((name): name is string => name !== undefined && hasValue(change, name));
+      if (names.length === 0) {
+        return;
+      }
+      done = this.changes.revert(entity, target, names);
+      this.announce(`${names.join(', ')} of ${rowLabelOf(row, this.entityChanges)} reverted`);
+    }
+    this.editProblem.set(null);
+    void done.then((outcome) => this.after(outcome, "Couldn't revert the change"));
+  }
+
+  /** Chooses the row a reference refers to, in the picker: its columns are set to the target's values. */
+  private async pick(
+    entity: string,
+    schema: LinkSchema,
+    edits: GridEdits,
+    row: GridRow,
+    at: number,
+  ): Promise<void> {
+    const reference = schema.references[at];
+    if (!reference || this.picking) {
+      return;
+    }
+    const nullable = reference.columns.every((index) => schema.columns[index].type.nullable);
+    let picked: NavPicked | undefined;
+    this.picking = true;
+    try {
+      // The picker is a grid of its own, loaded when first wanted.
+      const { NavPicker } = await import('./nav-picker');
+      picked = await firstValueFrom(
+        this.dialog
+          .open<InstanceType<typeof NavPicker>, NavPickerData, NavPicked>(NavPicker, {
+            data: { entity, reference, nullable },
+            width: '90vw',
+            maxWidth: '1200px',
+          })
+          .afterClosed(),
+      );
+    } finally {
+      this.picking = false;
+    }
+    if (!picked) {
+      return;
+    }
+    if ('none' in picked) {
+      // What was shown for the row it referred to goes too.
+      edits.set(row, new Map(reference.columns.map((index) => [index, null])), {
+        [reference.navigation]: null,
+      });
+      this.announce(
+        `${reference.navigation} of ${rowLabelOf(row, this.entityChanges)} refers to no row`,
+      );
+      return;
+    }
+    const values = new Map<number, unknown>();
+    for (const [place, index] of reference.columns.entries()) {
+      const target = reference.targetColumns[place];
+      const found = target === undefined ? -1 : indexOfColumn(picked.columns, target);
+      if (found < 0) {
+        edits.refused(
+          row,
+          schema.columns[index],
+          `The rows chosen from have no ${target ?? 'such'} column`,
+        );
+        return;
+      }
+      values.set(index, picked.row.v[found]);
+    }
+    const shown = reference.displayColumn
+      ? indexOfColumn(picked.columns, reference.displayColumn)
+      : -1;
+    // None, when the rows chosen from don't show it: what was shown for the row it referred to goes.
+    const display = shown >= 0 ? shortDisplay(picked.row.v[shown]) : null;
+    edits.set(row, values, { [reference.navigation]: display });
+    this.announce(
+      `${reference.navigation} of ${rowLabelOf(row, this.entityChanges)} set${display === null ? '' : ` to ${displayText(display)}`}`,
+    );
+  }
+
+  /** Says what was done, for screen readers (what couldn't be is an alert). */
+  private announce(message: string): void {
+    void this.announcer.announce(message, 'polite');
+  }
+
+  /** What came of a change: why it couldn't be made, said (the session's problems aside). */
+  private after(outcome: Outcome, title: string): void {
+    if (!outcome.done && !isSessionProblem(outcome.problem)) {
+      this.editProblem.set({ title, reasons: outcome.reasons });
+    }
+  }
+
+  /** The cells show the entity's changes: new rows at the top, rows' classes, values as they will be. */
+  private showChanges(changes: EntityChanges): void {
+    this.entityChanges = changes;
+    const live = this.current();
+    const edits = untracked(this.made)?.edits;
+    if (!live || !edits) {
+      return;
+    }
+    const rows = changes.inserts.map(
+      (change) =>
+        this.newRows.get(change.tempId ?? '') ??
+        ({ id: null, k: null, v: [], r: null, tempId: change.tempId ?? '' } satisfies EditRow),
+    );
+    this.newRows = new Map(rows.map((row) => [row.tempId ?? '', row]));
+    const pinned = live.api.getGridOption('pinnedTopRowData') ?? [];
+    if (rows.length !== pinned.length || rows.some((row, index) => row !== pinned[index])) {
+      live.api.setGridOption('pinnedTopRowData', rows);
+    }
+    live.api.setGridOption('rowClassRules', rowClassRulesOf(edits) as RowClassRules<GridRow>);
+    live.api.refreshCells({ force: true });
+    this.refreshFocused(live);
   }
 
   /** Shows what the address says: the page or row chosen in place, else a grid made for it. */
@@ -772,12 +1329,12 @@ export class BrowseGrid {
 
   private refreshFocused(live: Live): void {
     const cell = live.api.getFocusedCell();
-    if (!cell || cell.rowPinned) {
+    if (!cell) {
       return;
     }
     this.focused.set({
       colId: cell.column.getColId(),
-      row: live.api.getDisplayedRowAtIndex(cell.rowIndex)?.data ?? null,
+      row: rowAt(live.api, cell.rowIndex, cell.rowPinned),
     });
   }
 
@@ -822,6 +1379,93 @@ export function whereProblemsOf(problem: Problem): WhereProblem[] {
     start: typeof diagnostic['start'] === 'number' ? diagnostic['start'] : null,
     end: typeof diagnostic['end'] === 'number' ? diagnostic['end'] : null,
   }));
+}
+
+/** A row's change among an entity's: by its id, or a new row's by its temporary id. */
+function changeIn(changes: EntityChanges, row: GridRow): PendingChange | null {
+  if (isNew(row)) {
+    return changes.inserts.find((change) => change.tempId === row.tempId) ?? null;
+  }
+  return row.id ? (changes.rows.get(row.id) ?? null) : null;
+}
+
+/** A row as changes name it: by its key and id, or a new one by its temporary id; null for a row without a key. */
+function changeRowOf(row: GridRow): ChangeRow | null {
+  if (isNew(row)) {
+    return { tempId: row.tempId };
+  }
+  return row.id && row.k ? { key: row.k, rowId: row.id } : null;
+}
+
+/**
+ * The values a row had, to check it still has them when its deletion is committed: its key's, and those of the
+ * columns that may be given values (the entity's own).
+ */
+function originalsOf(schema: LinkSchema, row: GridRow): Record<string, unknown> {
+  const original: Record<string, unknown> = {};
+  schema.columns.forEach((column, index) => {
+    if (column.isKey || column.canUpdate || column.insert !== 'never') {
+      original[column.name] = row.v[index];
+    }
+  });
+  return original;
+}
+
+/** The row at a place in the grid: a page's, or a new row's (pinned at the top). */
+function rowAt(
+  api: GridApi<GridRow>,
+  index: number,
+  pinned: string | null | undefined,
+): GridRow | null {
+  if (pinned === 'top') {
+    return api.getPinnedTopRow(index)?.data ?? null;
+  }
+  return pinned ? null : (api.getDisplayedRowAtIndex(index)?.data ?? null);
+}
+
+/** A display value as sent with a reference chosen: text cut to what the server keeps. */
+function shortDisplay(value: unknown): unknown {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  let text = value;
+  // Cut by what JSON writes (quotes, escapes) as the server counts it.
+  while (JSON.stringify(text).length > displayLength) {
+    const over = JSON.stringify(text).length - displayLength;
+    text = `${text.slice(0, Math.max(0, text.length - Math.max(over, 1) - 1))}…`;
+  }
+  return text;
+}
+
+/** Whether a new row starts as those of a collection's crumb do (its columns that refer to the crumb's row). */
+function startsAs(change: PendingChange, defaults: Values): boolean {
+  return Object.entries(defaults).every(
+    ([column, value]) => String(change.values[column] ?? '') === String(value),
+  );
+}
+
+/** Whether the changes shown are the same: those of the same rows, alike. */
+function sameChanges(a: EntityChanges, b: EntityChanges): boolean {
+  return (
+    a === b ||
+    (a.rows.size === b.rows.size &&
+      a.inserts.length === b.inserts.length &&
+      JSON.stringify([...a.rows.values(), ...a.inserts]) ===
+        JSON.stringify([...b.rows.values(), ...b.inserts]))
+  );
+}
+
+/** A row as the grid's actions say it: by its key, or a new row's place among those shown. */
+function rowLabelOf(row: GridRow, changes: EntityChanges): string {
+  if (isNew(row)) {
+    const place = changes.inserts.findIndex((change) => change.tempId === row.tempId);
+    return place < 0 ? 'the new row' : `new row ${place + 1}`;
+  }
+  return row.id ? `row ${keyOf(row.id).join(', ')}` : 'the row';
+}
+
+function capital(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** The grid's overlay for rows that couldn't be read goes. */

@@ -6,6 +6,7 @@ import { NavigationEnd, Router } from '@angular/router';
 import { BehaviorSubject, filter, firstValueFrom } from 'rxjs';
 import {
   answerPage,
+  editablePageOf,
   gridCells,
   linkedPageOf,
   linkedRows,
@@ -22,7 +23,8 @@ import {
   sourceNode,
   type EntityDto,
 } from '../../../testing/catalog';
-import { problemBody } from '../../../testing/auth';
+import { problemBody, sessionOf } from '../../../testing/auth';
+import { answerChanges, setOf } from '../../../testing/changes';
 import { requestTo, settle } from '../../../testing/http';
 import { alertsOf, clickButton, openPage, pageProviders, textOf } from '../../../testing/pages';
 import { POLL_INTERVAL } from '../../core/api/poll';
@@ -31,6 +33,7 @@ import { CatalogVersion, catalogVersionHeader } from '../../core/catalog/catalog
 import { browseRoutes } from './browse.routes';
 import { SEARCH_WAIT } from './catalog-panel';
 import { describeChanges, describeEntity, throughOf } from './entity-structure';
+import { insertDefaultsOf } from './browse-page';
 import { BROWSE_PAGE_SIZE } from './grid/browse-grid';
 
 describe('BrowsePage', () => {
@@ -87,8 +90,9 @@ describe('BrowsePage', () => {
     url = '/browse/shop.orders',
     entity: EntityDto | null = entityOf(),
     version = 'v1',
+    session = sessionOf('read'),
   ) {
-    const opened = await openPage(url);
+    const opened = await openPage(url, session);
     const first = decodeURIComponent(url.slice('/browse/'.length).split(/[;/?]/)[0]);
     await answerChildren(opened.http, null, [sourceNode('shop')]);
     (await requestTo(opened.http, searchUrl(first, 20))).flush({
@@ -909,6 +913,63 @@ describe('BrowsePage', () => {
     expect(page.querySelector('.path-problem')).toBeNull();
   });
 
+  it("starts new rows of a collection's crumb with the row they refer to, for those who change data", async () => {
+    const { http, page, shown, router } = await open(
+      '/browse/shop.orders;row=1001/order_lines',
+      null,
+      'v1',
+      sessionOf('dataManager'),
+    );
+    await answerChanges(http);
+    (await requestTo(http, trailUrl, 'POST')).flush({
+      crumbs: [
+        stepOf('shop.orders', 'shop.orders', 'open'),
+        stepOf('shop.order_lines', 'order_lines'),
+      ],
+    });
+    await shown();
+    (await requestTo(http, entityUrl('shop.order_lines'))).flush(linesEntity());
+    (await requestTo(http, entityUrl('shop.orders'))).flush(entityOf());
+    const lines = editablePageOf(orderRows(1));
+    await answerPage(http, {
+      ...lines,
+      schema: lines.schema && { ...lines.schema, entity: 'shop.order_lines' },
+    });
+    await shown();
+    clickButton(page, 'add Add a row');
+    await shown();
+    const added = await requestTo(http, '/api/changes/ops', 'POST');
+    expect(added.request.body).toMatchObject({
+      ops: [
+        {
+          op: 'insert',
+          entity: 'shop.order_lines',
+          values: { order_id: '1001' },
+          display: { order: 'open' },
+        },
+      ],
+    });
+    added.flush(setOf([], 2));
+    await shown();
+
+    // The grid's state changed (its rows sorted), the entity before isn't read again: new rows start so still.
+    await router.navigateByUrl('/browse/shop.orders;row=1001/order_lines;sort=-id', {
+      replaceUrl: true,
+    });
+    await shown();
+    await answerPage(http, pageOf(orderRows(1)));
+    await shown();
+    expect(http.match(entityUrl('shop.orders')).length).toBe(0);
+    clickButton(page, 'add Add a row');
+    await shown();
+    const again = await requestTo(http, '/api/changes/ops', 'POST');
+    expect(again.request.body).toMatchObject({
+      ops: [{ op: 'insert', values: { order_id: '1001' }, display: { order: 'open' } }],
+    });
+    again.flush(setOf([], 3));
+    await shown();
+  }, 20_000); // Two grids' worth of answers, slow in jsdom with the other tests.
+
   it("says what in the address couldn't be read", async () => {
     const { page, http } = await open('/browse/shop.orders;page=zero');
     expect(textOf(page.querySelector('gd-message.kind-warning'))).toBe(
@@ -943,9 +1004,68 @@ describe('the words of an entity page', () => {
     ).toEqual(['You may add its rows.', 'No key.']);
   });
 
+  it("works out what new rows of a collection's crumb start with", () => {
+    const orders = entityOf();
+    const lines = linesEntity();
+    expect(insertDefaultsOf(orders, 'order_lines', ['1001'], lines, 'open')).toEqual({
+      values: { order_id: '1001' },
+      display: { order: 'open' },
+    });
+    // Without the entity of the rows, or a display value, no display value.
+    expect(insertDefaultsOf(orders, 'order_lines', ['1001'], undefined, 'open')).toEqual({
+      values: { order_id: '1001' },
+      display: {},
+    });
+    expect(insertDefaultsOf(orders, 'order_lines', ['1001'], lines, null)).toEqual({
+      values: { order_id: '1001' },
+      display: {},
+    });
+    // The navigation back must go through the same columns.
+    const elsewhere = linesEntity();
+    elsewhere.navigations[0] = { ...elsewhere.navigations[0], columns: ['other_id'] };
+    expect(insertDefaultsOf(orders, 'order_lines', ['1001'], elsewhere, 'open')?.display).toEqual(
+      {},
+    );
+    // Not from a reference, a navigation it hasn't, nor by columns that aren't the row's key.
+    expect(insertDefaultsOf(orders, 'customer', ['1001'], lines, 'open')).toBeNull();
+    expect(insertDefaultsOf(orders, 'missing', ['1001'], lines, 'open')).toBeNull();
+    expect(
+      insertDefaultsOf(
+        { ...orders, key: { name: null, columns: ['code'], isDeclared: false } },
+        'order_lines',
+        ['A'],
+        lines,
+        null,
+      ),
+    ).toBeNull();
+    expect(
+      insertDefaultsOf({ ...orders, key: null }, 'order_lines', ['1001'], lines, null),
+    ).toBeNull();
+  });
+
   it('pairs the columns a navigation goes through', () => {
     expect(
       throughOf({ ...entityOf().navigations[0], columns: ['a', 'b'], targetColumns: ['x', 'y'] }),
     ).toBe('a → x, b → y');
   });
 });
+
+/** shop.order_lines: its key, order_id and line_no, and the navigation back to its order. */
+function linesEntity(): EntityDto {
+  const orders = entityOf();
+  return entityOf({
+    name: 'shop.order_lines',
+    qualifiedName: 'shop.main.order_lines',
+    table: 'order_lines',
+    key: { name: null, columns: ['order_id', 'line_no'], isDeclared: false },
+    navigations: [
+      {
+        ...orders.navigations[0],
+        name: 'order',
+        target: 'shop.orders',
+        columns: ['order_id'],
+        targetColumns: ['id'],
+      },
+    ],
+  });
+}

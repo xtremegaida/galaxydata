@@ -1,10 +1,11 @@
-import { Component, LOCALE_ID, computed, inject, input } from '@angular/core';
+import { Component, LOCALE_ID, computed, inject, input, output } from '@angular/core';
+import { MatButton } from '@angular/material/button';
 import { type GridColumn, type GridRow, binaryText, cellText } from './grid-columns';
+import type { RowState } from './grid-edits';
 import {
   type GridCollection,
   type GridReference,
   collectionText,
-  displayOf,
   refersToNone,
 } from './grid-links';
 
@@ -22,6 +23,25 @@ export interface InspectedColumn {
   readonly reference: GridReference | null;
   /** Whether the cell has a link to follow. */
   readonly linked: boolean;
+  /** The cell's value as it will be (its change's, else the row's); undefined for a new row's default. */
+  readonly value: unknown;
+  /** The display value of the row its values refer to (given with a change of them), if there is one. */
+  readonly display: string | null;
+  /** The cell's change and its row's, when the rows may be changed. */
+  readonly edit: CellEdit | null;
+}
+
+/** What is changed of a cell and its row, not committed yet. */
+export interface CellEdit {
+  readonly state: RowState;
+  /** Whether the cell's value is changed. */
+  readonly changed: boolean;
+  /** The value the row had when the cell was first changed. */
+  readonly original: unknown;
+  /** Whether the row was changed elsewhere since: its value read now isn't the original. */
+  readonly conflict: boolean;
+  /** Whether the cell may be given a value. */
+  readonly editable: boolean;
 }
 
 /** A cell of a collection's column: the rows that refer to its row. */
@@ -48,6 +68,7 @@ const lineageKinds: Readonly<Record<GridColumn['lineage']['kind'], string>> = {
  */
 @Component({
   selector: 'gd-grid-inspector',
+  imports: [MatButton],
   host: { role: 'region', 'aria-label': 'Inspector' },
   template: `
     @if (collection(); as inspected) {
@@ -87,6 +108,42 @@ const lineageKinds: Readonly<Record<GridColumn['lineage']['kind'], string>> = {
         } @else {
           <p class="aside">The row is being loaded.</p>
         }
+        @if (inspected.edit; as edit) {
+          @switch (edit.state) {
+            @case ('new') {
+              <p class="note">A new row: added when the changes are committed.</p>
+            }
+            @case ('deleted') {
+              <p class="note">To be deleted when the changes are committed.</p>
+            }
+          }
+          @if (edit.changed && edit.state !== 'new') {
+            <p class="note">
+              Changed, not committed: it was <code>{{ text(edit.original) }}</code
+              >.
+            </p>
+          }
+          @if (edit.conflict) {
+            <p class="note conflict">
+              Changed elsewhere since: it is <code>{{ readText() }}</code> now. Committing would
+              change nothing, and say so.
+            </p>
+          }
+          @if (edit.changed || edit.state === 'deleted') {
+            <button matButton type="button" class="revert" (click)="revert.emit()">
+              {{
+                edit.state === 'deleted'
+                  ? 'Restore the row'
+                  : edit.state === 'new'
+                    ? 'Clear the value'
+                    : 'Revert'
+              }}
+            </button>
+          }
+          @if (!edit.editable && edit.state !== 'deleted' && reason(); as reason) {
+            <p class="aside">{{ reason }}</p>
+          }
+        }
       </section>
       @if (inspected.reference; as reference) {
         <section aria-labelledby="gd-inspector-reference">
@@ -104,9 +161,14 @@ const lineageKinds: Readonly<Record<GridColumn['lineage']['kind'], string>> = {
             }
             @if (inspected.linked) {
               <p class="aside">Enter, or a click on the link, shows the row.</p>
+            } @else if (inspected.edit?.state === 'new' || inspected.edit?.changed) {
+              <p class="aside">It leads to the row once the change is committed.</p>
             } @else if (inspected.row && inspected.row.id === null) {
               <p class="aside">Rows without a key lead nowhere.</p>
             }
+          }
+          @if (inspected.edit?.editable) {
+            <p class="aside">F2, or a double click, chooses the row it refers to.</p>
           }
         </section>
       }
@@ -216,12 +278,26 @@ const lineageKinds: Readonly<Record<GridColumn['lineage']['kind'], string>> = {
     .display {
       margin-top: 4px;
     }
+
+    .note {
+      margin-top: 8px;
+    }
+
+    .conflict {
+      color: var(--mat-sys-error);
+    }
+
+    .revert {
+      margin-top: 4px;
+    }
   `,
 })
 export class GridInspector {
   private readonly locale = inject(LOCALE_ID);
 
   readonly inspected = input<Inspected | null>(null);
+  /** The cell's change is to be reverted (its row restored, when it is to be deleted). */
+  readonly revert = output<void>();
 
   protected readonly kinds = lineageKinds;
   protected readonly collectionText = collectionText;
@@ -234,11 +310,20 @@ export class GridInspector {
     const inspected = this.inspected();
     return inspected?.kind === 'collection' ? inspected : null;
   });
-  /** Why the cell's values refer to no row: a null among them. */
+  /** Why the cell's values refer to no row: a null among them (as they will be, for this cell's). */
   protected readonly noRow = computed(() => {
     const inspected = this.column();
     const reference = inspected?.reference;
-    if (!inspected?.row || !reference || !refersToNone(reference, inspected.row)) {
+    if (!inspected?.row || !reference) {
+      return null;
+    }
+    // A new row's value not given is the column's default, not NULL.
+    const none =
+      inspected.value === null ||
+      (!inspected.edit?.changed &&
+        inspected.edit?.state !== 'new' &&
+        refersToNone(reference, inspected.row));
+    if (!none) {
       return null;
     }
     return reference.columns.length === 1
@@ -246,18 +331,32 @@ export class GridInspector {
       : 'One of its values is NULL: it refers to no row.';
   });
   /** The display value of the row the cell's values refer to. */
-  protected readonly display = computed(() => {
+  protected readonly display = computed(() => this.column()?.display ?? null);
+  /** The value read now, beside one changed elsewhere since. */
+  protected readonly readText = computed(() => {
     const inspected = this.column();
-    return inspected ? displayOf(inspected.column, inspected.row) : null;
+    return inspected?.row ? this.text(inspected.row.v[inspected.index]) : '';
+  });
+  /** Why the cell can't be given a value. */
+  protected readonly reason = computed(() => {
+    const inspected = this.column();
+    if (!inspected) {
+      return null;
+    }
+    return inspected.column.readOnlyReason ?? `${inspected.column.name} can't be changed here.`;
   });
   protected readonly value = computed(() => {
     const inspected = this.column();
     if (!inspected?.row) {
       return null;
     }
-    const { column, row } = inspected;
-    const value = row.v[inspected.index];
-    if (value === null || value === undefined) {
+    const { column, value } = inspected;
+    if (value === undefined) {
+      const text =
+        column.insert === 'required' ? 'No value yet: it needs one' : "The column's default";
+      return { text, null: true, size: '' };
+    }
+    if (value === null) {
       return { text: 'NULL', null: true, size: '' };
     }
     if (column.type.kind === 'binary') {
@@ -275,6 +374,11 @@ export class GridInspector {
         : '';
     return { text, null: false, size };
   });
+
+  protected text(value: unknown): string {
+    const column = this.column()?.column;
+    return column ? cellText(value ?? null, column.type) : String(value);
+  }
 }
 
 function them(collection: GridCollection): string {

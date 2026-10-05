@@ -68,6 +68,37 @@ export function orderRows(count: number, from = 0): GridRowDto[] {
   );
 }
 
+/** shop.orders' columns, as those who change data have them: status and total may be changed, the key given in new rows. */
+export function editableColumns(): GridColumnDto[] {
+  const [id, status, total] = orderColumns();
+  return [
+    { ...id, insert: 'required' },
+    { ...status, canUpdate: true, insert: 'optional' },
+    {
+      ...total,
+      canUpdate: true,
+      insert: 'required',
+      type: { kind: 'decimal', nullable: false, text: 'decimal(10,2)', precision: 10, scale: 2 },
+    },
+  ];
+}
+
+/** A page of shop.orders' rows that may be changed, deleted and added to. */
+export function editablePageOf(
+  rows: GridRowDto[],
+  changes: Partial<BrowsePageDto> = {},
+  columns: GridColumnDto[] = editableColumns(),
+): BrowsePageDto {
+  const page = pageOf(rows, changes, columns);
+  return {
+    ...page,
+    schema: page.schema && {
+      ...page.schema,
+      capabilities: { canInsert: true, canUpdate: true, canDelete: true },
+    },
+  };
+}
+
 /** shop.orders' columns with its customer's: its key, id, then customer_id (referring to a customer) and status. */
 export function linkedColumns(): GridColumnDto[] {
   return [
@@ -85,6 +116,9 @@ export const customerReference: GridReferenceDto = {
   navigation: 'customer',
   target: 'shop.customers',
   columns: [1],
+  targetColumns: ['id'],
+  complete: true,
+  displayColumn: 'name',
   multiplicity: 'one',
 };
 
@@ -184,15 +218,30 @@ export async function answerGrid(http: HttpTestingController): Promise<void> {
   await answerPage(http, pageOf([], {}, orderColumns()));
 }
 
-/** The grid's rows, as text: each row's cells, in order. */
+/** The grid's rows, as text: each row's cells, in order (not the column saying rows' changes). */
 export function gridCells(container: ParentNode): string[][] {
-  return [...container.querySelectorAll<HTMLElement>('.ag-row[row-index]')]
-    .sort((a, b) => Number(a.getAttribute('row-index')) - Number(b.getAttribute('row-index')))
-    .map((row) =>
-      [...row.querySelectorAll<HTMLElement>('[col-id]')]
-        .sort((a, b) => colIndex(a) - colIndex(b))
-        .map((cell) => cell.textContent ?? ''),
-    );
+  return cellsOf(rowsOf(container).filter((row) => !row.closest(pinnedRows)));
+}
+
+/** The new rows pinned at the top of the grid, as text: each row's cells, in order. */
+export function newRowCells(container: ParentNode): string[][] {
+  return cellsOf(rowsOf(container).filter((row) => row.closest('.ag-grid-pinned-top-rows')));
+}
+
+const pinnedRows = '.ag-grid-pinned-top-rows, .ag-grid-pinned-bottom-rows';
+
+function rowsOf(container: ParentNode): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>('.ag-row[row-index]')].sort(
+    (a, b) => Number(a.getAttribute('row-index')) - Number(b.getAttribute('row-index')),
+  );
+}
+
+function cellsOf(rows: HTMLElement[]): string[][] {
+  return rows.map((row) =>
+    [...row.querySelectorAll<HTMLElement>('[col-id]:not([col-id=gd-state])')]
+      .sort((a, b) => colIndex(a) - colIndex(b))
+      .map((cell) => cell.textContent ?? ''),
+  );
 }
 
 /** The grid's headers' names. */

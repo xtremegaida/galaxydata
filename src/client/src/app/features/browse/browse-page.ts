@@ -38,10 +38,11 @@ import {
   sameKey,
 } from '../../core/browse/browse-url';
 import { followCatalog } from '../../core/catalog/catalog-changes';
+import { PendingChanges } from '../../core/changes/pending-changes';
 import { Message } from '../../core/ui/message';
 import { type Entity, EntityStructure, describeEntity } from './entity-structure';
 import type { BrowseSource } from './grid/browse-datasource';
-import { BrowseGrid, type LinkTo } from './grid/browse-grid';
+import { BrowseGrid, type InsertDefaults, type LinkTo } from './grid/browse-grid';
 import { displayText } from './grid/grid-links';
 
 type TrailCrumb = Schema<'TrailCrumbDto'>;
@@ -116,6 +117,7 @@ interface StepsFor {
 export class BrowsePage {
   private readonly api = inject(ApiClient);
   private readonly router = inject(Router);
+  private readonly changes = inject(PendingChanges);
   private readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
 
   private readonly address = addressOf(inject(ActivatedRoute));
@@ -264,6 +266,44 @@ export class BrowsePage {
     return (row, navigation) => browseUrlTree(followedLocation(location, row, navigation));
   });
 
+  /**
+   * The entity of the crumb before the one shown, read for those who change data: what new rows of a navigation's
+   * crumb start with comes from it.
+   */
+  private readonly beforeName = computed(() => {
+    const { at } = this.location();
+    return at > 0 && this.changes.enabled() ? (this.steps()?.[at - 1]?.entity ?? null) : null;
+  });
+  private readonly before = rxResource({
+    params: () => {
+      const name = this.beforeName();
+      return name === null ? undefined : { name };
+    },
+    stream: ({ params }) => this.api.get('/api/catalog/entity', { query: params }),
+  });
+  /**
+   * What new rows of a navigation's crumb start with: the columns that refer to the row chosen in the crumb before
+   * (a collection's: orders of a customer), its key's values, and its display value for the navigation back.
+   */
+  protected readonly insertDefaults = computed<InsertDefaults | null>(
+    () => {
+      const { crumbs, at } = this.location();
+      const before = this.before.hasValue() ? this.before.value() : undefined;
+      const row = crumbs[at - 1]?.row;
+      if (at === 0 || !before || !row) {
+        return null;
+      }
+      return insertDefaultsOf(
+        before,
+        crumbs[at].name,
+        row,
+        this.shown()?.entity,
+        this.steps()?.[at - 1]?.title,
+      );
+    },
+    { equal: (a, b) => JSON.stringify(a) === JSON.stringify(b) },
+  );
+
   private readonly followed = followCatalog(() => this.described.reload());
   protected readonly described = rxResource({
     params: () => {
@@ -347,6 +387,41 @@ export class BrowsePage {
       );
     });
   }
+}
+
+/**
+ * What new rows reached through a collection from a row start with: the columns that refer to that row, its values
+ * (when they are its key's, as the address holds them); and its display value, for the navigation back to it when
+ * the entity of the rows has one. Null when the navigation isn't a collection's, or doesn't go by the row's key.
+ */
+export function insertDefaultsOf(
+  before: Entity,
+  navigation: string,
+  row: readonly string[],
+  shown: Entity | undefined,
+  title: unknown,
+): InsertDefaults | null {
+  const followed = before.navigations.find((each) => each.name === navigation);
+  const key = before.key?.columns ?? [];
+  if (!followed?.isInverse || followed.columns.length !== followed.targetColumns.length) {
+    return null;
+  }
+  const values: Record<string, unknown> = {};
+  for (const [place, column] of followed.columns.entries()) {
+    const at = key.indexOf(column);
+    if (at < 0 || row[at] === undefined) {
+      return null;
+    }
+    values[followed.targetColumns[place]] = row[at];
+  }
+  const back = shown?.navigations.find(
+    (each) =>
+      !each.isInverse &&
+      (each.target === before.name || each.target === before.qualifiedName) &&
+      JSON.stringify(each.columns) === JSON.stringify(followed.targetColumns),
+  );
+  const display = back && title !== null && title !== undefined ? { [back.name]: title } : {};
+  return { values, display };
 }
 
 /** A row chosen in a crumb, by its display value (the trail's title), else its key. */

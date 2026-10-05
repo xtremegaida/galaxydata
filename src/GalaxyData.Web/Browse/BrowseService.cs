@@ -220,13 +220,15 @@ public sealed class BrowseService(CatalogService catalogs, QueryEngines engines,
       SqlDialect? dialect = entity is TableEntity table ? providers.For(table.Source.ProviderKind).Dialect : null;
       CapabilitiesDto capabilities = EntityCapabilities.Of(entity, dialect, canEdit);
       List<GridColumnDto> dtos = [];
+      // The entity's own column each value is, when it is one.
+      List<ColumnDef?> owns = [.. columns.Select(column =>
+         column.Lineage is { Kind: LineageKind.Direct } lineage && lineage.Sources[0].Path.Count == 0 && lineage.Sources[0].Column.Owner == entity
+            ? lineage.Sources[0].Column
+            : null)];
       for (int i = 0; i < columns.Count; i++)
       {
          ResultColumn column = columns[i];
-         // The entity's own column the value is, when it is one.
-         ColumnDef? own = column.Lineage is { Kind: LineageKind.Direct } lineage && lineage.Sources[0].Path.Count == 0 && lineage.Sources[0].Column.Owner == entity
-            ? lineage.Sources[0].Column
-            : null;
+         ColumnDef? own = owns[i];
          ColumnCapabilities can = own != null
             ? EntityCapabilities.Of(own, dialect, capabilities)
             : new ColumnCapabilities(false, InsertMode.Never, $"'{column.Name}' isn't a column of {entity.DisplayName}");
@@ -234,9 +236,25 @@ public sealed class BrowseService(CatalogService catalogs, QueryEngines engines,
          dtos.Add(new GridColumnDto(column.Name, TypeDto.Of(column.Type), own?.IsKey ?? false, can.CanUpdate, can.Insert, can.Reason, PagedRows.Lineage(column.Lineage),
             reference < 0 ? null : reference));
       }
-      List<GridReferenceDto> referenceDtos = references.Select(r => new GridReferenceDto(r.Navigation.Name, r.Navigation.Target.DisplayName,
-         Enumerable.Range(0, columns.Count).Where(i => columns[i].Link is RowLink { Navigation: { } n } && n == r.Navigation).ToList(),
-         r.Navigation.Multiplicity)).ToList();
+      List<GridReferenceDto> referenceDtos = references.Select(r =>
+      {
+         // Each column of the foreign key, and the target's column it matches, as the navigation pairs them: a
+         // column of a composite key may show another reference (a key of its own), but setting this one sets it.
+         List<int> held = [];
+         List<string> targets = [];
+         IReadOnlyList<ColumnDef> owners = r.Navigation.OwnerColumns;
+         for (int k = 0; k < owners.Count; k++)
+         {
+            int at = owns.IndexOf(owners[k]);
+            // Columns of another entity's (a virtual entity's navigation inherited from its table): by name.
+            if (at < 0) { at = columns.FindIndex(c => c.Lineage.Kind == LineageKind.Direct && string.Equals(c.Name, owners[k].Name, StringComparison.OrdinalIgnoreCase)); }
+            if (at < 0) { continue; }
+            held.Add(at);
+            targets.Add(r.Navigation.TargetColumns[k].Name);
+         }
+         return new GridReferenceDto(r.Navigation.Name, r.Navigation.Target.DisplayName, held, targets, held.Count == owners.Count,
+            r.Navigation.Target.DisplayColumn?.Name, r.Navigation.Multiplicity);
+      }).ToList();
       List<GridCollectionDto> collections = entity.Navigations.Concat(entity.InheritedNavigations)
          .Where(n => n.IsInverse && !n.Hidden)
          .Select(n => new GridCollectionDto(n.Name, n.Target.DisplayName, n.Multiplicity))

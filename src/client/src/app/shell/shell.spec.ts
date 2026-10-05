@@ -12,10 +12,12 @@ import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { BehaviorSubject } from 'rxjs';
 import { FakePageLoader, fakeBrowserProviders, sessionOf } from '../../testing/auth';
+import { FakeChangesChannel, answerChanges, changeOf, setOf } from '../../testing/changes';
 import { requestTo, settle } from '../../testing/http';
 import type { Session } from '../core/auth/auth-store';
 import { AuthStore } from '../core/auth/auth-store';
 import { PageLoader } from '../core/browser/page-loader';
+import { ChangesChannel, PendingChanges } from '../core/changes/pending-changes';
 import { Start } from '../features/start/start';
 import { navItemsFor, type NavItem } from './nav-items';
 import { Shell } from './shell';
@@ -45,6 +47,7 @@ describe('Shell', () => {
           },
         ]),
         fakeBrowserProviders(),
+        { provide: ChangesChannel, useClass: FakeChangesChannel },
         { provide: BreakpointObserver, useValue: { observe: () => wide } },
       ],
     });
@@ -53,12 +56,15 @@ describe('Shell', () => {
 
   afterEach(() => http.verify());
 
-  async function open(session: Session = sessionOf(), url = '/') {
+  async function open(session: Session = sessionOf(), url = '/', changes = setOf()) {
     const auth = TestBed.inject(AuthStore);
     const loaded = auth.ensure();
     http.expectOne('/api/auth/session').flush(session);
     await loaded;
     const harness = await RouterTestingHarness.create(url);
+    if (session.user?.permissions.canEditData) {
+      await answerChanges(http, changes);
+    }
     return {
       harness,
       loader: TestbedHarnessEnvironment.loader(harness.fixture),
@@ -126,6 +132,56 @@ describe('Shell', () => {
     expect((TestBed.inject(PageLoader) as unknown as FakePageLoader).loads).toEqual(['/sign-in']);
   });
 
+  it('counts the pending changes of those who change data, and lists them in a drawer', async () => {
+    const { page, harness } = await open(
+      sessionOf('dataManager'),
+      '/',
+      setOf([changeOf(), changeOf({ id: 2, key: ['1002'], rowId: '["1002"]' })]),
+    );
+    harness.detectChanges();
+    const button = page.querySelector<HTMLElement>('button[aria-controls=gd-changes]')!;
+    expect(button.getAttribute('aria-label')).toBe('Pending changes: 2 rows');
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(page.querySelector('.mat-badge-content')?.textContent).toBe('2');
+    button.click();
+    // The drawer is loaded as it first opens.
+    for (let turn = 0; turn < 100 && !page.querySelector('#gd-changes h2'); turn++) {
+      await settle(1);
+      harness.detectChanges();
+    }
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    const drawer = page.querySelector<HTMLElement>('#gd-changes')!;
+    expect(drawer.querySelector('h2')?.textContent).toBe('Pending changes');
+    expect(drawer.querySelector('.summary')?.textContent?.trim()).toBe(
+      '2 rows changed, not committed.',
+    );
+    // The keyboard goes to it, and back to its button as it closes.
+    await settle();
+    expect(document.activeElement).toBe(drawer.querySelector('h2'));
+    drawer.querySelector<HTMLElement>('button[aria-label=Close]')!.click();
+    harness.detectChanges();
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('counts one row, and shows no count for none', async () => {
+    const { page, harness } = await open(sessionOf('dataManager'), '/', setOf([changeOf()]));
+    harness.detectChanges();
+    const button = page.querySelector<HTMLElement>('button[aria-controls=gd-changes]')!;
+    expect(button.getAttribute('aria-label')).toBe('Pending changes: 1 row');
+    TestBed.inject(PendingChanges).revert('shop.orders', { key: ['1001'], rowId: '["1001"]' });
+    harness.detectChanges();
+    expect(button.getAttribute('aria-label')).toBe('Pending changes: none');
+    expect(page.querySelector('.mat-badge')?.classList).toContain('mat-badge-hidden');
+    (await requestTo(http, '/api/changes/ops', 'POST')).flush(setOf([], 2));
+  });
+
+  it('has no pending changes for readers', async () => {
+    const { page } = await open(sessionOf('read'));
+    expect(page.querySelector('button[aria-controls=gd-changes]')).toBeNull();
+    expect(page.querySelector('#gd-changes')).toBeNull();
+  });
+
   it('keeps the navigation beside the page on wide screens, and closes it when asked', async () => {
     const { loader } = await open();
     const navigation = await loader.getHarness(MatSidenavHarness);
@@ -174,7 +230,7 @@ describe('Shell, as the screen changes width', () => {
   it('moves the navigation over the page when the screen narrows, and back when it widens', async () => {
     const http = TestBed.inject(HttpTestingController);
     const loaded = TestBed.inject(AuthStore).ensure();
-    http.expectOne('/api/auth/session').flush(sessionOf());
+    http.expectOne('/api/auth/session').flush(sessionOf('read'));
     await loaded;
     const harness = await RouterTestingHarness.create('/');
     const navigation = await TestbedHarnessEnvironment.loader(harness.fixture).getHarness(

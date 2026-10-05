@@ -46,9 +46,14 @@ public sealed record GridColumnDto(string Name, TypeDto Type, bool IsKey, bool C
 
 /// <summary>
 /// A row each row refers to (along a foreign key, <c>customer</c> by <c>customer_id</c>): the columns that hold the
-/// reference (indexes into the values), and the target's display value, the <c>n</c>-th of each row's <c>r</c>.
+/// reference (indexes into the values, in the foreign key's order: all of a composite key's, though some of them
+/// may show another reference), the target's columns they match (by name, in the same order), whether every column
+/// that holds it is among the values (<see cref="Complete"/>: else it can't be set by choosing a row), the target's
+/// column that shows its rows (none when it has none), and the target's display value, the <c>n</c>-th of each row's
+/// <c>r</c>.
 /// </summary>
-public sealed record GridReferenceDto(string Navigation, string Target, IReadOnlyList<int> Columns, Multiplicity Multiplicity);
+public sealed record GridReferenceDto(string Navigation, string Target, IReadOnlyList<int> Columns, IReadOnlyList<string> TargetColumns, bool Complete,
+                                      string? DisplayColumn, Multiplicity Multiplicity);
 
 /// <summary>The rows that refer to each row (<c>orders</c> of a customer), to browse from it.</summary>
 public sealed record GridCollectionDto(string Navigation, string Target, Multiplicity Multiplicity);

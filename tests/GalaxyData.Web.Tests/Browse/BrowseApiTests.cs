@@ -69,8 +69,8 @@ public sealed class BrowseApiTests
       schema.GetProperty("columns").EnumerateArray().Select(c => $"{c.GetProperty("name").GetString()} {c.GetProperty("type").GetProperty("text").GetString()} {c.GetProperty("reference")}")
          .ShouldBe(["id int64 ", "customer_id int64 0", "ship_address_id int64? 1", "bill_address_id int64? 2", "status string ", "total decimal(10,2) ",
                     "order_date date ", "placed_at datetimeoffset? "]);
-      schema.GetProperty("references").EnumerateArray().Select(r => $"{r.GetProperty("navigation").GetString()} {r.GetProperty("target").GetString()} {r.GetProperty("columns").GetRawText()}")
-         .ShouldBe(["customer shop.customers [1]", "ship_address shop.addresses [2]", "bill_address shop.addresses [3]"]);
+      schema.GetProperty("references").EnumerateArray().Select(r => $"{r.GetProperty("navigation").GetString()} {r.GetProperty("target").GetString()} {r.GetProperty("columns").GetRawText()} {r.GetProperty("targetColumns").GetRawText()} {r.GetProperty("displayColumn")}")
+         .ShouldBe(["customer shop.customers [1] [\"id\"] name", "ship_address shop.addresses [2] [\"id\"] line1", "bill_address shop.addresses [3] [\"id\"] line1"]);
       schema.GetProperty("collections").EnumerateArray().Select(c => $"{c.GetProperty("navigation").GetString()} {c.GetProperty("multiplicity").GetString()}")
          .ShouldBe(["order_lines many"]);
       JsonElement id = schema.GetProperty("columns")[0];
@@ -202,6 +202,30 @@ public sealed class BrowseApiTests
       Firsts(page).ShouldBe(["1"]);
       page.GetProperty("total").GetInt64().ShouldBe(1);
       page.GetProperty("schema").GetProperty("references").GetArrayLength().ShouldBe(0);
+   }
+
+   /// <summary>
+   /// A composite foreign key whose columns are in another order than the rows' and the target's key, one of them in
+   /// a foreign key of its own: its reference has all its columns, each with the target's column it matches.
+   /// </summary>
+   [Fact]
+   public async Task AReferenceHasAllTheColumnsOfItsForeignKey()
+   {
+      (WebAppFactory factory, TestApi admin) = await ShopAsync();
+      await using WebAppFactory _ = factory;
+      string path = Path.Combine(TestSources.Files(factory), "tenants.db");
+      await TestSources.SqliteAsync(path, "CREATE TABLE tenants (id INTEGER PRIMARY KEY, name TEXT); " +
+         "CREATE TABLE customers (tenant_id INTEGER REFERENCES tenants(id), id INTEGER, name TEXT, PRIMARY KEY (tenant_id, id)); " +
+         "CREATE TABLE orders (id INTEGER PRIMARY KEY, tenant_id INTEGER REFERENCES tenants(id), customer_id INTEGER, " +
+         "FOREIGN KEY (customer_id, tenant_id) REFERENCES customers(id, tenant_id)); " +
+         "INSERT INTO tenants VALUES (1, 'One'); INSERT INTO customers VALUES (1, 5, 'Acme'); INSERT INTO orders VALUES (10, 1, 5)");
+      await TestSources.AddSqliteAsync(admin, "tenants", path);
+      JsonElement schema = (await PageAsync(admin, Entity("tenants.orders", schema: true))).GetProperty("schema");
+      schema.GetProperty("columns").EnumerateArray().Select(c => $"{c.GetProperty("name").GetString()} {c.GetProperty("reference")}")
+         .ShouldBe(["id ", "tenant_id 0", "customer_id 1"]);
+      schema.GetProperty("references").EnumerateArray()
+         .Select(r => $"{r.GetProperty("target").GetString()} {r.GetProperty("columns").GetRawText()} {r.GetProperty("targetColumns").GetRawText()} {r.GetProperty("complete").GetBoolean()} {r.GetProperty("displayColumn")}")
+         .ShouldBe(["tenants.tenants [1] [\"id\"] True name", "tenants.customers [2,1] [\"id\",\"tenant_id\"] True name"]);
    }
 
    [Fact]

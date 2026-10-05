@@ -1444,6 +1444,9 @@ export interface components {
             navigation: string;
             target: string;
             columns: number[];
+            targetColumns: string[];
+            complete: boolean;
+            displayColumn: null | string;
             multiplicity: components["schemas"]["Multiplicity"];
         };
         GridRowDto: {

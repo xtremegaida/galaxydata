@@ -139,13 +139,17 @@ signed in in it.
 
 Pages for the signed-in are in the shell (`src/app/shell`), which has:
 
-- **The bar at the top:** the navigation's button, the application's name, the color scheme, and the user's
+- **The bar at the top:** the navigation's button, the application's name, for those who change data their
+  pending changes (a button with their count, opening the drawer that lists them), the color scheme, and the user's
   menu (who they are, changing the password, signing out).
 - **The navigation.** `navItems` lists the pages, each with what the user must be allowed to do (`needs:
   'canAdmin'`) and the section it is shown under (`section: 'Administration'`); the navigation shows those the user
   may open. Below 960 pixels it opens over the page, and closes once a page is chosen; on wider screens it is
   beside the page, and may be closed.
 - **The page.**
+- **The pending changes** (`ChangesDrawer`, `src/app/features/changes`), for those who change data: a drawer at the
+  end of the page (beside it from 960 pixels, over it below), loaded when first opened (`@defer`). See [Changing
+  data](#changing-data).
 
 A route's `title` is shown with the application's name after it: "Sign in · GalaxyData".
 
@@ -297,6 +301,83 @@ chosen in it.
   screens the catalog opens over the page: at the start of browsing, and on asking ("Catalog"). It closes once an
   entity is chosen.
 
+## Changing data
+
+Those who change data (data managers and administrators) change rows where they browse them, as the entity allows
+(a table of a source that takes changes; changing rows needs its own primary key). What they change isn't written
+to the database at once: it is a **pending change**, kept on the server (`/api/changes`) until it is committed (F7)
+or reverted, and shown wherever the rows are.
+
+- **The store** (`PendingChanges`, `src/app/core/changes`) holds the user's changes, read when they may change data
+  (`GET /api/changes`). Changing them is an action: setting values (`set`), a new row (`insert`, named by a
+  temporary id until it is committed), deleting a row (`delete`), reverting (`revert`, a row's change or its
+  values for some columns), clearing (`DELETE /api/changes`, all, a connection's or an entity's).
+  - **Shown at once.** An action changes what the store holds as the server will (`foldOp` follows the server's
+    rules: a column's original is the value it had when first changed; a value set back to it is no change; deleting
+    a changed row keeps its originals; deleting a new row drops it), and the server's answer, the changes as they
+    are, takes its place.
+  - **One at a time, in order.** Actions are sent one after another. An action the server refuses goes, and what
+    came of it (`Outcome`) says why, a sentence for each thing wrong (a value's column named); the next is sent all
+    the same. One that fails otherwise (no answer, a server's failure) may have been made: the changes are read
+    again once the actions are answered. Answers are numbered: an answer to a request made before one whose answer
+    was taken is left.
+  - **Other tabs.** A tab whose action was answered tells the others the changes' version (`ChangesChannel`, a
+    `BroadcastChannel`); a tab at another reads them again, as one does coming back into view, once the actions it
+    sent are answered.
+- **In the grid** (`grid-edits.ts`), with `editing` (browsing's grid), as the entity and each column allow
+  (`capabilities`, and each column's `canUpdate` and `insert`):
+  - **Values as they will be:** a cell shows its change's value, else the row's. A cell changed is marked
+    (`gd-dirty`; pointed at, it says what it was), and so is one whose row was changed elsewhere since it was
+    changed here (`gd-conflict`: the value read now isn't the original kept, so the commit would change nothing).
+    A column before the rows says each row's change (new, changed, to be deleted), drawn and said; rows to be deleted
+    are struck through (`gd-deleted`).
+  - **Editing:** Enter, F2, typing or a double click edits a cell (but a reference's, below). Editors follow the
+    column's type: a choice for booleans (with NULL when the column may be), a date's for dates, text for the rest
+    (a larger editor over the grid for long text, or text with lines). A value is checked before it is sent
+    (`parsedValue`: whole numbers in range, decimals within their precision and scale, dates, date-times, times,
+    intervals, guids, as the server reads them) and sent as it is typed (but numbers to 32 bits and doubles as
+    numbers, booleans as booleans, date-times with a `T`). What isn't one of its type is said above the grid, and
+    nothing is sent. Empty text is NULL for columns that aren't text; Delete sets a cell to NULL. A value the same
+    as the cell's sends nothing. The originals sent are the values the row was read with. What was done is said to
+    screen readers ("Row 1003 to be deleted", "status of row 1001 reverted").
+  - **Rows:** Ctrl+Delete (or the bar's "Delete the row") deletes the row the keyboard is on, with the values it
+    had (its key's and those of its columns that take values), and restores it when it is to be deleted; its cells
+    can't be changed then. Ctrl+Z reverts the change of the cell the keyboard is on (or restores its row); "Revert
+    the row" its whole change. The bar's buttons act on the row the keyboard is on (a click puts it there).
+  - **New rows** ("Add a row") are pinned at the top of the grid, in the order they were made, each by its
+    temporary id (`getRowId`), so the grid changes them in place as their values change. A new row starts with
+    what the page gives (`insertDefaults`): in a collection's crumb (the order lines of an order), the columns that
+    refer to the row chosen before get its key's values, and the navigation back its display value. The keyboard
+    goes to its first column that needs a value (else its first that takes one, but the key), which is edited.
+    Columns not given show `DEFAULT` (the database gives them a value); those that need one are blank, and marked
+    (`gd-invalid`). "Drop the new row" (or Ctrl+Delete) drops it. A collection's crumb shows the new rows that
+    start as its own do (those of its row), not those of other rows.
+  - **References** are set by choosing the row they refer to: F2 or a double click (away from the link) opens the
+    picker (`NavPicker`, loaded when first wanted): the target's rows in a grid of their own (filtered, sorted and
+    paged as in browsing, without links or changes), one chosen and confirmed with Choose, a double click or Enter;
+    or "No row", when the reference's columns all may be NULL. Its columns (all of a composite key's, though one of
+    them shows another reference) are set to the row's values for the columns they match (the schema's
+    `targetColumns`), with the row's display value (`displayColumn`) for the cell to show (none when the target
+    has no such column, or the rows chosen from don't show it: then nothing is shown for it). Delete (or Backspace)
+    sets them all to NULL, where they may be, and nothing is shown for them. A reference whose columns aren't all
+    the grid's (`complete`) isn't set so. A reference changed shows the display value given, without a link to
+    click or follow with Enter (crumbs follow references as committed); Enter on one not changed follows its link.
+    The picker opens once at a time.
+  - **Following the changes:** when the entity's changes change (an action, another tab's, an answer), the cells
+    and rows show them (`refreshCells`, the rows' classes set again, new rows pinned), the keyboard staying where
+    it is.
+  - **Failures:** an action refused (by the client's checks or the server) is said above the grid ("Couldn't change
+    total: …"), with Dismiss; its value goes from the cell.
+- **The inspector** says a cell's change: a new row's, a row to be deleted, a value changed (what it was), changed
+  elsewhere since (what it is now), with Revert (Restore the row, Clear the value); and why a cell can't be given a
+  value. A reference's says that F2 or a double click chooses its row.
+- **The drawer** (`ChangesDrawer`) lists the changes by connection, entity (a link to browse it) and row: the
+  columns changed, what each was and will be (a new row's values; a row to be deleted), and the display values given
+  with references. A column's change, a row's, an entity's, a connection's or all can be reverted (clearing asks
+  first). The bar's button counts the rows changed. Opened, the keyboard goes to its heading; closed, back to the
+  button; when a button it was on goes with what it reverted, to its heading. Previewing and committing come in
+  F7.
+
 ## Administration
 
 Administrators' pages are under `/admin` (`features/admin`). They are loaded when one is opened, and only for
@@ -392,6 +473,16 @@ Forms use Angular's signal forms (`@angular/forms/signals`), in Material's form 
   labelled and described, and its problems are an alert tied to it (`aria-describedby`, `aria-invalid`); Apply
   stays focusable when there is nothing to apply (`disabledInteractive`), and clearing the condition leaves the
   keyboard in its field. The count is a status.
+- **Changing rows:** the grid's keys are AG Grid's (Enter, F2 or typing edits; Escape cancels; Enter or Tab ends
+  an edit) and ours: Delete sets a cell to NULL, Ctrl+Z reverts a cell's change, Ctrl+Delete deletes or restores a
+  row, F2 on a reference opens the picker (`suppressKeyboardEvent`, before the grid does anything with the key; not
+  while editing). The bar above the grid is a group ("Changes to the rows") whose hint says the keys, and its
+  buttons act on the row the keyboard is on, which their names say ("Delete the row: row 1003"; Ctrl+Delete is
+  the delete button's `aria-keyshortcuts`), a disabled one's tooltip why. What was done is said (`LiveAnnouncer`,
+  politely), a change refused is an alert, and the inspector's Revert gives the keyboard back to the cell. The column saying rows' changes draws an icon and says its words to screen readers. The
+  picker is a dialog titled by what it chooses; closed, focus goes back to the cell. The drawer is a region
+  ("Pending changes"); its buttons say what they revert (`aria-label`: "Revert status of shop.orders Row 1001"),
+  and a column's change reads as a sentence ("status: open becomes paid", the arrow drawn, not read).
 - **The path** is a navigation landmark ("Path"), a list of links, the crumb shown marked `aria-current="page"`;
   the `›` between crumbs is drawn by the style sheet, with no text for screen readers (`content: '›' / ''`).
 - **The catalog's tree** is a tree as WAI-ARIA describes one. It is one stop in the tab order.
@@ -443,15 +534,15 @@ policy refuses:
 This is why the build doesn't inline critical CSS (`inlineCritical: false` in `angular.json`). Angular would load
 the rest of the stylesheet with an inline script, which the policy refuses.
 
-**Size.** The first load holds the framework, the Material parts of the shell, and the shell: about 690 kB, 161 kB
-compressed. It grows as the features use more of Angular's core (resources, for one), which every page shares, and
+**Size.** The first load holds the framework, the Material parts of the shell, and the shell: about 715 kB, 167 kB
+compressed (the pending changes' store and badge are in it; their drawer, about 11 kB, loads when first opened). It grows as the features use more of Angular's core (resources, for one), which every page shares, and
 of modules the shell uses: the CDK's virtual scrolling is in the module of the scrolling the shell's navigation
 uses, so it loads at first though only browsing uses it. Pages not needed at first are loaded when opened (lazy
-routes): the sign-in and password pages, the administrators' pages (about 260 kB), browsing (about 1.25 MB, 280 kB
-compressed), and the features' pages as they come. Browsing's chunk is nearly all AG Grid: its core and the modules
-the grid registers (its infinite row model, pages, filters, choosing rows, tooltips, refreshing cells, its state
-and words). The build
-warns above 700 kB and fails above 1 MB for the first load (`budgets` in `angular.json`). GalaxyData isn't meant
+routes): the sign-in and password pages, the administrators' pages (about 230 kB), browsing (about 1.36 MB, 305 kB
+compressed; its picker loads when first wanted), and the features' pages as they come. Browsing's chunk is nearly
+all AG Grid: its core and the modules the grid registers (its infinite row model, pages, filters, choosing rows,
+tooltips, refreshing cells, its state and words, its editors, rows' classes, pinned rows, scrolling). The build
+warns above 750 kB (700 kB until F6) and fails above 1 MB for the first load (`budgets` in `angular.json`). GalaxyData isn't meant
 for slow networks, so these can be raised when a feature needs it.
 
 ## Conventions
@@ -482,6 +573,15 @@ for slow networks, so these can be raised when a feature needs it.
     page: tests that open one answer it (`answerGrid`), or a harness would wait for it. The whole application's test
     leaves the grid out: with every stylesheet in the page, jsdom takes seconds to resolve the styles AG Grid reads
     as it starts.
+  - **Pending changes:** a component that injects `PendingChanges` (the shell, browsing's page and grid, the
+    drawer) reads the changes of a user who changes data (`GET /api/changes`): tests answer it (`answerChanges` in
+    `src/testing/changes.ts`, with `changeOf`, `insertOf` and `setOf`), or browse as readers (browsing's page
+    tests do, but those of changes). The other tabs are `FakeChangesChannel`.
+  - **AG Grid's columns and rows in jsdom:** an initial state unpins the columns its `columnPinning` doesn't pin,
+    so the grid's state names the column of rows' changes; jsdom lays nothing out, so AG Grid unpins pinned columns
+    (they don't fit), and that column's cells are in the rows (`gridCells` leaves them out). New rows are in
+    `.ag-grid-pinned-top-rows` (`newRowCells`; `gridCells` leaves them out too). Key events a test makes are
+    `cancelable`, or `preventDefault` does nothing.
   - **Back and forward:** the router follows the browser's history only once it listens, which an application's
     first navigation sets up and a test's router harness doesn't: a test that goes back calls
     `router.setUpLocationChangeListener()` first.
@@ -489,7 +589,8 @@ for slow networks, so these can be raised when a feature needs it.
     page that isn't being painted (a window behind another) shows those cells empty until it is.
 - **Layout:**
   - `src/app/core` holds what the whole application uses: the API, problems, the session, the theme, forms'
-    helpers, the catalog (its version, the tree's state, following it), browsing's addresses (`core/browse`), the
+    helpers, the catalog (its version, the tree's state, following it), the pending changes (`core/changes`),
+    browsing's addresses (`core/browse`), the
     browser's storage (`core/browser/stored.ts`), and the pieces pages share (`core/ui`: messages, the confirmation
     dialog, the unsaved-changes guard, `debounced`);
   - `src/app/shell` holds the shell;

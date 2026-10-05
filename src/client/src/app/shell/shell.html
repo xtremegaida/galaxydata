@@ -17,6 +17,25 @@
       <span>GalaxyData</span>
     </a>
     <span class="spacer"></span>
+    @if (changesEnabled()) {
+      <button
+        matIconButton
+        type="button"
+        aria-controls="gd-changes"
+        [attr.aria-expanded]="changesOpen()"
+        [attr.aria-label]="changesLabel()"
+        [matTooltip]="changesLabel()"
+        (click)="changesOpen() ? closeChanges() : changesOpen.set(true)"
+        #changesButton
+      >
+        <mat-icon
+          [matBadge]="changesCount()"
+          [matBadgeHidden]="changesCount() === 0"
+          aria-hidden="true"
+          >edit_note</mat-icon
+        >
+      </button>
+    }
     <gd-color-scheme-menu />
     <gd-user-menu />
   </mat-toolbar>
@@ -60,6 +79,21 @@
       }
     </mat-nav-list>
   </mat-sidenav>
+  @if (changesEnabled()) {
+    <mat-sidenav
+      id="gd-changes"
+      class="changes"
+      position="end"
+      [mode]="wide() ? 'side' : 'over'"
+      [opened]="changesOpen()"
+      (openedChange)="$event ? changesOpen.set(true) : closeChanges()"
+    >
+      <!-- Loaded when first opened. -->
+      @defer (when changesOpen(); prefetch on idle) {
+        <gd-changes-drawer [opened]="changesOpen()" (closed)="closeChanges()" />
+      }
+    </mat-sidenav>
+  }
   <mat-sidenav-content>
     <main class="page" tabindex="-1" #page>
       <router-outlet />

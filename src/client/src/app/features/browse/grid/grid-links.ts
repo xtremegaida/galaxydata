@@ -48,6 +48,16 @@ export interface LinkContent {
   readonly arrow: boolean;
 }
 
+/**
+ * The references changed in rows not yet committed: a row whose reference's columns have values not committed shows
+ * the display value given with them, and no link (to click, or follow with Enter), as crumbs follow references as
+ * committed; null when its reference isn't changed.
+ */
+export type ReferenceChanges = (
+  row: GridRow,
+  reference: GridReference,
+) => { readonly display: unknown } | null;
+
 /** What a cell with a link is given: what it shows, worked out from the grid's, and where links lead. */
 export interface LinkCellParams extends ICellRendererParams<GridRow> {
   readonly content: (params: ICellRendererParams<GridRow>) => LinkContent;
@@ -137,12 +147,13 @@ export function collectionText(collection: GridCollection): string {
 /**
  * The grid's columns with their links: the rows' columns, those whose values refer to a row showing its display
  * value (a link to it, with `links`), the value itself beside it; then, with `links` and rows with keys, a column
- * for each collection of rows that refer to them.
+ * for each collection of rows that refer to them. References changed (`changes`) show what was given with them.
  */
 export function linkedColumnDefsOf(
   schema: LinkSchema,
   links: GridLinks | null,
   keyed: boolean,
+  changes: ReferenceChanges | null = null,
 ): ColDef<GridRow>[] {
   const columns = columnDefsOf(schema.columns).map((def, index): ColDef<GridRow> => {
     const reference = referenceOf(schema, index);
@@ -152,8 +163,10 @@ export function linkedColumnDefsOf(
           headerTooltip: `${def.headerTooltip ?? ''} ${referenceText(reference)}`,
           cellClass: undefined,
           cellRenderer: LinkCell,
-          cellRendererParams: { content: referenceContent(schema, index), links },
-          suppressKeyboardEvent: links ? followsOnEnter(schema, colIdOf(index), links) : undefined,
+          cellRendererParams: { content: referenceContent(schema, index, changes), links },
+          suppressKeyboardEvent: links
+            ? followsOnEnter(schema, colIdOf(index), links, changes)
+            : undefined,
           width: Math.max(def.width ?? 0, 200),
         }
       : def;
@@ -201,12 +214,14 @@ function collectionColumnDefsOf(schema: LinkSchema, links: GridLinks): ColDef<Gr
 
 /**
  * Enter on a cell with a link follows it. The grid asks before it does anything with a key, and the key goes no
- * further, so a link the keyboard is on (pressed by the pointer) isn't followed twice.
+ * further, so a link the keyboard is on (pressed by the pointer) isn't followed twice. A reference changed has no
+ * link to follow (the row committed isn't the one it will refer to).
  */
 function followsOnEnter(
   schema: LinkSchema,
   colId: string,
   links: GridLinks,
+  changes: ReferenceChanges | null = null,
 ): (params: SuppressKeyboardEventParams<GridRow>) => boolean {
   return ({ event, editing, data }) => {
     if (
@@ -221,7 +236,8 @@ function followsOnEnter(
       return false;
     }
     const link = cellLinkOf(schema, colId, data);
-    if (!link) {
+    const reference = referenceOf(schema, indexOfColId(colId));
+    if (!link || (data && reference && changes?.(data, reference))) {
       return false;
     }
     event.preventDefault();
@@ -234,20 +250,27 @@ function followsOnEnter(
 function referenceContent(
   schema: LinkSchema,
   index: number,
+  changes: ReferenceChanges | null,
 ): (params: ICellRendererParams<GridRow>) => LinkContent {
   const column = schema.columns[index];
   const colId = colIdOf(index);
+  const reference = referenceOf(schema, index);
   return (params) => {
     const value: unknown = params.value;
     const row = params.data ?? null;
-    const raw = cellText(value, column.type);
+    const raw = params.valueFormatted ?? cellText(value, column.type);
     if (!row || value === null || value === undefined) {
       return { text: raw, link: null, aside: null, arrow: false };
     }
-    const display = displayOf(column, row);
+    const changed = reference && changes ? changes(row, reference) : null;
+    const display = changed
+      ? changed.display === null || changed.display === undefined
+        ? null
+        : displayText(changed.display)
+      : displayOf(column, row);
     return {
       text: display ?? raw,
-      link: cellLinkOf(schema, colId, row),
+      link: changed ? null : cellLinkOf(schema, colId, row),
       aside: display !== null && display !== raw ? raw : null,
       arrow: false,
     };

@@ -76,6 +76,8 @@
             [source]="source"
             [crumb]="crumb()"
             [linkTo]="linkTo()"
+            [editing]="true"
+            [insertDefaults]="insertDefaults()"
             (crumbChange)="update($event)"
           />
         }

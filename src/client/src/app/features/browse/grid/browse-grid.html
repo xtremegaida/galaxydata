@@ -38,18 +38,86 @@
     }
   </form>
   <span class="count" role="status">{{ countText() }}</span>
-  <button
-    matIconButton
-    type="button"
-    aria-controls="gd-inspector"
-    [attr.aria-pressed]="inspecting()"
-    [matTooltip]="inspecting() ? 'Hide the inspector' : 'Show the inspector'"
-    [attr.aria-label]="'Inspector'"
-    (click)="toggleInspector()"
-  >
-    <mat-icon>info</mat-icon>
-  </button>
+  @if (inspectable()) {
+    <button
+      matIconButton
+      type="button"
+      aria-controls="gd-inspector"
+      [attr.aria-pressed]="inspecting()"
+      [matTooltip]="inspecting() ? 'Hide the inspector' : 'Show the inspector'"
+      [attr.aria-label]="'Inspector'"
+      (click)="toggleInspector()"
+    >
+      <mat-icon>info</mat-icon>
+    </button>
+  }
 </div>
+@if (made()?.edits; as edits) {
+  <div class="edit-bar" role="group" aria-label="Changes to the rows">
+    @if (edits.capabilities.canInsert) {
+      <button matButton type="button" (click)="addRow()">
+        <mat-icon>add</mat-icon>
+        Add a row
+      </button>
+    }
+    @let actions = rowActions();
+    <button
+      matButton
+      type="button"
+      disabledInteractive
+      aria-keyshortcuts="Control+Delete"
+      [disabled]="!actions?.canDelete"
+      [attr.aria-label]="actions ? actions.deleteLabel + ': ' + actions.row : null"
+      [matTooltip]="
+        !actions
+          ? 'Choose a row first'
+          : (actions.deleteWhyNot ?? 'The row the keyboard is on (Ctrl+Delete)')
+      "
+      (click)="deleteFocused()"
+    >
+      <mat-icon>{{ actions?.state === 'deleted' ? 'restore_from_trash' : 'delete' }}</mat-icon>
+      {{ actions?.deleteLabel ?? 'Delete the row' }}
+    </button>
+    <button
+      matButton
+      type="button"
+      disabledInteractive
+      [disabled]="!actions?.canRevert"
+      [attr.aria-label]="actions ? 'Revert the row: ' + actions.row : null"
+      [matTooltip]="actions ? 'Its changes go (Ctrl+Z reverts a cell)' : 'Choose a row first'"
+      (click)="revertFocused()"
+    >
+      <mat-icon>undo</mat-icon>
+      Revert the row
+    </button>
+    <p class="hint">
+      Enter, F2 or typing edits a cell (on a reference, F2 chooses its row) · Delete (Backspace on a
+      Mac): NULL · Ctrl+Z: revert the cell · Ctrl+Delete: delete the row. Changes wait until they
+      are committed.
+    </p>
+  </div>
+}
+
+<div role="alert">
+  @if (editProblem(); as refused) {
+    <gd-message kind="problem">
+      {{ refused.title }}:
+      @if (refused.reasons.length === 1) {
+        {{ refused.reasons[0] }}
+      } @else {
+        <ul class="plain">
+          @for (reason of refused.reasons; track $index) {
+            <li>{{ reason }}</li>
+          }
+        </ul>
+      }
+      <button gdMessageAction matButton type="button" (click)="editProblem.set(null)">
+        Dismiss
+      </button>
+    </gd-message>
+  }
+</div>
+
 <p id="gd-where-help" class="cdk-visually-hidden">
   A condition in the query language over the rows; navigations may be used. Enter applies it.
 </p>
@@ -120,13 +188,18 @@
         (paginationChanged)="paged()"
         (selectionChanged)="chosen($event)"
         (cellFocused)="cellFocused($event)"
+        (cellDoubleClicked)="doubleClicked($event)"
+        (cellKeyDown)="keyDown($event)"
       />
     }
   }
-  <gd-grid-inspector
-    id="gd-inspector"
-    class="inspector"
-    [hidden]="!inspecting()"
-    [inspected]="inspected()"
-  />
+  @if (inspectable()) {
+    <gd-grid-inspector
+      id="gd-inspector"
+      class="inspector"
+      [hidden]="!inspecting()"
+      [inspected]="inspected()"
+      (revert)="revertInspected()"
+    />
+  }
 </div>

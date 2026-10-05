@@ -424,7 +424,10 @@ anti-forgery token.
 - **`schema`** (with `includeSchema`):
   - the columns, with their types, whether each is part of the key, whether the user may change it and give it a
     value in a new row, and where its values come from;
-  - the references (navigations along foreign keys, and the columns that hold them);
+  - the references (navigations along foreign keys): the columns that hold them (all of a composite key's, in its
+    order, though one of them may show another reference of its own), the target's columns they match (in the same
+    order), whether every column that holds it is shown (`complete`), and the target's column that shows its rows
+    (none when it has none), so a client can set a reference from a row of the target it chose;
   - the collections that refer to each row;
   - what the user may do with the rows.
 - **Counting.** `hasMore` says whether more rows follow. `total` (with `includeCount`) is counted alongside the

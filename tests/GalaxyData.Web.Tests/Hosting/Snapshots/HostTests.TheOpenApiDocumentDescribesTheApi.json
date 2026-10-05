@@ -8380,6 +8380,9 @@
           "navigation",
           "target",
           "columns",
+          "targetColumns",
+          "complete",
+          "displayColumn",
           "multiplicity"
         ],
         "type": "object",
@@ -8396,6 +8399,21 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          "targetColumns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "displayColumn": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "multiplicity": {
             "$ref": "#/components/schemas/Multiplicity"
