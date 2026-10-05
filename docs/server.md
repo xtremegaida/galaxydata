@@ -690,8 +690,11 @@ when it starts again, as each connection may have committed or not. Administrato
   is built without inlined critical CSS (Angular's `inlineCritical: false`), whose loader is an inline script.
 
 **Caching.** The API's answers are `Cache-Control: no-store`, as they hold data. The client's page is `no-cache`, so
-a new version is picked up at once. Its files named by their content's hash (`main-LKPGWKWT.js`: eight capitals
-and digits) are kept for a year, and its other files are checked each time.
+a new version is picked up at once. Its files named by their content's hash are kept for a year, and its other files
+are checked each time. A hash is eight capitals and digits (`main-LKPGWKWT.js`: the client's own files, media and
+workers) or, for its lazy chunks, eight of base64url's letters, digits, `_` and `-` (`chunk-BhQOlwLr.js`). It has a
+capital, and a capital or a digit after its first character, so words and dates of eight aren't taken for hashes
+(`settings-overview.txt`, `settings-Overview.txt`, `notes-20250101.txt`).
 
 **HTTPS.** Answers over HTTPS have `Strict-Transport-Security` (`Security:Hsts`, for `Security:HstsMaxAge`) outside
 development, and never for `localhost`. With `Security:RequireHttps`, requests over HTTP are redirected to HTTPS:

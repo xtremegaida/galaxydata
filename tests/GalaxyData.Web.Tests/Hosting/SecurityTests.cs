@@ -41,15 +41,34 @@ public sealed class SecurityTests
       Header(response, "Permissions-Policy").ShouldBe(SecurityHeaders.PermissionsPolicy, what);
    }
 
-   /// <summary>A web root with the client's page, a file named by its content's hash, and one that isn't.</summary>
+   /// <summary>
+   /// Files named by their content's hash, as the client's builder names them: its own files, media and workers with
+   /// capitals and digits (all capitals, too), its lazy chunks with base64url's characters (all letters, a capital
+   /// only first, <c>_</c> and <c>-</c>).
+   /// </summary>
+   private static readonly string[] HashedFiles =
+   [
+      "/main-LKPGWKWT.js", "/media/material-symbols-outlined-WIEPATWP.woff2", "/worker-2HSOCQTM.js",
+      "/chunk-BhQOlwLr.js", "/chunk-Bn5k219f.js", "/chunk-Dq16wTT-.js", "/chunk-x1IVvr_O.js",
+   ];
+
+   /// <summary>Files that aren't: no hash, and words and dates of eight in its place.</summary>
+   private static readonly string[] OtherFiles =
+   [
+      "/media/logo.svg", "/monaco.css", "/media/notes-20250101.txt", "/media/notes-25-01-01.txt",
+      "/media/settings-overview.txt", "/media/settings-Overview.txt", "/media/notes-old-file.txt", "/media/notes-v1-final.txt",
+   ];
+
+   /// <summary>A web root with the client's page, files named by their content's hash, and others.</summary>
    private static async Task<string> ClientAsync()
    {
       string webRoot = Path.Combine(Path.GetTempPath(), "gd-web-tests", Guid.NewGuid().ToString("N")[..12]);
       Directory.CreateDirectory(Path.Combine(webRoot, "media"));
       await File.WriteAllTextAsync(Path.Combine(webRoot, "index.html"), "<html>the client</html>", Token);
-      await File.WriteAllTextAsync(Path.Combine(webRoot, "main-LKPGWKWT.js"), "// built", Token);
-      await File.WriteAllTextAsync(Path.Combine(webRoot, "media", "logo.svg"), "<svg/>", Token);
-      await File.WriteAllTextAsync(Path.Combine(webRoot, "media", "notes-20250101.txt"), "dated, not hashed", Token);
+      foreach (string file in (string[])[.. HashedFiles, .. OtherFiles])
+      {
+         await File.WriteAllTextAsync(Path.Combine(webRoot, file.TrimStart('/')), "a file of the client", Token);
+      }
       return webRoot;
    }
 
@@ -66,14 +85,14 @@ public sealed class SecurityTests
       {
          await using WebAppFactory factory = new() { WebRoot = webRoot };
          HttpClient client = factory.CreateClient();
-         foreach (string path in (string[])["/", "/browse/shop.orders", "/main-LKPGWKWT.js", "/media/logo.svg", "/media/notes-20250101.txt"])
+         foreach (string path in (string[])["/", "/browse/shop.orders", .. HashedFiles, .. OtherFiles])
          {
             HttpResponseMessage response = await client.GetAsync(path, Token);
             response.StatusCode.ShouldBe(HttpStatusCode.OK, path);
             HasSecurityHeaders(response, path);
             Header(response, "Content-Security-Policy").ShouldBe(SecuritySettings.DefaultContentSecurityPolicy, path);
             Header(response, "Strict-Transport-Security").ShouldBeNull("not over HTTP");
-            response.Headers.CacheControl!.ToString().ShouldBe(path == "/main-LKPGWKWT.js" ? "public, max-age=31536000, immutable" : "no-cache", path);
+            response.Headers.CacheControl!.ToString().ShouldBe(HashedFiles.Contains(path) ? "public, max-age=31536000, immutable" : "no-cache", path);
          }
          TestApi api = await TestApi.SignedInAsync(factory);
          foreach ((HttpResponseMessage response, string what) in (IEnumerable<(HttpResponseMessage, string)>)[

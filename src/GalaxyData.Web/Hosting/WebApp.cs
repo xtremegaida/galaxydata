@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using GalaxyData.Query.DuckDb;
 using GalaxyData.Query.Excel;
@@ -247,14 +248,23 @@ public static partial class WebApp
    }
 
    /// <summary>
-   /// Files whose names have their content's hash (<c>main-LKPGWKWT.js</c>, as the client is built: eight capitals
-   /// and digits, a capital among them) are kept by browsers for a year; others are checked each time.
+   /// Files whose names have their content's hash are kept by browsers for a year; others are checked each time. As
+   /// the client is built, a hash is eight capitals and digits (<c>main-LKPGWKWT.js</c>: its own files, media and
+   /// workers) or, for its lazy chunks, eight of base64url's letters, digits, <c>_</c> and <c>-</c>
+   /// (<c>chunk-BhQOlwLr.js</c>). It has a capital, and a capital or a digit after its first character: words and
+   /// dates of eight (<c>settings-overview.txt</c>, <c>settings-Overview.txt</c>, <c>notes-20250101.txt</c>) aren't
+   /// hashes.
    /// </summary>
    private static string CacheControl(string fileName) =>
-      HashedFile().IsMatch(fileName) ? "public, max-age=31536000, immutable" : "no-cache";
+      HashedFile().IsMatch(fileName) && !WordOrDate().IsMatch(fileName) ? "public, max-age=31536000, immutable" : "no-cache";
 
-   [System.Text.RegularExpressions.GeneratedRegex("-(?=[A-Z0-9]*[A-Z])[A-Z0-9]{8}\\.[A-Za-z0-9]+$")]
-   private static partial System.Text.RegularExpressions.Regex HashedFile();
+   /// <summary>Eight of base64url's characters before the extension. (Linear in the name, as is the next.)</summary>
+   [GeneratedRegex("-[A-Za-z0-9_-]{8}\\.[A-Za-z0-9]+$", RegexOptions.NonBacktracking)]
+   private static partial Regex HashedFile();
+
+   /// <summary>Eight without a capital, or with one only first and no digit: a word or a date.</summary>
+   [GeneratedRegex("-(?:[a-z0-9_-]{8}|[A-Z][a-z_-]{7})\\.[A-Za-z0-9]+$", RegexOptions.NonBacktracking)]
+   private static partial Regex WordOrDate();
 
    private static DuckDbMergeOptions MergeOptions(MergeSettings settings, DataDirectory data) => new()
    {

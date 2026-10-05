@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -67,9 +69,29 @@ internal sealed class WebAppFactory : WebApplicationFactory<Program>
       if (ServiceChanges != null) { builder.ConfigureTestServices(ServiceChanges); }
    }
 
+   /// <summary>
+   /// Starts the application as the base does (which also finds Kestrel's port, unused here), and waits until it has
+   /// started or failed. Its entry point runs on a thread of its own, which goes on once the host is built: an
+   /// application that fails to start disposes its host, and if it does before the factory waits for it, the factory
+   /// finds a disposed <see cref="IServiceProvider"/> (an <see cref="ObjectDisposedException"/>) rather than why it
+   /// failed. So the host's start is held until the factory waits.
+   /// </summary>
    protected override IHost CreateHost(IHostBuilder builder)
    {
-      IHost host = base.CreateHost(builder);
+      TaskCompletionSource waiting = new();
+      builder.ConfigureServices(services => HeldLifetime.Replace(services, waiting.Task));
+      IHost host = builder.Build();
+      Task start;
+      try
+      {
+         // Returns as it waits for the application to start, with the host's services in hand.
+         start = host.StartAsync();
+      }
+      finally
+      {
+         waiting.SetResult();
+      }
+      start.GetAwaiter().GetResult();
       started = true;
       return host;
    }
@@ -101,6 +123,34 @@ internal sealed class WebAppFactory : WebApplicationFactory<Program>
             await Task.Delay(25);
          }
       }
+   }
+
+   /// <summary>
+   /// The host's own lifetime, with the start held until the factory waits for it. The host waits for its lifetime
+   /// before anything else it does to start (the options' validation, the hosted services), so before anything fails.
+   /// </summary>
+   private sealed class HeldLifetime(IHostLifetime lifetime, Task waiting) : IHostLifetime, IDisposable
+   {
+      public static void Replace(IServiceCollection services, Task waiting)
+      {
+         ServiceDescriptor own = services.Last(d => d.ServiceType == typeof(IHostLifetime));
+         services.Remove(own);
+         services.AddSingleton<IHostLifetime>(sp => new HeldLifetime(
+            (IHostLifetime)(own.ImplementationInstance ?? own.ImplementationFactory?.Invoke(sp) ?? ActivatorUtilities.CreateInstance(sp, own.ImplementationType!)),
+            waiting));
+      }
+
+      public Task WaitForStartAsync(CancellationToken cancellationToken)
+      {
+         // Held on the entry point's thread (the factory doesn't wait for it to let go), which then goes on to start
+         // the application where it would have.
+         waiting.Wait(cancellationToken);
+         return lifetime.WaitForStartAsync(cancellationToken);
+      }
+
+      public Task StopAsync(CancellationToken cancellationToken) => lifetime.StopAsync(cancellationToken);
+
+      public void Dispose() => (lifetime as IDisposable)?.Dispose();
    }
 }
 
