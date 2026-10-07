@@ -39,4 +39,36 @@ describe("a widget's rows as a table", () => {
     };
     expect(render(data)).toEqual([['open', 'R 250']]);
   });
+
+  it("shows a chart's colours beside the cells (and headers) they are of, for eyes alone", () => {
+    const fixture = TestBed.createComponent(RowsTable);
+    fixture.componentRef.setInput(
+      'data',
+      rowsOf('Status', [
+        ['open', '2'],
+        ['shipped', '1'],
+      ]),
+    );
+    fixture.componentRef.setInput('config', barDefaults('orders'));
+    fixture.componentRef.setInput(
+      'swatch',
+      (row: readonly unknown[] | null, column: { role: string }) =>
+        row === null
+          ? column.role === 'measure'
+            ? '#123456'
+            : null
+          : row[0] === 'open' && column.role === 'dimension'
+            ? '#abcdef'
+            : null,
+    );
+    fixture.detectChanges();
+    const table = fixture.nativeElement as HTMLElement;
+    const swatches = [...table.querySelectorAll<HTMLElement>('.swatch')];
+    expect(swatches.map((s) => [s.closest('th, td')!.tagName, s.style.background])).toEqual([
+      ['TH', 'rgb(18, 52, 86)'],
+      ['TD', 'rgb(171, 205, 239)'],
+    ]);
+    expect(swatches.every((s) => s.getAttribute('aria-hidden') === 'true')).toBe(true);
+    expect(textOf(table.querySelector('tbody td')!)).toBe('open');
+  });
 });

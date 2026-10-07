@@ -189,4 +189,22 @@ public sealed class DefinitionRulesTests
       } };
       Fields(two, small).ShouldBe(["definition"]);
    }
+
+   [Fact]
+   public void PalettesAreNamedByPositiveIdsAndBarsTakeTheirCategoriesColoursAlone()
+   {
+      DashboardDefinition sales = Definitions.Sales();
+      BarConfig bar = (BarConfig)sales.Widgets[1].Config;
+      PieConfig pie = (PieConfig)sales.Widgets[2].Config;
+      DashboardDefinition With(int? palette, BarConfig barConfig, PieConfig pieConfig) => sales with
+      {
+         Palette = palette,
+         Widgets = [sales.Widgets[0], sales.Widgets[1] with { Config = barConfig }, sales.Widgets[2] with { Config = pieConfig }],
+      };
+      Check(With(3, bar with { Palette = 4, ColorBy = BarColorBy.Category }, pie with { Palette = 999 })).Errors.ShouldBeEmpty("whether they are there is said when shown");
+      Fields(With(0, bar with { Palette = -1 }, pie with { Palette = 0 })).ShouldBe(["definition.palette", "definition.widgets[1].config.palette", "definition.widgets[2].config.palette"]);
+      Measure revenue = new(Aggregate.Sum, new FieldRef([], "total"), "Revenue", null);
+      Fields(With(null, bar with { ColorBy = BarColorBy.Category, Measures = [.. bar.Measures, revenue] }, pie)).ShouldBe(["definition.widgets[1].config.colorBy"]);
+      Fields(With(null, bar with { ColorBy = BarColorBy.Category, Series = bar.Dimension }, pie)).ShouldBe(["definition.widgets[1].config.colorBy"]);
+   }
 }

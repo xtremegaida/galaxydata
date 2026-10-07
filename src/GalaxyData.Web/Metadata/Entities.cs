@@ -382,6 +382,9 @@ public sealed class Dashboard : IVersioned
    /// <summary>The sites that may frame it (origins, <c>https://*.example.com</c>); none for any the application allows.</summary>
    public List<string> EmbedOrigins { get; set; } = [];
 
+   /// <summary>The palettes either copy names, kept as the copies are saved (<see cref="MetadataDb"/>).</summary>
+   public List<PaletteUse> PaletteUses { get; set; } = [];
+
    public DateTime CreatedAt { get; set; }
 
    public DateTime UpdatedAt { get; set; }
@@ -417,6 +420,49 @@ public sealed class DashboardRevision
    public string PublishedByName { get; set; } = string.Empty;
 
    public string? Note { get; set; }
+}
+
+/// <summary>
+/// A palette of colours for charts' slices and series, which dashboards and their charts name: its definition
+/// (canonical JSON) and its hash. Everyone signed in sees and uses every palette; its owner changes it (and
+/// administrators). When its owner is deleted, it stays.
+/// </summary>
+public sealed class Palette : IVersioned
+{
+   public int Id { get; set; }
+
+   /// <summary>Null once the owner is deleted.</summary>
+   public int? OwnerId { get; set; }
+
+   /// <summary>The owner's name when they last saved it, which outlives them.</summary>
+   public string OwnerName { get; set; } = string.Empty;
+
+   /// <summary>Unique for its owner, ignoring case.</summary>
+   public string Name { get; set; } = string.Empty;
+
+   public string? Description { get; set; }
+
+   public string DefinitionJson { get; set; } = string.Empty;
+
+   /// <summary>SHA-256 of <see cref="DefinitionJson"/>, hex: what public dashboards' tags change with.</summary>
+   public string Hash { get; set; } = string.Empty;
+
+   public DateTime CreatedAt { get; set; }
+
+   public DateTime UpdatedAt { get; set; }
+
+   public int Version { get; set; }
+}
+
+/// <summary>
+/// A palette a dashboard's working or published copy names, so a palette knows how many dashboards use it. The
+/// palette's id has no foreign key: a definition may name one that isn't there (deleted, or never was).
+/// </summary>
+public sealed class PaletteUse
+{
+   public int DashboardId { get; set; }
+
+   public int PaletteId { get; set; }
 }
 
 /// <summary>

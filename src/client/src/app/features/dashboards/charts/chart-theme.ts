@@ -14,6 +14,21 @@ export interface ChartTheme {
   readonly font: string;
 }
 
+/**
+ * The application's eight colours for series, light and dark (`--gd-chart-1` to `-8` in `styles.scss`, which a
+ * test holds to these): charts' colours without a palette, and a palette's first base.
+ */
+export const galaxyColors: readonly { readonly light: string; readonly dark: string }[] = [
+  { light: '#2a78d6', dark: '#3987e5' },
+  { light: '#eb6834', dark: '#d95926' },
+  { light: '#1baf7a', dark: '#199e70' },
+  { light: '#eda100', dark: '#c98500' },
+  { light: '#e87ba4', dark: '#d55181' },
+  { light: '#008300', dark: '#008300' },
+  { light: '#4a3aa7', dark: '#9085e9' },
+  { light: '#e34948', dark: '#e66767' },
+];
+
 const light: ChartTheme = {
   dark: false,
   text: '#1a1b1f',
@@ -22,7 +37,7 @@ const light: ChartTheme = {
   surface: '#faf9fd',
   tooltip: '#2f3033',
   tooltipText: '#f1f0f4',
-  series: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'],
+  series: galaxyColors.map((c) => c.light),
   neutral: '#9a9ca3',
   font: 'Roboto Variable, Roboto, sans-serif',
 };
@@ -35,7 +50,7 @@ const dark: ChartTheme = {
   surface: '#121316',
   tooltip: '#e3e2e6',
   tooltipText: '#2f3033',
-  series: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'],
+  series: galaxyColors.map((c) => c.dark),
   neutral: '#74777f',
   font: 'Roboto Variable, Roboto, sans-serif',
 };

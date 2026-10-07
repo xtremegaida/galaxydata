@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using GalaxyData.Web.Hosting;
 using GalaxyData.Web.Metadata;
+using GalaxyData.Web.Palettes;
 using GalaxyData.Web.Problems;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -21,9 +22,14 @@ public sealed record PublicDashboard(int Id, string Name, string? Description, D
 /// <summary>
 /// A public dashboard as anyone with its link sees it: its name, and its published copy without what is the
 /// server's alone: no sources, links, conditions, fields or hidden filters (labels and display settings stay, as
-/// the widgets show them). A refresh interval is never shorter than the time public answers are kept.
+/// the widgets show them). A refresh interval is never shorter than the time public answers are kept. The palettes
+/// it names, without their names, owners or overrides (whose labels may be of rows it doesn't show: its answers
+/// carry the overrides of their own labels instead).
 /// </summary>
-public sealed record PublicDashboardDto(string Name, string? Description, DashboardDefinition Definition);
+public sealed record PublicDashboardDto(string Name, string? Description, DashboardDefinition Definition, IReadOnlyList<PublicPaletteDto> Palettes);
+
+/// <summary>A palette as a public dashboard's charts are drawn with it: its colours and ways, not its overrides.</summary>
+public sealed record PublicPaletteDto(int Id, IReadOnlyList<PaletteColor> Colors, PaletteAssign Assign, bool Distinct, PaletteWhenOut WhenOut, LabelMatching Matching);
 
 /// <summary>
 /// Dashboards by their public links: found while public dashboards are allowed, something is published, and whoever
@@ -65,9 +71,10 @@ public sealed partial class PublicDashboards(IOptions<GalaxyDataOptions> options
       return new PublicDashboard(row.Id, row.Name, row.Description, definition, row.PublishedHash!, row.EmbedOrigins);
    }
 
-   public PublicDashboardDto View(PublicDashboard dashboard)
+   public PublicDashboardDto View(PublicDashboard dashboard, IReadOnlyDictionary<int, StoredPalette> palettes)
    {
       ArgumentNullException.ThrowIfNull(dashboard);
+      ArgumentNullException.ThrowIfNull(palettes);
       DashboardDefinition definition = dashboard.Definition;
       int floor = (int)Math.Ceiling(Settings.PublicCacheDuration.TotalSeconds);
       RefreshPolicy refresh = definition.Refresh is { Mode: RefreshMode.Interval, Seconds: { } seconds } && seconds < floor ? definition.Refresh with { Seconds = floor } : definition.Refresh;
@@ -79,7 +86,45 @@ public sealed partial class PublicDashboards(IOptions<GalaxyDataOptions> options
          Widgets = [.. definition.Widgets.Select(w => w with { Config = Strip(w.Config) })],
          Refresh = refresh,
       };
-      return new PublicDashboardDto(dashboard.Name, dashboard.Description, shown);
+      List<PublicPaletteDto> named = [.. palettes.Values.OrderBy(p => p.Id).Select(p =>
+         new PublicPaletteDto(p.Id, p.Definition.Colors, p.Definition.Assign, p.Definition.Distinct, p.Definition.WhenOut, p.Definition.Matching))];
+      return new PublicDashboardDto(dashboard.Name, dashboard.Description, shown, named);
+   }
+
+   /// <summary>
+   /// The tag a public dashboard's answer is kept by: of its published copy, its name and description, and the
+   /// palettes it names as they are now (so a palette's edit, or a rename, is a new answer).
+   /// </summary>
+   public static string Tag(PublicDashboard dashboard, IReadOnlyDictionary<int, StoredPalette> palettes)
+   {
+      ArgumentNullException.ThrowIfNull(dashboard);
+      ArgumentNullException.ThrowIfNull(palettes);
+      IEnumerable<string> named = PaletteRefs.Of(dashboard.Definition).Select(id => palettes.TryGetValue(id, out StoredPalette? p) ? $"{id}:{p.Hash}" : $"{id}:-");
+      string text = string.Join("\n", [dashboard.Hash, dashboard.Name, dashboard.Description ?? string.Empty, .. named]);
+      return DefinitionJson.Hash(text);
+   }
+
+   /// <summary>
+   /// A chart's answer with the colours its palette's overrides give the labels in it (its dimension's and series'
+   /// values, its measures' labels), by the labels as they are there; as it was for widgets that aren't charts, or
+   /// have no palette.
+   /// </summary>
+   public static WidgetDataDto Colored(PublicDashboard dashboard, string widget, WidgetDataDto data, IReadOnlyDictionary<int, StoredPalette> palettes)
+   {
+      ArgumentNullException.ThrowIfNull(dashboard);
+      ArgumentNullException.ThrowIfNull(data);
+      ArgumentNullException.ThrowIfNull(palettes);
+      if (dashboard.Definition.Widgets.Find(w => w.Id == widget) is not { } shown) { return data; }
+      StoredPalette? palette = PaletteRefs.For(dashboard.Definition, shown).Select(id => palettes.GetValueOrDefault(id)).FirstOrDefault(p => p != null);
+      if (palette == null) { return data; }
+      List<string?> labels = [];
+      for (int c = 0; c < data.Columns.Count; c++)
+      {
+         WidgetColumnDto column = data.Columns[c];
+         if (column.Role is ColumnRole.Dimension or ColumnRole.Series) { labels.AddRange(data.Rows.Select(row => LabelText.Of(row[c]))); }
+         else if (column.Role == ColumnRole.Measure) { labels.Add(column.Label); }
+      }
+      return data with { Colors = palette.Colors(labels) };
    }
 
    /// <summary>Waits for one of the dashboard's queries to end, if it has as many running as it may; 429 after <see cref="GateWait"/>.</summary>

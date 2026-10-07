@@ -7,6 +7,7 @@ import {
   type DashboardIssue,
   type Definition,
   configOf,
+  isChart,
   isData,
   reachedFrom,
 } from '../model/definition';
@@ -14,6 +15,7 @@ import { WIDGET_KINDS, kindOf } from '../model/widget-registry';
 import { DashboardStore, blankDefinition } from '../state/dashboard-store';
 import { History } from './history';
 import { missingOf } from '../model/complete';
+import { PaletteLibrary } from '../palettes/palette-library';
 
 export type DashboardDto = Schema<'DashboardDto'>;
 
@@ -49,6 +51,8 @@ export class EditorStore {
   private readonly kinds = inject(WIDGET_KINDS);
   /** The canvas's: what its widgets' previews last said. */
   private readonly dashboard = inject(DashboardStore);
+  /** The palettes the draft names, as read: one that isn't there is an issue. */
+  private readonly palettes = inject(PaletteLibrary);
   readonly history = new History<Definition>();
 
   readonly saved = signal<Saved>({
@@ -155,6 +159,27 @@ export class EditorStore {
         }
       }
     }
+    const read = this.palettes.read();
+    if (definition.palette != null && read.get(definition.palette) === null) {
+      issues.push({
+        severity: 'warning',
+        message:
+          "Its charts' palette is gone: they are drawn with the built-in colours. Choose another.",
+        place: { panel: 'refresh' },
+        field: 'palette',
+      });
+    }
+    for (const widget of definition.widgets) {
+      const config = configOf(widget);
+      if (isChart(config) && config.palette != null && read.get(config.palette) === null) {
+        issues.push({
+          severity: 'warning',
+          message: `${this.nameOf(widget.id)}: its palette is gone: it is drawn with the dashboard's.`,
+          place: { widget: widget.id },
+          field: 'config.palette',
+        });
+      }
+    }
     for (const filter of definition.filters.filter((f) => !f.field.column)) {
       issues.push({
         severity: 'warning',
@@ -168,12 +193,15 @@ export class EditorStore {
 
   /** Every issue the editor knows of: a save's refusals, its own, the server's, each preview's; errors first. */
   readonly issues = computed<EditorIssue[]>(() => {
-    const server = this.serverIssues().map((issue) => ({
-      severity: issue.severity,
-      message: issue.widget ? `${this.nameOf(issue.widget)}: ${issue.message}` : issue.message,
-      place: issue.widget ? { widget: issue.widget } : null,
-      field: issue.field,
-    }));
+    // Whether palettes are there the editor knows as they are read, better than the server did when it last said.
+    const server = this.serverIssues()
+      .filter((issue) => !issue.field?.endsWith('palette'))
+      .map((issue) => ({
+        severity: issue.severity,
+        message: issue.widget ? `${this.nameOf(issue.widget)}: ${issue.message}` : issue.message,
+        place: issue.widget ? { widget: issue.widget } : null,
+        field: issue.field,
+      }));
     const previews = [...this.dashboard.issues()].flatMap(([widget, issues]) =>
       issues.map((issue) => ({
         severity: issue.severity,

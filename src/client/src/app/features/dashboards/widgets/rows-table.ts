@@ -40,7 +40,12 @@ const numeric = new Set(['int16', 'int32', 'int64', 'decimal', 'single', 'double
         <thead>
           <tr>
             @for (column of shown(); track column.name) {
-              <th scope="col" [class.number]="isNumber(column)">{{ column.label }}</th>
+              <th scope="col" [class.number]="isNumber(column)">
+                @if (swatch()(null, column); as color) {
+                  <span class="swatch" aria-hidden="true" [style.background]="color"></span>
+                }
+                {{ column.label }}
+              </th>
             }
             @if (choosing()) {
               <th scope="col" class="actions"><span class="hidden">Choose</span></th>
@@ -55,7 +60,12 @@ const numeric = new Set(['int16', 'int32', 'int64', 'decimal', 'single', 'double
               [class.faded]="state(row) === 'faded'"
             >
               @for (column of shown(); track column.name) {
-                <td [class.number]="isNumber(column)">{{ text(row, column) }}</td>
+                <td [class.number]="isNumber(column)">
+                  @if (swatch()(row, column); as color) {
+                    <span class="swatch" aria-hidden="true" [style.background]="color"></span>
+                  }
+                  {{ text(row, column) }}
+                </td>
               }
               @if (choosing()) {
                 <td class="actions">
@@ -135,6 +145,15 @@ const numeric = new Set(['int16', 'int32', 'int64', 'decimal', 'single', 'double
       --mat-icon-button-touch-target-display: none;
       padding: 4px;
     }
+    .swatch {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-inline-end: 6px;
+      border-radius: 50%;
+      /* A ring, so a pale colour stands apart from the table. */
+      box-shadow: 0 0 0 1px var(--mat-sys-outline-variant);
+    }
     .chosen td {
       font-weight: 600;
     }
@@ -164,6 +183,10 @@ export class RowsTable {
   /** Whether rows have buttons to choose them. */
   readonly choosing = input(false);
   readonly choose = input<(key: Key, action: SelectionAction) => void>(() => undefined);
+  /** A chart's colours: of a row's cell (a header's when the row is null), shown beside it; none for a table widget. */
+  readonly swatch = input<(row: readonly unknown[] | null, column: WidgetColumn) => string | null>(
+    () => null,
+  );
 
   /** The columns shown: all but a raw table's key, which choosing its rows sends. */
   protected readonly shown = computed(() => this.data().columns.filter((c) => c.role !== 'key'));

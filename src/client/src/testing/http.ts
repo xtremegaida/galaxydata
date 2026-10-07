@@ -31,3 +31,24 @@ export async function settle(turns = 3): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve));
   }
 }
+
+/**
+ * Lets the page go on (a turn of the event loop at a time, its changes detected) till `check` holds, or for 50
+ * turns: a check that throws (what it reads isn't there yet) doesn't hold.
+ */
+export async function eventually(
+  harness: { detectChanges(): void },
+  check: () => boolean,
+): Promise<void> {
+  const holds = () => {
+    try {
+      return check();
+    } catch {
+      return false;
+    }
+  };
+  for (let turn = 0; turn < 50 && !holds(); turn++) {
+    await new Promise((resolve) => setTimeout(resolve));
+    harness.detectChanges();
+  }
+}

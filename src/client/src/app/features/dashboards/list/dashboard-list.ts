@@ -54,6 +54,10 @@ const sharing: Record<Summary['sharing'], string> = {
           <mat-label>Find a dashboard</mat-label>
           <input matInput #findInput [value]="find()" (input)="find.set(findInput.value)" />
         </mat-form-field>
+        <a matButton routerLink="palettes">
+          <mat-icon>palette</mat-icon>
+          Palettes
+        </a>
         <a matButton="filled" routerLink="new">
           <mat-icon>add</mat-icon>
           New dashboard

@@ -24,9 +24,11 @@ using GalaxyData.Web.Features.Connections;
 using GalaxyData.Web.Features.Dashboards;
 using GalaxyData.Web.Features.Health;
 using GalaxyData.Web.Features.Overlay;
+using GalaxyData.Web.Features.Palettes;
 using GalaxyData.Web.Features.Query;
 using GalaxyData.Web.Features.Users;
 using GalaxyData.Web.Overlay;
+using GalaxyData.Web.Palettes;
 using GalaxyData.Web.Problems;
 using GalaxyData.Web.Queries;
 using GalaxyData.Web.Schemas;
@@ -112,6 +114,8 @@ public static partial class WebApp
       services.AddSingleton<WidgetRunner>();
       services.AddSingleton<PublicDashboards>();
       services.AddSingleton(sp => new DefinitionRules(sp.GetRequiredService<WidgetKinds>(), sp.GetRequiredService<IOptions<GalaxyDataOptions>>().Value.Dashboards));
+      services.AddSingleton(sp => new PaletteRules(sp.GetRequiredService<IOptions<GalaxyDataOptions>>().Value.Palettes));
+      services.AddSingleton<PaletteStore>();
       services.AddSingleton<ChangePlans>();
       services.AddScoped<ChangeService>();
       services.AddSingleton<SchemaReader>();
@@ -247,6 +251,7 @@ public static partial class WebApp
       api.MapSavedQueries();
       api.MapChanges();
       api.MapDashboards();
+      api.MapPalettes();
 
       // Anyone's: outside the API's group, so without its anti-forgery check and the catalog's version.
       app.MapPublicDashboards();

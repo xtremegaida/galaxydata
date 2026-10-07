@@ -6,7 +6,7 @@ import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { publicOf, rowsOf, salesDefinition } from '../../../../testing/dashboards';
 import { FakeECharts, fakeEChartsProviders } from '../../../../testing/echarts';
-import { requestTo, settle } from '../../../../testing/http';
+import { eventually, requestTo, settle } from '../../../../testing/http';
 import { textOf, wordsOf } from '../../../../testing/pages';
 import { FakeResizeObserver } from '../../../../testing/resize';
 import { AuthStore } from '../../../core/auth/auth-store';
@@ -48,6 +48,7 @@ function stateOf(s: string | null): unknown {
 
 describe('an embedded dashboard', () => {
   let http: HttpTestingController;
+  let charts: FakeECharts;
 
   beforeEach(() => {
     FakeResizeObserver.install();
@@ -67,7 +68,7 @@ describe('an embedded dashboard', () => {
           },
         },
         { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
-        fakeEChartsProviders(new FakeECharts()),
+        fakeEChartsProviders((charts = new FakeECharts())),
         { provide: DASHBOARD_WAITS, useValue: { preview: 1, filterTyping: 1 } },
       ],
     });
@@ -98,6 +99,7 @@ describe('an embedded dashboard', () => {
       name: 'Sales',
       description: null,
       definition: shown,
+      palettes: [],
     });
     const states = await rows();
     expect(states).toEqual({
@@ -119,6 +121,66 @@ describe('an embedded dashboard', () => {
     expect(items.some((i) => i.includes('View query'))).toBe(false);
     expect(items.some((i) => i.includes('Data'))).toBe(true);
     http.verify();
+  });
+
+  it("is drawn with its palettes and its answers' overrides, and read again when refreshed", async () => {
+    const harness = await RouterTestingHarness.create(`/embed/${token}`);
+    const palette = (first: string) => ({
+      id: 3,
+      colors: [
+        { light: first, dark: null },
+        { light: '#222222', dark: null },
+      ],
+      assign: 'order',
+      distinct: true,
+      whenOut: 'repeat',
+      matching: {
+        ignoreCase: true,
+        ignoreWhitespace: false,
+        ignoreBrackets: false,
+        ignoreAccents: false,
+      },
+    });
+    const dashboard = (first: string) => ({
+      name: 'Sales',
+      description: null,
+      definition: { ...shown, palette: 3 },
+      palettes: [palette(first)],
+    });
+    (await requestTo(http, `/api/public/dashboards/${token}`)).flush(dashboard('#111111'));
+    const answer = async () => {
+      await settle(5);
+      for (const request of http.match((r) => r.url.includes('/widgets/'))) {
+        request.flush({
+          ...rowsOf('City', [
+            ['Cape Town', '1'],
+            [null, '1'],
+          ]),
+          colors: [{ label: 'Cape Town', light: '#abcdef', dark: null }],
+        });
+      }
+    };
+    await answer();
+    const page = harness.routeNativeElement as HTMLElement;
+    const slices = () =>
+      (
+        charts.chartIn(page.querySelector('[data-gd-cell="6,1,6,6"]')!)!.option.series as {
+          data: { itemStyle: { color: string } }[];
+        }[]
+      )[0].data.map((d) => d.itemStyle.color);
+    const drawn = (colors: string[]) => JSON.stringify(slices()) === JSON.stringify(colors);
+    await eventually(harness, () => drawn(['#abcdef', '#111111']));
+    expect(slices()).toEqual(['#abcdef', '#111111']);
+    // Its palettes came with it: nothing else is asked for (the palettes' own are for those signed in).
+    http.expectNone((r) => r.url.startsWith('/api/palettes') || r.url.includes('/palettes'));
+    [...page.querySelectorAll<HTMLButtonElement>('button')]
+      .find((b) => textOf(b).includes('Refresh'))!
+      .click();
+    await settle();
+    (await requestTo(http, `/api/public/dashboards/${token}`)).flush(dashboard('#333333'));
+    await answer();
+    await eventually(harness, () => drawn(['#abcdef', '#333333']));
+    expect(slices()).toEqual(['#abcdef', '#333333']);
   });
 
   it("says plainly when the dashboard isn't there, and asks no one to sign in", async () => {
@@ -164,6 +226,7 @@ describe('an embedded dashboard', () => {
       name: 'Sales',
       description: null,
       definition: shown,
+      palettes: [],
     });
     await rows();
     harness.detectChanges();

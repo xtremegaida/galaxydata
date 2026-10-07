@@ -78,6 +78,7 @@ export function dashboardOf(
       copy: true,
     },
     issues: [],
+    palettes: [],
     createdAt: '2026-03-01T08:00:00Z',
     updatedAt: '2026-03-01T09:00:00Z',
     version: 2,

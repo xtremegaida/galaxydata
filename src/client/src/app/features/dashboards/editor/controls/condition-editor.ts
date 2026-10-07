@@ -181,12 +181,6 @@ function valuesOf(text: string): string[] {
       display: grid;
       gap: 8px;
     }
-    .period {
-      grid-template-columns: 1fr auto 1fr;
-    }
-    .count {
-      width: 96px;
-    }
   `,
 })
 export class ConditionValueEditor {

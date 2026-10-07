@@ -80,7 +80,7 @@ public sealed class PolicyTests
          status.ShouldBe(admin, path);
       }
       foreach (string path in (string[])["/api/catalog", "/api/catalog/tree/children", "/api/catalog/tree/search?text=x", "/api/saved-queries", "/api/dashboards",
-                                          "/api/dashboards/people"])
+                                          "/api/dashboards/people", "/api/palettes"])
       {
          (await lee.GetAsync(path)).StatusCode.ShouldBe(HttpStatusCode.OK, path);
       }

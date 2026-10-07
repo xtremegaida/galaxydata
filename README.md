@@ -9,8 +9,8 @@ GalaxyData is two things built together:
 - **GalaxyData Manager**, a web application on the library (ASP.NET Core and Angular): browsing the data and
   following its links, changing rows (previewed as SQL, committed together), writing and saving queries, building
   dashboards (charts, tables and text on a grid, filtered by what is chosen in them; shared, published, and public
-  by a link other sites may frame), and looking after users, connections and the catalog's overlay (relations,
-  virtual entities, settings).
+  by a link other sites may frame; coloured by palettes, so a label has its colour everywhere), and looking after
+  users, connections and the catalog's overlay (relations, virtual entities, settings).
 
 ## What it needs
 

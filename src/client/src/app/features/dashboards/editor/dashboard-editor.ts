@@ -26,12 +26,15 @@ import { MatTooltip } from '@angular/material/tooltip';
 import { Router, RouterLink } from '@angular/router';
 import { EMPTY, firstValueFrom } from 'rxjs';
 import { ApiClient } from '../../../core/api/api-client';
+import { sameJson } from '../../../core/api/same-json';
 import { type Problem, ProblemCode, problemMessage, problemOf } from '../../../core/api/problem';
 import { PageTitle } from '../../../core/page-titles';
 import { Message } from '../../../core/ui/message';
 import { type HasUnsavedChanges, warnBeforeUnload } from '../../../core/ui/unsaved-changes';
-import type { Definition } from '../model/definition';
+import { chartPalette } from '../charts/series-colors';
+import { type Definition, palettesOf } from '../model/definition';
 import { addWidget } from '../model/definition-ops';
+import { PaletteLibrary } from '../palettes/palette-library';
 import { WIDGET_KINDS, type WidgetKind } from '../model/widget-registry';
 import { InlineHost } from '../state/dashboard-host';
 import { DashboardStore } from '../state/dashboard-store';
@@ -68,14 +71,14 @@ function placeOf(field: string, sent: Definition): IssuePlace | null {
   if (field.startsWith('definition.layout')) {
     return { panel: 'layout' };
   }
-  if (field.startsWith('definition.refresh')) {
+  if (field.startsWith('definition.refresh') || field === 'definition.palette') {
     return { panel: 'refresh' };
   }
   return null;
 }
 
 /**
- * The dashboard editor: a canvas of the dashboard as viewers see it (at each breakpoint), a palette to add widgets,
+ * The dashboard editor: a canvas of the dashboard as viewers see it (at each breakpoint), a panel to add widgets,
  * and panels for the widget chosen, the sources and their links, the filters, the layout, the refresh and the
  * issues. Every edit is undone and redone by name (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y outside fields); Ctrl+S saves
  * the working copy (a new dashboard's first save gives it its address). Each widget's preview is its slice's, asked
@@ -217,7 +220,7 @@ function placeOf(field: string, sent: Definition): IssuePlace | null {
       </div>
       @if (ready()) {
         <div class="body">
-          <aside class="palette" aria-label="Add a widget">
+          <aside class="add-widgets" aria-label="Add a widget">
             @for (kind of kinds; track kind.kind) {
               <button matButton type="button" class="add" (click)="add(kind)">
                 <mat-icon>{{ kind.icon }}</mat-icon>
@@ -237,7 +240,7 @@ function placeOf(field: string, sent: Definition): IssuePlace | null {
               <mat-tab label="Sources"><gd-sources-panel class="tab" /></mat-tab>
               <mat-tab label="Filters"><gd-filters-panel class="tab" /></mat-tab>
               <mat-tab label="Layout"><gd-layout-panel class="tab" /></mat-tab>
-              <mat-tab label="Refresh"><gd-refresh-panel class="tab" /></mat-tab>
+              <mat-tab label="Dashboard"><gd-refresh-panel class="tab" /></mat-tab>
               <mat-tab [label]="issuesLabel()">
                 <gd-issues-panel class="tab" (go)="goTo($event)" />
               </mat-tab>
@@ -285,7 +288,7 @@ function placeOf(field: string, sent: Definition): IssuePlace | null {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr) 380px;
     }
-    .palette {
+    .add-widgets {
       display: flex;
       flex-direction: column;
       gap: 4px;
@@ -306,7 +309,7 @@ function placeOf(field: string, sent: Definition): IssuePlace | null {
       display: block;
       padding: 12px 16px 24px;
     }
-    /* Narrow (a tablet's width, the navigation open): the palette a row, the settings below the canvas. */
+    /* Narrow (a tablet's width, the navigation open): the widgets to add a row, the settings below the canvas. */
     @container (max-width: 1000px) {
       .editor {
         height: auto;
@@ -314,7 +317,7 @@ function placeOf(field: string, sent: Definition): IssuePlace | null {
       .body {
         grid-template-columns: minmax(0, 1fr);
       }
-      .palette {
+      .add-widgets {
         flex-direction: row;
         flex-wrap: wrap;
         border-right: 0;
@@ -349,6 +352,7 @@ export class DashboardEditor implements HasUnsavedChanges {
   private readonly document = inject(DOCUMENT);
   protected readonly store = inject(EditorStore);
   private readonly dashboard = inject(DashboardStore);
+  private readonly palettes = inject(PaletteLibrary);
   protected readonly kinds = inject(WIDGET_KINDS);
   private readonly nameField = viewChild<ElementRef<HTMLInputElement>>('name');
 
@@ -393,10 +397,26 @@ export class DashboardEditor implements HasUnsavedChanges {
     });
     // The canvas shows the draft; its widgets ask for their slices' rows.
     effect(() => this.dashboard.definition.set(this.store.draft()));
+    // And are drawn with the palettes it names, as they are now (saved elsewhere, they follow).
+    const named = computed(() => palettesOf(this.store.draft()), { equal: sameJson });
+    effect(() => {
+      const ids = named();
+      untracked(() => this.palettes.want(ids));
+    });
+    effect(() => {
+      const read = this.palettes.read();
+      const shown = named().flatMap((id) => {
+        const palette = read.get(id);
+        return palette ? [[id, chartPalette(palette)] as const] : [];
+      });
+      untracked(() => this.dashboard.palettes.set(new Map(shown)));
+    });
     this.dashboard.host.set(new InlineHost(this.api, () => this.dashboard.definition(), 'editor'));
     effect(() => {
-      const name = this.store.name().trim() || 'New dashboard';
-      this.title.detail.set(this.store.dirty() ? `${name} (not saved)` : name);
+      // Unnamed, the page's own title says it is new ("New dashboard").
+      const name = this.store.name().trim();
+      const unsaved = name ? `${name} (not saved)` : 'Not saved';
+      this.title.detail.set(this.store.dirty() ? unsaved : name || null);
     });
     warnBeforeUnload(() => this.hasUnsavedChanges());
     inject(DestroyRef).onDestroy(() => this.title.detail.set(null));

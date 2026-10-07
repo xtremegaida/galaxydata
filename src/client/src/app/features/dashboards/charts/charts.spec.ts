@@ -3,6 +3,7 @@ import { barDefaults, lineDefaults, pieDefaults } from '../model/widget-defaults
 import { actionOf } from './chart-events';
 import { ColorMemory, type ChartContext, barOption, lineOption, pieOption } from './chart-options';
 import { fallbackTheme } from './chart-theme';
+import { contrast } from './color-checks';
 import {
   categoryText,
   chartNumber,
@@ -331,18 +332,6 @@ describe('chart options', () => {
 });
 
 describe('chart palette', () => {
-  /** WCAG's relative luminance and contrast. */
-  function luminance(hex: string): number {
-    const [r, g, b] = [1, 3, 5]
-      .map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
-      .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  }
-  const contrast = (a: string, b: string) => {
-    const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
-    return (x + 0.05) / (y + 0.05);
-  };
-
   it('stands out from the dark surface everywhere, and the light one but where labels and a table say', () => {
     const dark = fallbackTheme(true);
     expect(dark.series.every((color) => contrast(color, '#121316') >= 3)).toBe(true);

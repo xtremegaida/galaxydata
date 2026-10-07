@@ -303,23 +303,23 @@ test('builds a dashboard in the editor: sources linked, widgets, a filter', asyn
   await settings().getByRole('button', { name: 'Link them' }).click();
   await expect(settings()).toContainText('Orders → customer → Customers');
 
-  const palette = page.getByRole('complementary', { name: 'Add a widget' });
-  await palette.getByRole('button', { name: 'Text' }).click();
+  const adding = page.getByRole('complementary', { name: 'Add a widget' });
+  await adding.getByRole('button', { name: 'Text' }).click();
   await settings()
     .getByRole('textbox', { name: 'Text, in Markdown' })
     .fill('# Shop\n\nOrders by status; see [the docs](https://example.com/docs).');
 
-  await palette.getByRole('button', { name: 'Bar chart' }).click();
+  await adding.getByRole('button', { name: 'Bar chart' }).click();
   await settings().getByRole('textbox', { name: 'Title', exact: true }).fill('Orders by status');
   await pickField('Category', 'status');
 
-  await palette.getByRole('button', { name: 'Pie chart' }).click();
+  await adding.getByRole('button', { name: 'Pie chart' }).click();
   await settings().getByRole('textbox', { name: 'Title', exact: true }).fill('Customers by city');
   await settings().getByRole('combobox', { name: 'Source' }).click();
   await page.getByRole('option', { name: /^Customers/ }).click();
   await pickField('Slices', 'city');
 
-  await palette.getByRole('button', { name: 'Table' }).click();
+  await adding.getByRole('button', { name: 'Table' }).click();
   await settings().getByRole('textbox', { name: 'Title', exact: true }).fill('Orders by customer');
   await pickField('Group 1', 'customer.name');
 
@@ -513,6 +513,83 @@ test('is public: another site frames it, asking for no session, as tall as it is
   await expect(frame.getByText(/sign in/i)).toHaveCount(0);
   await context.close();
   await new Promise((resolve) => embedding.close(resolve));
+});
+
+/** The colour of a row's swatch in a chart's table, as the browser paints it. */
+async function swatchOf(title: string, row: string): Promise<string> {
+  return widget(title)
+    .getByRole('row', { name: new RegExp(`^${row}\\b`) })
+    .locator('.swatch')
+    .evaluate((swatch) => getComputedStyle(swatch).backgroundColor);
+}
+
+test('colours labels by a palette: its own colours in every chart, and only those shown public', async () => {
+  // A palette of the application's colours, with colours of their own for a status and a city.
+  await page.goto(dashboardUrl.replace(/\/\d+$/, ''));
+  await page.getByRole('link', { name: 'Palettes' }).click();
+  await page.getByRole('link', { name: 'New palette' }).click();
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Statuses');
+  const labels = page.getByRole('textbox', { name: 'Label', exact: true });
+  for (const [i, [label, color]] of [
+    ['open', '#123456'],
+    ['Johannesburg', '#654321'],
+  ].entries()) {
+    await page.getByRole('button', { name: 'Add a label' }).click();
+    await expect(labels).toHaveCount(i + 1);
+    await labels.nth(i).fill(label);
+    await page.getByRole('textbox', { name: 'Its colour', exact: true }).nth(i).fill(color);
+  }
+  await page.keyboard.press('ControlOrMeta+s');
+  await expect(page).toHaveURL(/\/dashboards\/palettes\/\d+$/);
+  await expect(page.getByText('No dashboard uses it yet.')).toBeVisible();
+
+  // The dashboard's charts drawn with it; the bars each their status's colour.
+  await page.goto(`${dashboardUrl}/edit`);
+  await settings().getByRole('tab', { name: 'Dashboard' }).click();
+  await settings().getByRole('combobox', { name: "Its charts' palette" }).click();
+  await page.getByRole('option', { name: /^Statuses/ }).click();
+  await frameOf('bar').locator('.cover').click();
+  // Its settings: the tabs scroll, so the first is reached as the keyboard reaches it.
+  await settings().getByRole('tab', { name: 'Dashboard' }).focus();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  await settings().getByRole('switch', { name: 'Colour bars by their categories' }).click();
+  await expect(settings().getByRole('list', { name: 'Its colours' })).toContainText(
+    'open, its own',
+  );
+  await page.keyboard.press('ControlOrMeta+s');
+  await expect(page.getByText('Not saved')).toBeHidden();
+
+  await page.goto(dashboardUrl);
+  await page.getByRole('button', { name: 'Publish' }).click();
+  const publish = page.getByRole('dialog', { name: 'Publish Shop' });
+  await expect(publish).toContainText('Changed Orders by status.');
+  await expect(publish).toContainText("Changed its charts' palette.");
+  await publish.getByRole('button', { name: 'Publish' }).click();
+  await expect(publish).toBeHidden();
+  for (const title of ['Orders by status', 'Customers by city']) {
+    await page.getByRole('button', { name: `Actions of ${title}` }).click();
+    await page.getByRole('menuitem', { name: 'Show as table' }).click();
+  }
+  expect(await swatchOf('Orders by status', 'open')).toBe('rgb(18, 52, 86)');
+  expect(await swatchOf('Customers by city', 'Johannesburg')).toBe('rgb(101, 67, 33)');
+
+  // Public, each chart's answer carries the colours of its own labels alone.
+  await page.getByRole('button', { name: 'Share' }).click();
+  const share = page.getByRole('dialog', { name: 'Share Shop' });
+  await share.getByRole('switch', { name: 'A public link' }).click();
+  const token = (await share.getByRole('textbox', { name: 'Link' }).inputValue()).split('/').pop();
+  const colors = async (id: string) =>
+    (await (await page.request.get(`/api/public/dashboards/${token}/widgets/${id}/data`)).json())
+      .colors;
+  expect(await colors('bar')).toEqual([{ label: 'open', light: '#123456', dark: null }]);
+  expect(await colors('pie')).toEqual([{ label: 'Johannesburg', light: '#654321', dark: null }]);
+  await share.getByRole('switch', { name: 'A public link' }).click();
+  await page
+    .getByRole('alertdialog', { name: 'Stop the public link?' })
+    .getByRole('button', { name: 'Stop it' })
+    .click();
+  await share.getByRole('button', { name: 'Close' }).click();
 });
 
 test('says nothing in the console', () => {

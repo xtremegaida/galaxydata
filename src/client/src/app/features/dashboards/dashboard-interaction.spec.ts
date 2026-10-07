@@ -5,7 +5,7 @@ import { Router } from '@angular/router';
 import type { TestRequest } from '@angular/common/http/testing';
 import { dashboardOf, rowsOf, salesDefinition, widgetDataUrl } from '../../../testing/dashboards';
 import { FakeECharts, fakeEChartsProviders } from '../../../testing/echarts';
-import { requestTo, settle } from '../../../testing/http';
+import { eventually, requestTo, settle } from '../../../testing/http';
 import { FakeMonaco, fakeMonacoProviders } from '../../../testing/monaco';
 import { openPage, pageProviders, textOf, wordsOf } from '../../../testing/pages';
 import { explainOf, queryPageOf, orderResultRows } from '../../../testing/query';
@@ -376,10 +376,7 @@ describe('choosing and filtering on a dashboard', () => {
       total: { text: 'shop.customers.groupBy().select(m0: count())', parameters: [] },
       underlying: main,
     });
-    for (let turn = 0; turn < 20 && monaco.editors.length === 0; turn++) {
-      await settle(1);
-      harness.detectChanges();
-    }
+    await eventually(harness, () => monaco.editors.at(-1)?.model.getValue() === main.text);
     expect(monaco.editors.at(-1)!.model.getValue()).toBe(main.text);
     expect(cellsOf(dialog.querySelector('.parameters')!)).toEqual([['$f1', 'string', 'Cape Town']]);
     expect([...dialog.querySelectorAll('mat-button-toggle')].map((t) => textOf(t))).toEqual([
@@ -403,7 +400,7 @@ describe('choosing and filtering on a dashboard', () => {
     [...dialog.querySelectorAll<HTMLButtonElement>('button')]
       .find((b) => textOf(b) === 'Open in the query editor')!
       .click();
-    await settle(5);
+    await eventually(harness, () => router.url.startsWith('/query#'));
     expect(router.url.startsWith('/query#')).toBe(true);
     expect(decodeURIComponent(router.url)).toContain(main.text);
   });

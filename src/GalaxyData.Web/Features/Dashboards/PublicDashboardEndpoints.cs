@@ -8,6 +8,7 @@ using GalaxyData.Query.Execution;
 using GalaxyData.Web.Dashboards;
 using GalaxyData.Web.Hosting;
 using GalaxyData.Web.Metadata;
+using GalaxyData.Web.Palettes;
 using GalaxyData.Web.Problems;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -53,28 +54,33 @@ public static class PublicDashboardEndpoints
       return app;
    }
 
-   private static async Task<IResult> GetAsync(string token, HttpContext context, MetadataDb db, PublicDashboards dashboards, CancellationToken cancellationToken)
+   private static async Task<IResult> GetAsync(string token, HttpContext context, MetadataDb db, PublicDashboards dashboards, PaletteStore palettes,
+      CancellationToken cancellationToken)
    {
       if (await dashboards.FindAsync(db, token, cancellationToken) is not { } dashboard) { return NotFound(); }
-      // Viewers may keep it, asking each time whether it is still the one published.
-      string tag = $"\"{dashboard.Hash}\"";
+      IReadOnlyDictionary<int, StoredPalette> named = await palettes.FindAsync(db, PaletteRefs.Of(dashboard.Definition), cancellationToken);
+      // Viewers may keep it, asking each time whether it is still the one published (with its palettes as they were).
+      string tag = $"\"{PublicDashboards.Tag(dashboard, named)}\"";
       context.Response.Headers.CacheControl = "private, no-cache";
       context.Response.Headers.ETag = tag;
       if (context.Request.Headers.IfNoneMatch.ToString().Split(',', StringSplitOptions.TrimEntries).AsSpan().Contains(tag))
       {
          return TypedResults.StatusCode(StatusCodes.Status304NotModified);
       }
-      return TypedResults.Ok(dashboards.View(dashboard));
+      return TypedResults.Ok(dashboards.View(dashboard, named));
    }
 
    private static Task<IResult> DataAsync(string token, string widget, string? s, long? offset, int? limit, bool? count, MetadataDb db, PublicDashboards dashboards,
-      WidgetRunner runner, CancellationToken cancellationToken) =>
+      WidgetRunner runner, PaletteStore palettes, CancellationToken cancellationToken) =>
       AnswerAsync(async () =>
       {
          PublicDashboard dashboard = await FoundAsync(db, dashboards, token, cancellationToken);
          WidgetPage? page = offset == null && limit == null && count == null ? null : new WidgetPage(offset ?? 0, limit, count ?? false);
-         return await runner.DataAsync(dashboard.Definition, widget, State(s), page, refresh: false, RunMode.Public, response: null, cancellationToken,
+         WidgetDataDto data = await runner.DataAsync(dashboard.Definition, widget, State(s), page, refresh: false, RunMode.Public, response: null, cancellationToken,
             ct => dashboards.GateAsync(dashboard.Id, ct));
+         // After the rows kept (by their query alone), so a palette's edit shows at the next read.
+         IReadOnlyDictionary<int, StoredPalette> named = await palettes.FindAsync(db, PaletteRefs.Of(dashboard.Definition), cancellationToken);
+         return PublicDashboards.Colored(dashboard, widget, data, named);
       });
 
    private static Task<IResult> ValuesAsync(string token, string filter, string? s, string? text, MetadataDb db, PublicDashboards dashboards, WidgetRunner runner,

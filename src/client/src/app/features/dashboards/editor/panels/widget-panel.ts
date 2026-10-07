@@ -11,6 +11,7 @@ import {
   type DataConfig,
   type WidgetConfig,
   configOf,
+  isChart,
   isData,
   reachedFrom,
 } from '../../model/definition';
@@ -22,6 +23,7 @@ import {
   updateWidget,
 } from '../../model/definition-ops';
 import { WIDGET_KINDS, kindOf } from '../../model/widget-registry';
+import { ChartColors } from '../controls/chart-colors';
 import { ConditionList } from '../controls/condition-editor';
 import { EditorStore } from '../editor-store';
 import { KindSettingsHost } from './kind-settings-host';
@@ -36,6 +38,7 @@ type Listens = DataConfig['listens'];
 @Component({
   selector: 'gd-widget-panel',
   imports: [
+    ChartColors,
     ConditionList,
     KindSettingsHost,
     MatButton,
@@ -91,6 +94,9 @@ type Listens = DataConfig['listens'];
             [config]="configOf(widget)"
             (configChange)="configured($event)"
           />
+        }
+        @if (chart()) {
+          <gd-chart-colors [widget]="widget.id" />
         }
         @if (data(); as config) {
           <h3>Filtering</h3>
@@ -213,6 +219,12 @@ export class WidgetPanel {
     const id = this.store.selected();
     return this.store.draft().widgets.find((w) => w.id === id) ?? null;
   });
+  /** Whether it is a chart: its colours are listed. */
+  protected readonly chart = computed(() => {
+    const widget = this.widget();
+    return !!widget && isChart(configOf(widget));
+  });
+
   protected readonly kind = computed(() => {
     const widget = this.widget();
     return widget ? (kindOf(this.kinds, configOf(widget)) ?? null) : null;

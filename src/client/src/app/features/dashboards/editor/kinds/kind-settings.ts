@@ -19,6 +19,7 @@ import { blankDimension } from '../../model/widget-defaults';
 import { DimensionEditor } from '../controls/dimension-editor';
 import { FieldPicker, humanize } from '../controls/field-picker';
 import { MeasureList } from '../controls/measure-list';
+import { PalettePicker } from '../controls/palette-picker';
 
 type Sort = BarConfig['sort'];
 
@@ -106,10 +107,22 @@ export class TextSettings {
   }
 }
 
-/** The parts every chart has: a legend's place, labels on its marks, and its axes' titles (not a pie's). */
+/**
+ * The parts every chart has: a legend's place, labels on its marks, its axes' titles (not a pie's), and its
+ * colours: a palette of its own (none: the dashboard's), and for bars, whether they take their categories'.
+ */
 @Component({
   selector: 'gd-chart-display',
-  imports: [MatFormField, MatInput, MatLabel, MatOption, MatSelect, MatSlideToggle],
+  imports: [
+    MatFormField,
+    MatHint,
+    MatInput,
+    MatLabel,
+    MatOption,
+    MatSelect,
+    MatSlideToggle,
+    PalettePicker,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <h3>Display</h3>
@@ -140,6 +153,24 @@ export class TextSettings {
         </mat-form-field>
       </div>
     }
+    <h3>Colours</h3>
+    <gd-palette-picker
+      label="Palette"
+      none="The dashboard's"
+      [value]="palette()"
+      (valueChange)="palette.set($event)"
+    />
+    @if (bars()) {
+      <mat-slide-toggle
+        [checked]="colorBy() === 'category'"
+        [disabled]="!byCategory()"
+        (change)="colorBy.set($event.checked ? 'category' : 'measure')"
+        >Colour bars by their categories</mat-slide-toggle
+      >
+      @if (!byCategory()) {
+        <mat-hint class="aside">With one measure and no series</mat-hint>
+      }
+    }
   `,
   styles: settingsStyles,
 })
@@ -149,6 +180,12 @@ export class ChartDisplay {
   readonly xTitle = model<string | null>(null);
   readonly yTitle = model<string | null>(null);
   readonly axes = input(true);
+  readonly palette = model<number | null>(null);
+  readonly colorBy = model<'measure' | 'category'>('measure');
+  /** Whether it is a bar chart's, whose bars may take their categories' colours. */
+  readonly bars = input(false);
+  /** Whether they may: one measure, no series. */
+  readonly byCategory = input(true);
 
   protected text(event: Event): string | null {
     return (event.target as HTMLInputElement).value || null;
@@ -263,6 +300,12 @@ export class SeriesEditor {
       (xTitleChange)="set({ xTitle: $event })"
       [yTitle]="config().yTitle"
       (yTitleChange)="set({ yTitle: $event })"
+      [palette]="config().palette ?? null"
+      (paletteChange)="set({ palette: $event ?? undefined })"
+      [bars]="true"
+      [byCategory]="!config().series && config().measures.length === 1"
+      [colorBy]="config().colorBy ?? 'measure'"
+      (colorByChange)="set({ colorBy: $event === 'category' ? 'category' : undefined })"
     />
   `,
   styles: settingsStyles,
@@ -276,7 +319,12 @@ export class BarSettings {
   );
 
   protected set(change: Partial<BarConfig>): void {
-    this.config.set({ ...this.config(), ...change });
+    const config = { ...this.config(), ...change };
+    // Bars take their categories' colours with one measure and no series alone.
+    if (config.colorBy === 'category' && (config.series || config.measures.length !== 1)) {
+      delete config.colorBy;
+    }
+    this.config.set(config);
   }
 
   protected serieschanged(series: Dimension | null): void {
@@ -375,6 +423,8 @@ export class BarSettings {
       (xTitleChange)="set({ xTitle: $event })"
       [yTitle]="config().yTitle"
       (yTitleChange)="set({ yTitle: $event })"
+      [palette]="config().palette ?? null"
+      (paletteChange)="set({ palette: $event ?? undefined })"
     />
   `,
   styles: settingsStyles,
@@ -446,6 +496,8 @@ export class LineSettings {
       (legendChange)="set({ legend: $event })"
       [labels]="config().labels"
       (labelsChange)="set({ labels: $event })"
+      [palette]="config().palette ?? null"
+      (paletteChange)="set({ palette: $event ?? undefined })"
     />
   `,
   styles: settingsStyles,

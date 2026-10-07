@@ -962,6 +962,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboards/{id}/palettes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The palettes the copies the user sees name, as they are now */
+        get: operations["GetDashboardPalettes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dashboards/{id}/publish": {
         parameters: {
             query?: never;
@@ -1214,6 +1231,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/palettes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every palette, by name */
+        get: operations["ListPalettes"];
+        put?: never;
+        post: operations["CreatePalette"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/palettes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["GetPalette"];
+        put: operations["UpdatePalette"];
+        post?: never;
+        delete: operations["DeletePalette"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/public/dashboards/{token}": {
         parameters: {
             query?: never;
@@ -1281,6 +1331,11 @@ export interface components {
         };
         /** @enum {unknown} */
         Aggregate: "count" | "countValues" | "countDistinct" | "sum" | "avg" | "min" | "max";
+        /**
+         * @default measure
+         * @enum {unknown}
+         */
+        BarColorBy: "measure" | "category";
         /** @enum {unknown} */
         BarOrientation: "vertical" | "horizontal";
         /** @enum {unknown} */
@@ -1450,6 +1505,14 @@ export interface components {
             /** Format: date-time */
             updatedAt: null | string;
             changes: components["schemas"]["PendingChangeDto"][];
+        };
+        ChartPaletteDto: {
+            /** Format: int32 */
+            id: number;
+            name: string;
+            owner: string;
+            definition: components["schemas"]["PaletteDefinition"];
+            hash: string;
         };
         ChoiceDto: {
             value: string;
@@ -1669,6 +1732,11 @@ export interface components {
             description?: null | string;
             definition?: null | components["schemas"]["DashboardDefinition"];
         };
+        CreatePaletteRequest: {
+            name: string;
+            description: null | string;
+            definition: components["schemas"]["PaletteDefinition"];
+        };
         CreateUserRequest: {
             userName: string;
             role: components["schemas"]["UserRole"];
@@ -1685,6 +1753,8 @@ export interface components {
             widgets: components["schemas"]["DashboardWidget"][];
             refresh: components["schemas"]["RefreshPolicy"];
             public: components["schemas"]["PublicSettings"];
+            /** Format: int32 */
+            palette?: null | number;
         };
         DashboardDto: {
             /** Format: int32 */
@@ -1707,6 +1777,7 @@ export interface components {
             public: null | components["schemas"]["DashboardPublicDto"];
             can: components["schemas"]["DashboardPermissionsDto"];
             issues: components["schemas"]["DashboardIssue"][];
+            palettes: components["schemas"]["ChartPaletteDto"][];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2175,6 +2246,17 @@ export interface components {
             name: null | string;
             columns: string[];
         };
+        LabelColorDto: {
+            label: null | string;
+            light: string;
+            dark: null | string;
+        };
+        LabelMatching: {
+            ignoreCase: boolean;
+            ignoreWhitespace: boolean;
+            ignoreBrackets: boolean;
+            ignoreAccents: boolean;
+        };
         LayoutOverride: {
             /** Format: int32 */
             columns: number;
@@ -2338,6 +2420,71 @@ export interface components {
             key?: null | string[];
             description?: null | string;
         };
+        /** @enum {unknown} */
+        PaletteAssign: "order" | "label";
+        PaletteColor: {
+            light: string;
+            dark: null | string;
+        };
+        PaletteDashboardDto: {
+            /** Format: int32 */
+            id: number;
+            name: string;
+            owner: string;
+        };
+        PaletteDefinition: {
+            colors: components["schemas"]["PaletteColor"][];
+            assign: components["schemas"]["PaletteAssign"];
+            distinct: boolean;
+            whenOut: components["schemas"]["PaletteWhenOut"];
+            matching: components["schemas"]["LabelMatching"];
+            overrides: components["schemas"]["PaletteOverride"][];
+        };
+        PaletteDto: {
+            /** Format: int32 */
+            id: number;
+            name: string;
+            description: null | string;
+            owner: string;
+            isMine: boolean;
+            canEdit: boolean;
+            definition: components["schemas"]["PaletteDefinition"];
+            hash: string;
+            /** Format: int32 */
+            usedBy: number;
+            dashboards: components["schemas"]["PaletteDashboardDto"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: int32 */
+            version: number;
+        };
+        PaletteOverride: {
+            label: null | string;
+            color: components["schemas"]["PaletteColor"];
+        };
+        PaletteSummaryDto: {
+            /** Format: int32 */
+            id: number;
+            name: string;
+            description: null | string;
+            owner: string;
+            isMine: boolean;
+            canEdit: boolean;
+            colors: components["schemas"]["PaletteColor"][];
+            assign: components["schemas"]["PaletteAssign"];
+            /** Format: int32 */
+            overrides: number;
+            /** Format: int32 */
+            usedBy: number;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: int32 */
+            version: number;
+        };
+        /** @enum {unknown} */
+        PaletteWhenOut: "repeat" | "neutral";
         PasswordPolicyDto: {
             /** Format: int32 */
             minimumLength: number;
@@ -2418,6 +2565,16 @@ export interface components {
             name: string;
             description: null | string;
             definition: components["schemas"]["DashboardDefinition"];
+            palettes: components["schemas"]["PublicPaletteDto"][];
+        };
+        PublicPaletteDto: {
+            /** Format: int32 */
+            id: number;
+            colors: components["schemas"]["PaletteColor"][];
+            assign: components["schemas"]["PaletteAssign"];
+            distinct: boolean;
+            whenOut: components["schemas"]["PaletteWhenOut"];
+            matching: components["schemas"]["LabelMatching"];
         };
         PublicSettings: {
             showData: boolean;
@@ -2842,6 +2999,13 @@ export interface components {
             /** Format: int32 */
             version: number;
         };
+        UpdatePaletteRequest: {
+            name: string;
+            description: null | string;
+            definition: components["schemas"]["PaletteDefinition"];
+            /** Format: int32 */
+            version: number;
+        };
         UpdateRelationRequest: {
             relation: components["schemas"]["RelationInput"];
             /** Format: int32 */
@@ -2944,6 +3108,9 @@ export interface components {
             legend: components["schemas"]["LegendPosition"];
             xTitle: null | string;
             yTitle: null | string;
+            /** Format: int32 */
+            palette?: null | number;
+            colorBy?: components["schemas"]["BarColorBy"];
             source: string;
             conditions: components["schemas"]["WidgetCondition"][];
             emits: boolean;
@@ -2963,6 +3130,8 @@ export interface components {
             legend: components["schemas"]["LegendPosition"];
             xTitle: null | string;
             yTitle: null | string;
+            /** Format: int32 */
+            palette?: null | number;
             source: string;
             conditions: components["schemas"]["WidgetCondition"][];
             emits: boolean;
@@ -2979,6 +3148,8 @@ export interface components {
             donut: boolean;
             labels: boolean;
             legend: components["schemas"]["LegendPosition"];
+            /** Format: int32 */
+            palette?: null | number;
             source: string;
             conditions: components["schemas"]["WidgetCondition"][];
             emits: boolean;
@@ -3018,6 +3189,7 @@ export interface components {
             refreshedAt: string;
             cached: boolean;
             issues: components["schemas"]["DashboardIssue"][];
+            colors?: null | components["schemas"]["LabelColorDto"][];
         };
         WidgetPage: {
             /**
@@ -3051,6 +3223,7 @@ export interface components {
 }
 export type AdminEventDto = components['schemas']['AdminEventDto'];
 export type Aggregate = components['schemas']['Aggregate'];
+export type BarColorBy = components['schemas']['BarColorBy'];
 export type BarOrientation = components['schemas']['BarOrientation'];
 export type BarStack = components['schemas']['BarStack'];
 export type Breakpoint = components['schemas']['Breakpoint'];
@@ -3079,6 +3252,7 @@ export type ChangeOpsRequest = components['schemas']['ChangeOpsRequest'];
 export type ChangePasswordRequest = components['schemas']['ChangePasswordRequest'];
 export type ChangePreviewDto = components['schemas']['ChangePreviewDto'];
 export type ChangeSetDto = components['schemas']['ChangeSetDto'];
+export type ChartPaletteDto = components['schemas']['ChartPaletteDto'];
 export type ChoiceDto = components['schemas']['ChoiceDto'];
 export type ColumnLinkDto = components['schemas']['ColumnLinkDto'];
 export type ColumnRole = components['schemas']['ColumnRole'];
@@ -3105,6 +3279,7 @@ export type ConvertConnectionRequest = components['schemas']['ConvertConnectionR
 export type CopyDashboardRequest = components['schemas']['CopyDashboardRequest'];
 export type CreateConnectionRequest = components['schemas']['CreateConnectionRequest'];
 export type CreateDashboardRequest = components['schemas']['CreateDashboardRequest'];
+export type CreatePaletteRequest = components['schemas']['CreatePaletteRequest'];
 export type CreateUserRequest = components['schemas']['CreateUserRequest'];
 export type DashboardDefinition = components['schemas']['DashboardDefinition'];
 export type DashboardDto = components['schemas']['DashboardDto'];
@@ -3176,6 +3351,8 @@ export type InsertMode = components['schemas']['InsertMode'];
 export type IssueSeverity = components['schemas']['IssueSeverity'];
 export type KeyDto = components['schemas']['KeyDto'];
 export type KeySchema = components['schemas']['KeySchema'];
+export type LabelColorDto = components['schemas']['LabelColorDto'];
+export type LabelMatching = components['schemas']['LabelMatching'];
 export type LayoutOverride = components['schemas']['LayoutOverride'];
 export type LegendPosition = components['schemas']['LegendPosition'];
 export type LineageDto = components['schemas']['LineageDto'];
@@ -3204,6 +3381,14 @@ export type OverlayItemKind = components['schemas']['OverlayItemKind'];
 export type OverlayNavigation = components['schemas']['OverlayNavigation'];
 export type OverlayRelation = components['schemas']['OverlayRelation'];
 export type OverlayVirtualEntity = components['schemas']['OverlayVirtualEntity'];
+export type PaletteAssign = components['schemas']['PaletteAssign'];
+export type PaletteColor = components['schemas']['PaletteColor'];
+export type PaletteDashboardDto = components['schemas']['PaletteDashboardDto'];
+export type PaletteDefinition = components['schemas']['PaletteDefinition'];
+export type PaletteDto = components['schemas']['PaletteDto'];
+export type PaletteOverride = components['schemas']['PaletteOverride'];
+export type PaletteSummaryDto = components['schemas']['PaletteSummaryDto'];
+export type PaletteWhenOut = components['schemas']['PaletteWhenOut'];
 export type PasswordPolicyDto = components['schemas']['PasswordPolicyDto'];
 export type PendingChangeDto = components['schemas']['PendingChangeDto'];
 export type PendingChangeKind = components['schemas']['PendingChangeKind'];
@@ -3215,6 +3400,7 @@ export type PreviewStatementDto = components['schemas']['PreviewStatementDto'];
 export type ProblemDetails = components['schemas']['ProblemDetails'];
 export type PropertyChange = components['schemas']['PropertyChange'];
 export type PublicDashboardDto = components['schemas']['PublicDashboardDto'];
+export type PublicPaletteDto = components['schemas']['PublicPaletteDto'];
 export type PublicSettings = components['schemas']['PublicSettings'];
 export type PublishDashboardRequest = components['schemas']['PublishDashboardRequest'];
 export type PublishedFilterRequest = components['schemas']['PublishedFilterRequest'];
@@ -3285,6 +3471,7 @@ export type UpdateConnectionRequest = components['schemas']['UpdateConnectionReq
 export type UpdateDashboardRequest = components['schemas']['UpdateDashboardRequest'];
 export type UpdateEntitySettingsRequest = components['schemas']['UpdateEntitySettingsRequest'];
 export type UpdateNavigationOverrideRequest = components['schemas']['UpdateNavigationOverrideRequest'];
+export type UpdatePaletteRequest = components['schemas']['UpdatePaletteRequest'];
 export type UpdateRelationRequest = components['schemas']['UpdateRelationRequest'];
 export type UpdateSavedQueryRequest = components['schemas']['UpdateSavedQueryRequest'];
 export type UpdateUserRequest = components['schemas']['UpdateUserRequest'];
@@ -8927,6 +9114,73 @@ export interface operations {
             };
         };
     };
+    GetDashboardPalettes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChartPaletteDto"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     PublishDashboard: {
         parameters: {
             query?: never;
@@ -10316,6 +10570,372 @@ export interface operations {
             };
             /** @description Gateway Timeout */
             504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    ListPalettes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaletteSummaryDto"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CreatePalette: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePaletteRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaletteDto"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    GetPalette: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaletteDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    UpdatePalette: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePaletteRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaletteDto"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    DeletePalette: {
+        parameters: {
+            query?: {
+                version?: number;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

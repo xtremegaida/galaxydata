@@ -19,28 +19,9 @@ import {
   formatNumber,
   periodsBetween,
 } from './chart-values';
+import type { SeriesColors } from './series-colors';
 
-/**
- * Colors by the entity they stand for (a series, a slice), in the palette's order as entities are first met, kept
- * while the widget is shown: a filter that leaves some out doesn't paint the others anew. Past the palette's last
- * color, entities are the neutral one.
- */
-export class ColorMemory {
-  private readonly slots = new Map<string, number>();
-
-  slot(entity: string): number {
-    let slot = this.slots.get(entity);
-    if (slot === undefined) {
-      slot = this.slots.size;
-      this.slots.set(entity, slot);
-    }
-    return slot;
-  }
-
-  color(entity: string, theme: ChartTheme): string {
-    return theme.series[this.slot(entity)] ?? theme.neutral;
-  }
-}
+export { ColorMemory } from './series-colors';
 
 /** What a chart is drawn with besides its config and rows. */
 export interface ChartContext {
@@ -49,7 +30,8 @@ export interface ChartContext {
   /** The slices chosen in this chart (highlighted; excluded ones faded and hatched). */
   readonly selection: Selection | null;
   readonly reducedMotion: boolean;
-  readonly colors: ColorMemory;
+  /** What each slice, series or measure (or a bar chart's category) is painted, by entity (`coloredEntities`). */
+  readonly colors: SeriesColors;
   /** Whether the chart is narrow (a phone's width): a legend at a side goes below it, leaving the plot room. */
   readonly narrow: boolean;
 }
@@ -175,12 +157,18 @@ export function barOption(
   let all: Item[] = [];
   if (s < 0) {
     categories = data.rows.map((row) => row[d]);
+    const byCategory = config.colorBy === 'category' && measures.length === 1;
     series = measures.map(({ c, i }) => {
       const items: Item[] = data.rows.map((row) => ({
         value: chartNumber(row[i]),
         key: [row[d]],
         raw: row[i],
-        itemStyle: look([row[d]], context),
+        itemStyle: byCategory
+          ? {
+              color: context.colors.color('category:' + keyText([row[d]]), theme),
+              ...look([row[d]], context),
+            }
+          : look([row[d]], context),
       }));
       all = all.concat(items);
       return {

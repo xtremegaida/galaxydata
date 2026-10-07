@@ -27,6 +27,7 @@ import type { Breakpoint } from '../../model/definition';
 import { effectiveLayout, minColumns } from '../../layout/grid-layout';
 import { WIDGET_KINDS, kindOf } from '../../model/widget-registry';
 import { EditorStore, type IssuePlace } from '../editor-store';
+import { PalettePicker } from '../controls/palette-picker';
 
 /** The least seconds between refreshes (the server's `Dashboards:MinRefreshSeconds`). */
 export const minRefreshSeconds = 30;
@@ -383,10 +384,21 @@ export class LayoutPanel {
   }
 }
 
-/** When the dashboard's rows are read again: by hand only, or every so many seconds while it is shown. */
+/**
+ * The dashboard's own settings: when its rows are read again (by hand only, or every so many seconds while it is
+ * shown), and the palette its charts are drawn with (each may have its own instead).
+ */
 @Component({
   selector: 'gd-refresh-panel',
-  imports: [MatFormField, MatHint, MatInput, MatLabel, MatRadioButton, MatRadioGroup],
+  imports: [
+    MatFormField,
+    MatHint,
+    MatInput,
+    MatLabel,
+    MatRadioButton,
+    MatRadioGroup,
+    PalettePicker,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="panel">
@@ -412,6 +424,13 @@ export class LayoutPanel {
           <mat-hint>{{ min }} at least; not while the page is hidden</mat-hint>
         </mat-form-field>
       }
+      <h3>Colours</h3>
+      <gd-palette-picker
+        label="Its charts' palette"
+        hint="A chart may have its own instead (its settings' Colours)"
+        [value]="store.draft().palette ?? null"
+        (valueChange)="paletted($event)"
+      />
     </div>
   `,
   styles: `
@@ -432,6 +451,18 @@ export class RefreshPanel {
         mode === 'manual' ? { mode, seconds: null } : { mode, seconds: d.refresh.seconds ?? 300 },
       ),
     );
+  }
+
+  protected paletted(palette: number | null): void {
+    this.store.apply(palette === null ? 'Took the palette away' : 'Chose a palette', (d) => {
+      const next = { ...d };
+      if (palette === null) {
+        delete next.palette;
+      } else {
+        next.palette = palette;
+      }
+      return next;
+    });
   }
 
   protected timed(event: Event): void {
