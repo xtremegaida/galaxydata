@@ -72,33 +72,47 @@ public sealed class SqlServerSchemaIntrospector : ISchemaIntrospector
       if (tables.Count == 0) { return new SourceSchema(ProviderKind, version, defaultSchema, []); }
 
       // Hidden columns (graph tables' internal ones, period columns declared HIDDEN) are left out.
-      await foreach (DbDataReader row in connection.QueryAsync(
-         "SELECT c.object_id, c.name, t.name, CASE WHEN t.is_assembly_type = 0 AND t.user_type_id <> t.system_type_id THEN TYPE_NAME(c.system_type_id) ELSE t.name END, " +
-         "c.max_length, c.precision, c.scale, c.is_nullable, c.is_identity, c.is_computed, d.definition, c.collation_name, " +
-         "(SELECT CAST(e.value AS nvarchar(max)) FROM sys.extended_properties e WHERE e.class = 1 AND e.major_id = c.object_id AND e.minor_id = c.column_id AND e.name = 'MS_Description') " +
-         "FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id LEFT JOIN sys.default_constraints d ON d.object_id = c.default_object_id " +
-         "WHERE c.is_hidden = 0 ORDER BY c.object_id, c.column_id", ct).ConfigureAwait(false))
+      foreach (var excludeHidden in new string[] { "WHERE c.is_hidden = 0", "" })
       {
-         if (!tables.TryGetValue(row.GetInt32(0), out Builder? table)) { continue; }
-         string declaredType = row.GetString(2);
-         string systemType = row.GetString(3);
-         int maxLength = row.GetInt16(4);
-         int precision = row.GetByte(5);
-         int scale = row.GetByte(6);
-         string? columnCollation = row.IsDBNull(11) ? null : row.GetString(11);
-         bool alias = !string.Equals(declaredType, systemType, StringComparison.Ordinal);
-         bool rowVersion = systemType == "timestamp";
-         table.Columns.Add(new ColumnSchema(row.GetString(1), table.Columns.Count,
-            alias ? declaredType : rowVersion ? "rowversion" : SqlServerTypeMapper.Declared(systemType, maxLength, precision, scale),
-            SqlServerTypeMapper.Map(systemType, maxLength, precision, scale, row.GetBoolean(7)))
-         {
-            IsIdentity = row.GetBoolean(8),
-            IsComputed = row.GetBoolean(9),
-            IsRowVersion = rowVersion,
-            DefaultSql = row.IsDBNull(10) ? null : row.GetString(10),
-            Collation = string.Equals(columnCollation, collation, StringComparison.OrdinalIgnoreCase) ? null : columnCollation,
-            Comment = row.IsDBNull(12) ? null : row.GetString(12),
-         });
+        var queryPassed = false;
+        try
+        {
+          await foreach (DbDataReader row in connection.QueryAsync(
+            "SELECT c.object_id, c.name, t.name, CASE WHEN t.is_assembly_type = 0 AND t.user_type_id <> t.system_type_id THEN TYPE_NAME(c.system_type_id) ELSE t.name END, " +
+            "c.max_length, c.precision, c.scale, c.is_nullable, c.is_identity, c.is_computed, d.definition, c.collation_name, " +
+            "(SELECT CAST(e.value AS nvarchar(max)) FROM sys.extended_properties e WHERE e.class = 1 AND e.major_id = c.object_id AND e.minor_id = c.column_id AND e.name = 'MS_Description') " +
+            "FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id LEFT JOIN sys.default_constraints d ON d.object_id = c.default_object_id " +
+            excludeHidden + " ORDER BY c.object_id, c.column_id", ct).ConfigureAwait(false))
+          {
+            queryPassed = true;
+            if (!tables.TryGetValue(row.GetInt32(0), out Builder? table)) { continue; }
+            string declaredType = row.GetString(2);
+            string systemType = row.GetString(3);
+            int maxLength = row.GetInt16(4);
+            int precision = row.GetByte(5);
+            int scale = row.GetByte(6);
+            string? columnCollation = row.IsDBNull(11) ? null : row.GetString(11);
+            bool alias = !string.Equals(declaredType, systemType, StringComparison.Ordinal);
+            bool rowVersion = systemType == "timestamp";
+            table.Columns.Add(new ColumnSchema(row.GetString(1), table.Columns.Count,
+                alias ? declaredType : rowVersion ? "rowversion" : SqlServerTypeMapper.Declared(systemType, maxLength, precision, scale),
+                SqlServerTypeMapper.Map(systemType, maxLength, precision, scale, row.GetBoolean(7)))
+            {
+                IsIdentity = row.GetBoolean(8),
+                IsComputed = row.GetBoolean(9),
+                IsRowVersion = rowVersion,
+                DefaultSql = row.IsDBNull(10) ? null : row.GetString(10),
+                Collation = string.Equals(columnCollation, collation, StringComparison.OrdinalIgnoreCase) ? null : columnCollation,
+                Comment = row.IsDBNull(12) ? null : row.GetString(12),
+            });
+          }
+          break;
+        }
+        catch
+        {
+          if (!queryPassed && excludeHidden.Length > 0) { continue; }
+          throw;
+        }
       }
 
       List<(int Table, string Name, string Type, string Column)> keyColumns = [];
