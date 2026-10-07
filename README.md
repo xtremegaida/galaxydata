@@ -5,8 +5,8 @@ GalaxyData is two things built together:
 - **GalaxyData.Query**, a .NET library and its command line, `gdq`: a query language of LINQ-like method chains
   over PostgreSQL, SQL Server, SQLite, DuckDB, ClickHouse and folders of Excel workbooks, one query reading several
   of them at once. Each kind of source is a connector of its own, plugged in from one list
-  ([docs/connectors.md](docs/connectors.md)). Results say where each column comes from (lineage) and how rows lead to other rows (links), and changes to
-  rows are written back as each database's SQL.
+  ([docs/connectors.md](docs/connectors.md)). Results say where each column comes from (lineage) and how rows lead
+  to other rows (links), and changes to rows are written back as each database's SQL.
 - **GalaxyData Manager**, a web application on the library (ASP.NET Core and Angular): browsing the data and
   following its links, changing rows (previewed as SQL, committed together), writing and saving queries, building
   dashboards (charts, tables and text on a grid, filtered by what is chosen in them; shared, published, and public
