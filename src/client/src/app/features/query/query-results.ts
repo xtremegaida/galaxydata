@@ -181,6 +181,17 @@ interface Focused {
  * (`followed`). Beside it, the inspector says what the cell the keyboard is on holds, where its column's values
  * come from, and where they lead. A run may be stopped before its rows come.
  */
+let results = 0;
+
+/** A schema whose values lead nowhere, and whose rows nothing refers to. */
+function withoutLinks(schema: ResultSchema): ResultSchema {
+  return {
+    ...schema,
+    columns: schema.columns.map((column) => ({ ...column, link: null })),
+    rowIdentity: schema.rowIdentity ? { ...schema.rowIdentity, related: [] } : null,
+  };
+}
+
 @Component({
   selector: 'gd-query-results',
   imports: [
@@ -211,6 +222,12 @@ export class QueryResults {
 
   /** The run whose rows are shown. */
   readonly run = input.required<QueryRun>();
+  /** Whether values lead where they refer (and rows to those referring to them); off, the rows are only read. */
+  readonly links = input(true);
+  /** Whether the inspector may be shown beside the rows. */
+  readonly inspector = input(true);
+  /** The inspector's id, this grid's own. */
+  protected readonly inspectorId = `gd-results-inspector-${++results}`;
   /** A link of the rows followed: where it leads, for the page to go there. */
   readonly followed = output<FollowedLink>();
   /** What came of the run: each page read, or why the rows couldn't be. */
@@ -298,7 +315,7 @@ export class QueryResults {
   });
   protected readonly message = problemMessage;
 
-  private readonly links: ResultLinks = {
+  private readonly followers: ResultLinks = {
     follow: (target, row) => void this.follow(target, row),
   };
 
@@ -410,8 +427,9 @@ export class QueryResults {
   }
 
   private make(primed: Primed): Made {
-    // A page asked for with its schema has it.
-    const schema = primed.page.schema ?? { columns: [], rowIdentity: null };
+    // A page asked for with its schema has it; without links, it leads nowhere.
+    const read = primed.page.schema ?? { columns: [], rowIdentity: null };
+    const schema: ResultSchema = this.links() ? read : withoutLinks(read);
     const query: ResultsQuery = {
       text: primed.run.text,
       parameters: primed.run.parameters,
@@ -426,7 +444,7 @@ export class QueryResults {
     const options: GridOptions<GridRow> = {
       theme: gridTheme,
       loadThemeGoogleFonts: false,
-      columnDefs: resultColumnDefsOf(schema, this.links),
+      columnDefs: resultColumnDefsOf(schema, this.followers),
       defaultColDef: { resizable: true, minWidth: 72 },
       rowModelType: 'infinite',
       datasource,

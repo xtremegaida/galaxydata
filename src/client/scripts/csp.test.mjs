@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { pageProblems, styleProblems } from './csp.mjs';
+import { pageProblems, scriptProblems, styleProblems } from './csp.mjs';
 
 const page = (body, head = '') => `<!doctype html>
 <html lang="en">
@@ -73,4 +73,16 @@ test("stylesheets' URLs and imports of other origins are refused", () => {
   assert.deepEqual(styleProblems(`@import "https://fonts.example.com/css";`), [
     'an import of another origin (https://fonts.example.com/css)',
   ]);
+});
+
+test('scripts that compile text into code are refused, but where known not to run', () => {
+  assert.deepEqual(
+    scriptProblems('const f = eval("1"); window.x = new Function("a", "return a");').length,
+    2,
+  );
+  assert.deepEqual(scriptProblems('obj.eval(1); evaluate(2); my_eval(3);'), []);
+  assert.deepEqual(
+    scriptProblems('let i=this.createFunctionBody(e),o=new Function(`x, ctx`, i)'),
+    [],
+  );
 });

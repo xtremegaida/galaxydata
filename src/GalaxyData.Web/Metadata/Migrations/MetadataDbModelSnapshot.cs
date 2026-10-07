@@ -227,6 +227,163 @@ namespace GalaxyData.Web.Metadata.Migrations
                     b.ToTable("CommitAuditScripts", (string)null);
                 });
 
+            modelBuilder.Entity("GalaxyData.Web.Metadata.Dashboard", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.PrimitiveCollection<string>("EmbedOrigins")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT")
+                        .UseCollation("NOCASE");
+
+                    b.Property<int?>("OwnerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OwnerName")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("PublicEnabledAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("PublicEnabledById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PublicEnabledByName")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PublicToken")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PublishedByName")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PublishedHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PublishedJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("PublishedNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("SharedWithEveryone")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WorkingHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WorkingJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicEnabledById");
+
+                    b.HasIndex("PublicToken")
+                        .IsUnique();
+
+                    b.HasIndex("SharedWithEveryone");
+
+                    b.HasIndex("OwnerId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("Dashboards", (string)null);
+                });
+
+            modelBuilder.Entity("GalaxyData.Web.Metadata.DashboardRevision", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DashboardId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DefinitionJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Hash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("PublishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("PublishedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PublishedByName")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublishedById");
+
+                    b.HasIndex("DashboardId", "Number")
+                        .IsUnique();
+
+                    b.ToTable("DashboardRevisions", (string)null);
+                });
+
+            modelBuilder.Entity("GalaxyData.Web.Metadata.DashboardShare", b =>
+                {
+                    b.Property<int>("DashboardId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("DashboardId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("DashboardShares", (string)null);
+                });
+
             modelBuilder.Entity("GalaxyData.Web.Metadata.EntitySettings", b =>
                 {
                     b.Property<int>("Id")
@@ -683,6 +840,48 @@ namespace GalaxyData.Web.Metadata.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GalaxyData.Web.Metadata.Dashboard", b =>
+                {
+                    b.HasOne("GalaxyData.Web.Metadata.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GalaxyData.Web.Metadata.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("PublicEnabledById")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("GalaxyData.Web.Metadata.DashboardRevision", b =>
+                {
+                    b.HasOne("GalaxyData.Web.Metadata.Dashboard", null)
+                        .WithMany()
+                        .HasForeignKey("DashboardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GalaxyData.Web.Metadata.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("PublishedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("GalaxyData.Web.Metadata.DashboardShare", b =>
+                {
+                    b.HasOne("GalaxyData.Web.Metadata.Dashboard", null)
+                        .WithMany("Shares")
+                        .HasForeignKey("DashboardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GalaxyData.Web.Metadata.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GalaxyData.Web.Metadata.PendingChange", b =>
                 {
                     b.HasOne("GalaxyData.Web.Metadata.UserChangeSet", null)
@@ -721,6 +920,11 @@ namespace GalaxyData.Web.Metadata.Migrations
             modelBuilder.Entity("GalaxyData.Web.Metadata.CommitAudit", b =>
                 {
                     b.Navigation("Scripts");
+                });
+
+            modelBuilder.Entity("GalaxyData.Web.Metadata.Dashboard", b =>
+                {
+                    b.Navigation("Shares");
                 });
 
             modelBuilder.Entity("GalaxyData.Web.Metadata.UserChangeSet", b =>

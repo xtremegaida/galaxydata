@@ -126,6 +126,25 @@ public static class ValueCodec
    /// <summary>A value as the API read it (JSON, as a <see cref="JsonElement"/>); a CLR value is read as JSON would write it.</summary>
    public static JsonElement Json(object? value) => value is JsonElement element ? element : JsonSerializer.SerializeToElement(value);
 
+   /// <summary>
+   /// A number as JSON writes it shortest (<c>50.0</c> as <c>50</c>, <c>1E3</c> as <c>1000</c>), as a browser would send it
+   /// back: so saving a query (or a dashboard) as it was read changes nothing. Other values as they are.
+   /// </summary>
+   public static JsonElement ShortestNumber(JsonElement value)
+   {
+      if (value.ValueKind != JsonValueKind.Number) { return value; }
+      if (value.TryGetInt64(out long whole)) { return JsonSerializer.SerializeToElement(whole); }
+      if (decimal.TryParse(value.GetRawText(), NumberStyles.Float, CultureInfo.InvariantCulture, out decimal number))
+      {
+         // Dividing by one with 28 zeros drops a decimal's trailing zeros.
+         number /= 1.0000000000000000000000000000m;
+         return decimal.Truncate(number) == number && number is >= long.MinValue and <= long.MaxValue
+            ? JsonSerializer.SerializeToElement((long)number)
+            : JsonSerializer.SerializeToElement(number);
+      }
+      return value;
+   }
+
    /// <summary>Whether text is a date alone (<c>2026-03-01</c>), as a date filter of a date-time column gives it.</summary>
    public static bool IsDateOnly(JsonElement value, out DateOnly date)
    {

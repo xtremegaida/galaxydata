@@ -13,6 +13,7 @@ using GalaxyData.Web.Browse;
 using GalaxyData.Web.Catalog;
 using GalaxyData.Web.Changes;
 using GalaxyData.Web.Connections;
+using GalaxyData.Web.Dashboards;
 using GalaxyData.Web.Metadata;
 using GalaxyData.Web.Features.Audit;
 using GalaxyData.Web.Features.Auth;
@@ -20,6 +21,7 @@ using GalaxyData.Web.Features.Browse;
 using GalaxyData.Web.Features.Changes;
 using GalaxyData.Web.Features.Catalog;
 using GalaxyData.Web.Features.Connections;
+using GalaxyData.Web.Features.Dashboards;
 using GalaxyData.Web.Features.Health;
 using GalaxyData.Web.Features.Overlay;
 using GalaxyData.Web.Features.Query;
@@ -104,6 +106,12 @@ public static partial class WebApp
       services.AddSingleton<BrowseService>();
       services.AddScoped<OverlayEditor>();
       services.AddSingleton<QueryService>();
+      services.AddSingleton(_ => new WidgetKinds(WidgetKinds.BuiltIn()));
+      services.AddSingleton<DashboardViews>();
+      services.AddSingleton<WidgetResults>();
+      services.AddSingleton<WidgetRunner>();
+      services.AddSingleton<PublicDashboards>();
+      services.AddSingleton(sp => new DefinitionRules(sp.GetRequiredService<WidgetKinds>(), sp.GetRequiredService<IOptions<GalaxyDataOptions>>().Value.Dashboards));
       services.AddSingleton<ChangePlans>();
       services.AddScoped<ChangeService>();
       services.AddSingleton<SchemaReader>();
@@ -119,6 +127,8 @@ public static partial class WebApp
          o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
          // Numbers are numbers (the web defaults read them from strings too, and describe them as either).
          o.SerializerOptions.NumberHandling = JsonNumberHandling.Strict;
+         // A widget's kind is read wherever it is in its config, as clients may write it last.
+         o.SerializerOptions.AllowOutOfOrderMetadataProperties = true;
       });
       services.AddProblemDetails(o => o.CustomizeProblemDetails = context => ApiProblems.Complete(context.ProblemDetails));
       services.AddExceptionHandler<ApiExceptionHandler>();
@@ -236,6 +246,10 @@ public static partial class WebApp
       api.MapQuery();
       api.MapSavedQueries();
       api.MapChanges();
+      api.MapDashboards();
+
+      // Anyone's: outside the API's group, so without its anti-forgery check and the catalog's version.
+      app.MapPublicDashboards();
 
       app.MapOpenApi(OpenApiPattern).RequireAuthorization(Policies.CanRead);
 

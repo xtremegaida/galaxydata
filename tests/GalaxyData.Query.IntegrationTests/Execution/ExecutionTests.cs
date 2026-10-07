@@ -140,6 +140,51 @@ public sealed class ExecutionTests
          "2 | false | 10 | 2026-03-01 09:30:00" + Environment.NewLine);
    }
 
+   /// <summary>
+   /// Buckets worked out by hand, as a mistake every database shared would pass the comparisons: a leap day, a Sunday,
+   /// weeks across a year's end, and date-times with offsets whose UTC day is in another month, quarter or year.
+   /// </summary>
+   [Theory]
+   [InlineData("sqlite", false)]
+   [InlineData("duckdb", false)]
+   [InlineData("sqlite", true)]
+   public async Task DateBucketsAreTheFirstDaysOfTheirPeriods(string provider, bool inTheMergeEngine)
+   {
+      string script = provider == "sqlite"
+         ? "CREATE TABLE days (id INTEGER PRIMARY KEY, d DATE, ts DATETIME, z DATETIMEOFFSET); INSERT INTO days VALUES " +
+           "(1, '2024-02-29', '2026-09-30 23:59:59', '2026-01-31 23:30:00-05:00'), (2, '2026-05-17', '2026-09-28 00:00:00', '2026-12-31 22:00:00-03:00'), " +
+           "(3, '2026-12-31', '2026-10-01 00:00:00', '2026-04-01 00:30:00+01:00'), (4, '2027-01-03', '2027-01-03 12:00:00', NULL);"
+         : "CREATE TABLE days (id INTEGER PRIMARY KEY, d DATE, ts TIMESTAMP, z TIMESTAMPTZ); INSERT INTO days VALUES " +
+           "(1, '2024-02-29', '2026-09-30 23:59:59', '2026-01-31 23:30:00-05:00'), (2, '2026-05-17', '2026-09-28 00:00:00', '2026-12-31 22:00:00-03:00'), " +
+           "(3, '2026-12-31', '2026-10-01 00:00:00', '2026-04-01 00:30:00+01:00'), (4, '2027-01-03', '2027-01-03 12:00:00', NULL);";
+      await using TestSources sources = provider == "sqlite" ? await new TestSources().AddSqliteAsync("t", script) : await new TestSources().AddDuckDbAsync("t", script);
+      QueryEngine engine = sources.Engine(options: inTheMergeEngine ? new QueryEngineOptions { PushDown = false } : null);
+      string Rows(string column) =>
+         $"t.days.select(id, w: startOfWeek({column}), m: startOfMonth({column}), q: startOfQuarter({column}), y: startOfYear({column}), qn: quarter({column}), wd: dayOfWeek({column})).orderBy(id)";
+      async Task<string> RunAsync(string column)
+      {
+         await using QueryResult result = await engine.ExecuteAsync(new QueryRequest(Rows(column)), TestContext.Current.CancellationToken);
+         return await TestSources.RowsAsync(result);
+      }
+
+      string nl = Environment.NewLine;
+      (await RunAsync("d")).ShouldBe(
+         "1 | 2024-02-26 | 2024-02-01 | 2024-01-01 | 2024-01-01 | 1 | 4" + nl +
+         "2 | 2026-05-11 | 2026-05-01 | 2026-04-01 | 2026-01-01 | 2 | 7" + nl +
+         "3 | 2026-12-28 | 2026-12-01 | 2026-10-01 | 2026-01-01 | 4 | 4" + nl +
+         "4 | 2026-12-28 | 2027-01-01 | 2027-01-01 | 2027-01-01 | 1 | 7" + nl);
+      (await RunAsync("ts")).ShouldBe(
+         "1 | 2026-09-28 | 2026-09-01 | 2026-07-01 | 2026-01-01 | 3 | 3" + nl +
+         "2 | 2026-09-28 | 2026-09-01 | 2026-07-01 | 2026-01-01 | 3 | 1" + nl +
+         "3 | 2026-09-28 | 2026-10-01 | 2026-10-01 | 2026-01-01 | 4 | 4" + nl +
+         "4 | 2026-12-28 | 2027-01-01 | 2027-01-01 | 2027-01-01 | 1 | 7" + nl);
+      (await RunAsync("z")).ShouldBe(
+         "1 | 2026-01-26 | 2026-02-01 | 2026-01-01 | 2026-01-01 | 1 | 7" + nl +
+         "2 | 2026-12-28 | 2027-01-01 | 2027-01-01 | 2027-01-01 | 1 | 5" + nl +
+         "3 | 2026-03-30 | 2026-03-01 | 2026-01-01 | 2026-01-01 | 1 | 2" + nl +
+         "4 | null | null | null | null | null | null" + nl);
+   }
+
    [Fact]
    public async Task CollectionsThatCantBeJoinedAreReported()
    {

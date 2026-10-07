@@ -1,5 +1,6 @@
 import {
   HttpClient,
+  HttpErrorResponse,
   provideHttpClient,
   withInterceptors,
   withXsrfConfiguration,
@@ -56,6 +57,32 @@ describe('sessionInterceptor', () => {
       (error: unknown) => error,
     );
   }
+
+  it("leaves public dashboards' requests alone, without the session's store", async () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([sessionInterceptor])),
+        provideHttpClientTesting(),
+        {
+          provide: AuthStore,
+          useFactory: () => {
+            throw new Error('The session in a public page');
+          },
+        },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+    client = TestBed.inject(HttpClient);
+    const answer = firstValueFrom(client.get('/api/public/dashboards/x')).catch(
+      (error: unknown) => error,
+    );
+    http.expectOne('/api/public/dashboards/x').flush(problemBody('unauthenticated', 'No'), {
+      status: 401,
+      statusText: 'No',
+    });
+    expect(await answer).toBeInstanceOf(HttpErrorResponse);
+  });
 
   it('asks the user to sign in again when no one is signed in any more', async () => {
     expect(await failed('/api/users', 401, 'unauthenticated')).toMatchObject({ status: 401 });

@@ -1,0 +1,42 @@
+### Choosing a city of shop's customers: two's orders of them (across sources)
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: (two.orders).where(r0 => (r0.shop_customer != null and (r0.shop_customer.city == $f1))).groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+  $f1 = "Johannesburg" (string)
+d0 | m0
+"open" | "1"
+underlying: (two.orders).where(r0 => (r0.shop_customer != null and (r0.shop_customer.city == $f1)))
+
+### Choosing two's open orders: shop's customers with one
+columns: d0 Dimension city, m0 Measure Rows; limit 10
+main: (shop.customers).where(r0 => r0.two_orders.any(r1 => r1.status == $f1)).groupBy(d0: city).select(d0, m0: count()).orderBy(desc(m0), d0).take(11)
+  $f1 = "open" (string)
+d0 | m0
+"Cape Town" | "1"
+"Johannesburg" | "1"
+underlying: (shop.customers).where(r0 => r0.two_orders.any(r1 => r1.status == $f1))
+
+### Choosing big orders: the customers with one (back from a virtual entity's base)
+columns: d0 Dimension city, m0 Measure Rows; limit 10
+main: (shop.customers).where(r0 => reports.big_orders.any(r1 => r1.customer_id == r0.id and (r1.status == $f1))).groupBy(d0: city).select(d0, m0: count()).orderBy(desc(m0), d0).take(11)
+  $f1 = "shipped" (string)
+d0 | m0
+"Cape Town" | "1"
+underlying: (shop.customers).where(r0 => reports.big_orders.any(r1 => r1.customer_id == r0.id and (r1.status == $f1)))
+
+### Choosing a city: big orders of its customers (into the virtual entity, through its inherited navigation)
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: (reports.big_orders).where(r0 => (r0.customer != null and (r0.customer.city == $f1))).groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+  $f1 = "Cape Town" (string)
+d0 | m0
+"open" | "1"
+"shipped" | "1"
+underlying: (reports.big_orders).where(r0 => (r0.customer != null and (r0.customer.city == $f1)))
+
+### Two hops across: two's open orders, to big orders of the same customers
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: (reports.big_orders).where(r0 => (r0.customer != null and (r0.customer.two_orders.any(r1 => r1.status == $f1)))).groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+  $f1 = "open" (string)
+d0 | m0
+"open" | "1"
+"shipped" | "1"
+underlying: (reports.big_orders).where(r0 => (r0.customer != null and (r0.customer.two_orders.any(r1 => r1.status == $f1))))

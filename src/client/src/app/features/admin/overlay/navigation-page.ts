@@ -20,7 +20,7 @@ import { MatProgressBar } from '@angular/material/progress-bar';
 import { MatSlideToggle } from '@angular/material/slide-toggle';
 import { RouterLink } from '@angular/router';
 import { Message } from '../../../core/ui/message';
-import { EntityLookup, EntitySearch } from './catalog-lookups';
+import { EntityLookup, EntitySearch } from '../../../core/catalog/catalog-lookups';
 import { OverlayCheckPanel } from './overlay-check';
 import { OverlayItemPage } from './overlay-item-page';
 import {

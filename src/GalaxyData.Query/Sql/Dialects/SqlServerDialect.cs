@@ -187,6 +187,12 @@ internal sealed class SqlServerDialect : SqlDialect
       FunctionId.AddDays => Call("DATEADD", Raw("day"), Int(c, 1), Utc(c, 0)),
       FunctionId.AddMonths => Call("DATEADD", Raw("month"), Int(c, 1), Utc(c, 0)),
       FunctionId.DaysBetween => Call("DATEDIFF", Raw("day"), Utc(c, 0), Utc(c, 1)),
+      FunctionId.StartOfWeek => Template("DATEADD(day, -((DATEDIFF(day, CAST('1900-01-01' AS date), {0}) % 7 + 7) % 7), {0})", DateOf(c)),
+      FunctionId.StartOfMonth => Call("DATEFROMPARTS", DatePart("year", c), DatePart("month", c), Raw("1")),
+      FunctionId.StartOfQuarter => Call("DATEFROMPARTS", DatePart("year", c), Template("(DATEPART(quarter, {0}) - 1) * 3 + 1", Utc(c, 0)), Raw("1")),
+      FunctionId.StartOfYear => Call("DATEFROMPARTS", DatePart("year", c), Raw("1"), Raw("1")),
+      FunctionId.Quarter => DatePart("quarter", c),
+      FunctionId.DayOfWeek => Template("((DATEDIFF(day, CAST('1900-01-01' AS date), {0}) % 7 + 7) % 7 + 1)", DateOf(c)),
       FunctionId.Coalesce => Call("COALESCE", c.Args()),
       FunctionId.NullIf => Call("NULLIF", c.Arg(0), c.Arg(1)),
       FunctionId.Iif => Iif(c.Condition(0), c.Arg(1), c.Arg(2)),
@@ -240,6 +246,9 @@ internal sealed class SqlServerDialect : SqlDialect
          new SqlWhen(new SqlIn(word, [Text("false"), Text("f"), Text("no"), Text("n"), Text("0")], negated: false), new SqlLiteral(false, ScalarType.Boolean)),
       ], null);
    }
+
+   /// <summary>The (UTC) date of a date-time; a date as it is.</summary>
+   private SqlExpr DateOf(SqlCall c) => c.Type(0).Kind == ScalarKind.Date ? c.Arg(0) : Cast(Utc(c, 0), ScalarType.Date);
 
    /// <summary>A date-time with an offset moved to UTC, so its parts are the UTC time's; other values as they are.</summary>
    private static SqlExpr Utc(SqlCall c, int index) =>

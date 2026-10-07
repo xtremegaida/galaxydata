@@ -2,14 +2,10 @@ import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Injector, runInInjectionContext, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import {
-  CatalogVersion,
-  catalogVersionHeader,
-  catalogVersionInterceptor,
-} from '../../../core/catalog/catalog-version';
-import { entityOf, hitOf, schemaNode, sourceNode, tableNode } from '../../../../testing/catalog';
-import { requestTo, settle } from '../../../../testing/http';
-import { entityUrl, suggestUrl } from '../../../../testing/overlay';
+import { CatalogVersion, catalogVersionHeader, catalogVersionInterceptor } from './catalog-version';
+import { entityOf, hitOf, schemaNode, sourceNode, tableNode } from '../../../testing/catalog';
+import { requestTo, settle } from '../../../testing/http';
+import { entityUrl, suggestUrl } from '../../../testing/overlay';
 import { EntityLookup, EntitySearch, suggestions } from './catalog-lookups';
 
 describe('catalog lookups', () => {

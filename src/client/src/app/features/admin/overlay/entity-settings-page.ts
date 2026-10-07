@@ -23,7 +23,7 @@ import { MatSlideToggle } from '@angular/material/slide-toggle';
 import { RouterLink } from '@angular/router';
 import { Message } from '../../../core/ui/message';
 import { EntityStructure } from '../../browse/entity-structure';
-import { EntityLookup, EntitySearch, suggestions } from './catalog-lookups';
+import { EntityLookup, EntitySearch, suggestions } from '../../../core/catalog/catalog-lookups';
 import { OverlayCheckPanel } from './overlay-check';
 import { OverlayItemPage } from './overlay-item-page';
 import {

@@ -23,16 +23,17 @@ export class ColorScheme {
   );
   private readonly systemDark = signal(this.systemQuery?.matches ?? false);
   private readonly chosen = signal<ColorSchemeChoice>(this.stored());
+  private readonly forced = signal<ColorSchemeChoice | null>(null);
 
   /** The scheme chosen. */
   readonly choice = this.chosen.asReadonly();
 
   /**
    * Whether the application is dark, the system's scheme resolved: for what is themed apart from Material (the
-   * grid, the editor).
+   * grid, the editor, charts).
    */
   readonly dark = computed(() => {
-    const choice = this.chosen();
+    const choice = this.forced() ?? this.chosen();
     return choice === 'dark' || (choice === 'system' && this.systemDark());
   });
 
@@ -50,13 +51,36 @@ export class ColorScheme {
     this.apply();
   }
 
+  /**
+   * Shows the application in a scheme for as long as asked, keeping no choice (an embedded dashboard's
+   * `?theme=`); null gives the chosen one back.
+   */
+  override(choice: ColorSchemeChoice | null): void {
+    this.forced.set(choice);
+    this.apply();
+  }
+
   private apply(): void {
-    const choice = this.chosen();
+    const choice = this.forced() ?? this.chosen();
     this.document.documentElement.style.colorScheme = choice === 'system' ? 'light dark' : choice;
   }
 
   private stored(): ColorSchemeChoice {
     const value = readStored(this.storage, ColorScheme.storageKey);
     return choices.find((choice) => choice === value) ?? 'system';
+  }
+}
+
+/**
+ * An embedded dashboard's color scheme (`/embed/…`): its address's (`?theme=light`, `dark`), else the system's;
+ * the application's choice (kept in storage) is nothing to it, and nothing is kept.
+ */
+export function embedScheme(
+  location: Pick<Location, 'pathname' | 'search'>,
+  scheme: ColorScheme,
+): void {
+  if (location.pathname.startsWith('/embed/')) {
+    const theme = new URLSearchParams(location.search).get('theme');
+    scheme.override(theme === 'light' || theme === 'dark' ? theme : 'system');
   }
 }

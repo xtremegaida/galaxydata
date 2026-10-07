@@ -92,6 +92,16 @@ public sealed class FunctionRegistry
       r.Add(new(FunctionId.AddDays, "addDays", "addDays(date, days)", 2, 2, a => { DateLike(a, 0); Integer(a, 1); return a[0].WithNullable(a.AnyNullable); }));
       r.Add(new(FunctionId.AddMonths, "addMonths", "addMonths(date, months)", 2, 2, a => { DateLike(a, 0); Integer(a, 1); return a[0].WithNullable(a.AnyNullable); }));
       r.Add(new(FunctionId.DaysBetween, "daysBetween", "daysBetween(from, to)", 2, 2, a => { DateLike(a, 0); DateLike(a, 1); return Nullable(ScalarType.Int32, a); }));
+      foreach ((FunctionId id, string name, string period) in new[]
+      {
+         (FunctionId.StartOfWeek, "startOfWeek", "week (a Monday)"), (FunctionId.StartOfMonth, "startOfMonth", "month"),
+         (FunctionId.StartOfQuarter, "startOfQuarter", "quarter"), (FunctionId.StartOfYear, "startOfYear", "year"),
+      })
+      {
+         r.Add(new(id, name, $"{name}(date) — the first day of its {period}", 1, 1, a => { DateLike(a, 0); return Nullable(ScalarType.Date, a); }));
+      }
+      r.Add(new(FunctionId.Quarter, "quarter", "quarter(date) — 1 to 4", 1, 1, a => { DateLike(a, 0); return Nullable(ScalarType.Int32, a); }));
+      r.Add(new(FunctionId.DayOfWeek, "dayOfWeek", "dayOfWeek(date) — 1 (Monday) to 7 (Sunday)", 1, 1, a => { DateLike(a, 0); return Nullable(ScalarType.Int32, a); }));
 
       // Nulls and conditions
       r.Add(new(FunctionId.Coalesce, "coalesce", "coalesce(value, fallback, ...)", 2, -1, a =>

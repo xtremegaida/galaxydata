@@ -5,7 +5,7 @@ import { settle } from '../../../testing/http';
 import { FakeMonaco, fakeMonacoProviders } from '../../../testing/monaco';
 import { ColorScheme } from '../theme/color-scheme';
 import { CodeEditor, type EditorMarker } from './code-editor';
-import { MONACO_IMPORT, MonacoLoader } from './monaco-loader';
+import { CODE_FONT_WAIT, MONACO_IMPORT, MonacoLoader } from './monaco-loader';
 
 @Component({
   imports: [CodeEditor],
@@ -296,12 +296,36 @@ describe('MonacoLoader', () => {
     });
   });
 
-  afterEach(() =>
-    document.head.querySelectorAll('link[href$="monaco.css"]').forEach((link) => link.remove()),
-  );
+  afterEach(() => {
+    document.head.querySelectorAll('link[href$="monaco.css"]').forEach((link) => link.remove());
+    Reflect.deleteProperty(document, 'fonts');
+    document.documentElement.style.removeProperty('--gd-code-font-family');
+  });
 
   function stylesheet(): HTMLLinkElement | null {
     return document.head.querySelector<HTMLLinkElement>('link[rel=stylesheet][href$="monaco.css"]');
+  }
+
+  /** The page's fonts (jsdom has none): the fonts asked for, answered as `answer` says; and their events. */
+  class Fonts extends EventTarget {
+    readonly asked: string[] = [];
+    answer: () => Promise<FontFace[]> = () => Promise.resolve([]);
+
+    load(font: string): Promise<FontFace[]> {
+      this.asked.push(font);
+      return this.answer();
+    }
+  }
+
+  /** The page with a code font, and fonts of its own. */
+  function withFonts(): Fonts {
+    const fonts = new Fonts();
+    Object.defineProperty(document, 'fonts', { value: fonts, configurable: true });
+    document.documentElement.style.setProperty(
+      '--gd-code-font-family',
+      "'Roboto Mono Variable', monospace",
+    );
+    return fonts;
   }
 
   it('loads Monaco once, with its stylesheet and the query language; its theme follows the colour scheme', async () => {
@@ -336,6 +360,60 @@ describe('MonacoLoader', () => {
     failing = false;
     expect(await loader.load()).toBe(monaco.asMonaco());
     expect(document.head.querySelectorAll('link[href$="monaco.css"]').length).toBe(1);
+  });
+
+  it("loads the page's code font before an editor is made with it, and measures fonts anew whenever more load", async () => {
+    const fonts = withFonts();
+    let fontLoaded!: () => void;
+    fonts.answer = () => new Promise((resolve) => (fontLoaded = () => resolve([])));
+    const loader = TestBed.inject(MonacoLoader);
+    let loaded = false;
+    const loading = loader.load().then(() => (loaded = true));
+    stylesheet()!.dispatchEvent(new Event('load'));
+    await settle();
+    // Monaco would measure the font the browser falls back on, and the cursor drift from the text.
+    expect(fonts.asked).toEqual(["13px 'Roboto Mono Variable', monospace"]);
+    expect(loaded).toBe(false);
+    fontLoaded();
+    await loading;
+    expect(monaco.fontsMeasured).toBe(0);
+    // Its parts for other scripts, or a font that took longer than the wait.
+    fonts.dispatchEvent(new Event('loadingdone'));
+    expect(monaco.fontsMeasured).toBe(1);
+    fonts.dispatchEvent(new Event('loadingdone'));
+    expect(monaco.fontsMeasured).toBe(2);
+  });
+
+  it("doesn't wait for the code font past its wait", async () => {
+    TestBed.configureTestingModule({ providers: [{ provide: CODE_FONT_WAIT, useValue: 1 }] });
+    const fonts = withFonts();
+    fonts.answer = () => new Promise(() => undefined);
+    const loader = TestBed.inject(MonacoLoader);
+    const loading = loader.load();
+    stylesheet()!.dispatchEvent(new Event('load'));
+    expect(await loading).toBe(monaco.asMonaco());
+    expect(fonts.asked.length).toBe(1);
+  });
+
+  it("loads Monaco though the code font can't be loaded, or the page has none", async () => {
+    const fonts = withFonts();
+    fonts.answer = () => Promise.reject(new DOMException('The font is not valid', 'SyntaxError'));
+    const loader = TestBed.inject(MonacoLoader);
+    const loading = loader.load();
+    stylesheet()!.dispatchEvent(new Event('load'));
+    expect(await loading).toBe(monaco.asMonaco());
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ColorScheme, useValue: { dark } },
+        { provide: MONACO_IMPORT, useValue: () => Promise.resolve(monaco.asMonaco()) },
+      ],
+    });
+    document.documentElement.style.removeProperty('--gd-code-font-family');
+    const again = TestBed.inject(MonacoLoader).load();
+    expect(await again).toBe(monaco.asMonaco());
+    expect(fonts.asked.length).toBe(1);
   });
 
   it('may be loaded again after a load failed', async () => {

@@ -88,6 +88,19 @@ parts (`GalaxyData__DataDirectory`).
 | `RateLimits:RequestsPerMinute` | `600` | Requests to the API a user (or, signed out, an address) may make a minute; `0` for no limit. |
 | `RateLimits:ConcurrentQueries` | `4` | Requests that run queries or reach sources a user may have running at once. |
 | `RateLimits:QueuedQueries` | `16` | Such requests that may wait for one to end; more are refused. |
+| `Dashboards:AllowPublic` | `true` | Whether dashboards may have public links. Off, no public link works (and none can be made). |
+| `Dashboards:EmbedFrameAncestors` | `*` | The sites that may frame public dashboards, as `frame-ancestors` sources (`https://example.com`, `https://*.example.com`), or `*` for any. A dashboard may name fewer. |
+| `Dashboards:KeepRevisions` | `20` | The revisions kept of each dashboard, the newest (the published one whatever its age). |
+| `Dashboards:MaxWidgets`, `MaxSources`, `MaxFilters` | `50`, `20`, `30` | The most widgets, sources and filters a dashboard may have. |
+| `Dashboards:MaxDefinitionLength` | `262144` | The longest a dashboard's definition may be, as JSON, in characters. |
+| `Dashboards:MaxChartRows` | `10000` | The most rows (points, bars, slices) a chart shows. |
+| `Dashboards:MaxSelectionKeys`, `MaxPublicSelectionKeys` | `50`, `25` | The most slices chosen in a widget, signed in and through a public link. |
+| `Dashboards:MaxFilterValues`, `MaxPublicFilterValues` | `500`, `100` | The most values a condition may list, signed in and through a public link. |
+| `Dashboards:MinRefreshSeconds` | `30` | The shortest a dashboard's refresh interval may be. |
+| `Dashboards:WidgetTimeout`, `PublicWidgetTimeout` | `00:00:30`, `00:00:15` | How long a widget's query may run, signed in and through a public link. |
+| `Dashboards:CacheDuration`, `PublicCacheDuration` | `00:00:30`, `00:00:30` | How long a widget's rows are kept for the next to ask the same (a public link's are always kept). |
+| `Dashboards:CacheSize` | `2000` | The most widgets' rows kept at once. |
+| `Dashboards:PublicQueriesPerDashboard` | `4` | The queries a public dashboard may have running at once, for all its viewers (rows kept don't count). |
 
 Settings that don't make sense (a minimum password length of 3, a user name with spaces) stop the application at
 startup, naming the setting.
@@ -692,6 +705,103 @@ when it starts again, as each connection may have committed or not. Administrato
 /api/audit/commits` (newest first, paged with `before` and `take` as the admin audit is), and `GET
 /api/audit/commits/{id}`, with its scripts.
 
+## Dashboards
+
+A dashboard is a grid of widgets (text, pie, bar and line charts, tables) over sources (the catalog's tables, views
+and virtual entities), with filters, and slices chosen in one widget filtering those that listen to it. Its
+definition is one JSON document, kept in a canonical form (keys sorted, numbers shortest) and hashed (SHA-256), so a
+save that changes nothing is none.
+
+**The definition.** `layout` (rows' height, the gap, the breakpoints from 0 up, the widest the one designed, the
+cells by widget, and narrower breakpoints laid out by hand), `sources`, `links` (paths of navigations between two
+sources' entities; a forest), `filters` (on a source's field, of a kind: `values`, `range`, `relative`, `text`,
+`boolean`; shown or hidden, the viewers' to change or not, a default), `widgets` (each `{id, title, config}`, the
+config's `kind` saying which), `refresh` (`manual`, or `interval` with `seconds`) and `public` (`showData`).
+
+- **Checked as it is saved:** its shape, ids (`[a-z0-9-]`, unique in their lists), what refers to what, each kind's
+  rules and the limits (`Dashboards:*`): a 400 by the field's JSON path (`definition.widgets[2].config.measures[0]`).
+- **Checked against the catalog as it is shown and run:** entities, columns, navigations and types may change after a
+  save, so what doesn't fit is an issue of its widget (in the dashboard's answer and its widgets' rows), not a
+  refusal to save.
+
+**Copies and revisions.** Each dashboard has a working copy, which its owner edits and sees, and a published copy,
+which everyone else sees: publishing makes the working copy revision n + 1. The newest `Dashboards:KeepRevisions`
+are kept; one may be restored into the working copy, and the working copy's changes discarded.
+
+**Who sees what.** A dashboard someone may not see is a 404 for everything; one they may see but not change, a 403.
+
+| Who | Sees | May |
+|---|---|---|
+| Its owner | both copies | everything; making it public needs a data manager or administrator |
+| Those it is shared with (people chosen, or everyone signed in) | the published copy; unpublished, nothing | copy it |
+| Administrators | shared, public and ownerless dashboards (another's private one is a 404) | make them private, stop or renew their links, delete them; edit and publish ownerless ones; never make another's public |
+| Anyone with its public link | the published copy | nothing more: every reason it can't be seen is a 404 |
+
+A public link isn't access control for those signed in, and hidden filters aren't row-level security: a hidden
+filter narrows only the widgets it reaches, and signed-in viewers see the queries.
+
+**Endpoints** (`/api/dashboards`, for those who read data):
+
+| Endpoint | What |
+|---|---|
+| `GET /`, `POST /` | The user's dashboards and those shared with them (administrators: also shared, public and ownerless ones); a new one, blank unless a definition is given. |
+| `GET /{id}`, `PUT /{id}`, `DELETE /{id}?version=` | One: its copies, issues and what the user may do; its working copy saved (`{name, description, definition, version}`); deleted. |
+| `POST /{id}/publish`, `/discard` | `{version, note?}`: the working copy published, or the published copy back as the working one. |
+| `GET /{id}/revisions`, `GET …/{n}`, `POST …/{n}/restore` | The revisions, one, and one restored into the working copy. |
+| `PUT /{id}/sharing` | `{everyone, users, version}`. |
+| `PUT /{id}/public`, `POST /{id}/public/regenerate` | `{enabled, origins, version}`: the public link and the sites that may frame it; a new link (the old one stops at once). |
+| `POST /{id}/copy` | `{name}`: a private copy of the user's own, of the published copy (the owner's: of the working one). |
+| `GET /people?text=&take=` | Enabled users by name, to share with. |
+| `POST /data`, `/query`, `/filter-values` | A widget's rows, its queries, a filter's values, of a definition sent (`slice`: what the widget needs, the editor's previews and the owner's working copy). |
+| `POST /{id}/widgets/{w}/data`, `…/query`, `POST /{id}/filters/{f}/values` | The same of the published copy, by its `hash` (409 `dashboard-changed` when it was published again). |
+
+`GET /api/catalog/paths?from=&to=&depth=` lists the paths of navigations between two entities, shortest first,
+for the editor's links.
+
+**What reaches a widget.** A request's `state` holds the viewer's values of filters (`{filters: {id: value}}`) and
+the slices chosen (`{selections: {widget: {mode: include|exclude, keys}}}`). A widget's query is its source's, with
+the filters on its source and linked ones that apply to it, the slices of the widgets it listens to on those, and
+its own conditions; through a link it keeps the rows related to at least one row the other source's conditions
+keep ("customers with an order that isn't cancelled"). Values of filters viewers may not change are ignored; hidden
+filters always apply. Slices of one field are written as a list (`x in [$s1, $s2]`), others as an OR of ANDs, those
+left out as `not (…)`.
+
+**Running.** Widgets' rows run with `Dashboards:WidgetTimeout`, under the `queries` rate limit, and are kept for
+`Dashboards:CacheDuration` by the queries they run (equal queries, by anyone, share them; a refresh reads them
+again). Charts show `Dashboards:MaxChartRows` at most and say when there are more; tables page.
+
+**Public dashboards.** `GET /api/public/dashboards/{token}` (the published copy without its sources, fields,
+conditions, links or hidden filters), `…/widgets/{w}/data?s=` (the state as base64url JSON, 4 KB at most) and
+`…/filters/{f}/values?s=&text=`, for anyone: they read no session, have only GETs, and say nothing of a failure but
+its code. Their rows are always kept (`PublicCacheDuration`), and a dashboard runs `PublicQueriesPerDashboard`
+queries at once for all its viewers. Addresses are rate-limited as everyone is: behind a proxy, `Proxy:Enabled`, or
+every viewer is the proxy. Links are 22 characters of base64url, masked in the log.
+
+**Embedding.** `/embed/{token}` is the dashboard alone, to be framed: its answer's `frame-ancestors` is `'self'`
+and the dashboard's sites (those `Dashboards:EmbedFrameAncestors` allows), or the setting when it names none, with
+no `X-Frame-Options`. Other pages may still not be framed. The session cookie is `SameSite=Strict`, so a frame in
+another site is never signed in: only public dashboards embed. The frame says its height to its parent as it
+changes:
+
+```html
+<iframe src="https://galaxydata.example.com/embed/TOKEN?theme=light" title="Sales" width="100%" height="600"
+  style="border: 0" loading="lazy" referrerpolicy="no-referrer"></iframe>
+<script>
+  addEventListener('message', (event) => {
+    const frame = [...document.querySelectorAll('iframe')].find((f) => f.contentWindow === event.source);
+    if (frame && event.origin === new URL(frame.src).origin && event.data?.type === 'galaxydata.dashboard.size') {
+      frame.style.height = event.data.height + 'px';
+    }
+  });
+</script>
+```
+
+The link may hold filters' values and slices chosen (`?f.status=open&s.by-city=Cape%20Town`, as the dashboard's own
+page writes them) and `theme=light` or `dark` (the system's otherwise).
+
+**The audit.** Making a dashboard public, a new link, stopping it, changing its sites and deleting a public
+dashboard are in the administrators' audit, never with the link.
+
 ## Security
 
 **Headers.** Every answer has these, those made over for a failure too:
@@ -814,6 +924,10 @@ Errors are problem details (RFC 9457, `application/problem+json`). Every problem
 | 409 | `last-admin` | The change would leave no enabled administrator. |
 | 409 | `alias-taken` | Another connection has the alias (aliases ignore case). |
 | 409 | `query-name-taken` | The owner has a saved query of the name (names ignore case). |
+| 409 | `dashboard-name-taken` | The owner has a dashboard of the name (names ignore case). |
+| 409 | `dashboard-changed` | A published dashboard's widget was asked for by a hash that isn't its published copy's: it was published again. |
+| 422 | `widget-invalid` | A widget's config can't be planned against the catalog as it is; `issues` says why. |
+| 403 | `public-dashboards-disabled` | Public dashboards are turned off (`Dashboards:AllowPublic`). |
 | 409 | `overlay-item-exists` | The overlay has an item for that already: settings for the entity, an override of the navigation, a virtual entity of the name. |
 | 409 | `plan-stale` | A preview of changes can't be committed: it expired or was replaced, or the changes or the catalog changed since. Preview again. |
 | 409 | `commit-in-progress` | The user's changes are being committed: they can't be previewed or committed again until that has finished. |

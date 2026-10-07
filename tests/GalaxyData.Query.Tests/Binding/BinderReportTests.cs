@@ -124,6 +124,7 @@ public sealed class BinderReportTests
          "sales.orders.select(x: lowr(status))",
          "sales.orders.select(x: substring(status))",
          "sales.orders.select(x: year(status))",
+         "sales.orders.select(x: startOfMonth(status))",
          "sales.orders.select(x: status.foo)",
          "sales.orders.where(status == $missing)",
          "x := sales.orders",

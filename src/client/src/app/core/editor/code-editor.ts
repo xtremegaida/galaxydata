@@ -15,7 +15,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { MatProgressBar } from '@angular/material/progress-bar';
-import { type Monaco, MonacoLoader } from './monaco-loader';
+import { type Monaco, MonacoLoader, codeFontFamily } from './monaco-loader';
 
 /** Something wrong in the text: from an offset (in UTF-16 units), for a length, and why (an error, unless said). */
 export interface EditorMarker {
@@ -49,6 +49,7 @@ let editors = 0;
         <textarea
           class="plain"
           spellcheck="false"
+          [class.wrap]="wrap()"
           [attr.aria-label]="label()"
           [attr.aria-describedby]="describedBy()"
           [readOnly]="readOnly()"
@@ -110,6 +111,10 @@ let editors = 0;
       white-space: pre;
     }
 
+    .plain.wrap {
+      white-space: pre-wrap;
+    }
+
     .loading {
       position: absolute;
       top: 0;
@@ -130,6 +135,8 @@ export class CodeEditor {
   /** Monaco's language: `sql`, `pgsql`. */
   readonly language = input('sql');
   readonly readOnly = input(false);
+  /** Whether long lines wrap (a query written on one line, read only). */
+  readonly wrap = input(false);
   /** What is said when a read-only text is typed in. */
   readonly readOnlyMessage = input<string | null>(null);
   readonly markers = input<readonly EditorMarker[]>([]);
@@ -296,10 +303,7 @@ export class CodeEditor {
     if (!initial.includes('\r\n')) {
       model.setEOL(monaco.editor.EndOfLineSequence.LF);
     }
-    // The page's (an editor in a tab not shown is made outside the page, where styles don't reach).
-    const font = getComputedStyle(this.document.documentElement)
-      .getPropertyValue('--gd-code-font-family')
-      .trim();
+    const font = codeFontFamily(this.document);
     this.editor = monaco.editor.create(host, {
       model,
       ariaLabel: untracked(this.label),
@@ -307,6 +311,7 @@ export class CodeEditor {
       automaticLayout: true,
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
+      wordWrap: untracked(this.wrap) ? 'on' : 'off',
       fontFamily: font || undefined,
       fontSize: 13,
       // The text area screen readers know (not the edit context, which Monaco calls experimental).

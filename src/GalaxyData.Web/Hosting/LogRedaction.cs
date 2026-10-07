@@ -35,6 +35,11 @@ public sealed class SecretRedactor
       """(?<head>[a-z][a-z0-9+.-]*://[^/\s:@]*:)(?<value>[^/\s@]+)@""",
       RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
 
+   /// <summary>A public link's token in a path (<c>/embed/…</c>, <c>/api/public/dashboards/…</c>): anyone with it sees the dashboard.</summary>
+   private static readonly Regex PublicLink = new(
+      """(?<head>/(?:embed|api/public/dashboards)/)(?<value>[A-Za-z0-9_-]{16,64})""",
+      RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+
    private readonly Lock gate = new();
    private readonly HashSet<string> secrets = new(StringComparer.Ordinal);
 
@@ -61,6 +66,10 @@ public sealed class SecretRedactor
       {
          redacted = Replaced(redacted, SecretSetting, m => m.Groups["value"].Value == Mask ? m.Value : m.Groups["key"].Value + Mask);
          redacted = Replaced(redacted, UrlPassword, m => m.Groups["head"].Value + Mask + "@");
+      }
+      if (redacted.Contains("/embed/", StringComparison.Ordinal) || redacted.Contains("/api/public/", StringComparison.Ordinal))
+      {
+         redacted = Replaced(redacted, PublicLink, m => m.Groups["head"].Value + Mask);
       }
       return redacted;
    }

@@ -54,6 +54,105 @@ public sealed class GalaxyDataOptions
    /// <summary>How much each user may ask of the application.</summary>
    [ValidateObjectMembers]
    public RateLimitSettings RateLimits { get; set; } = new();
+
+   /// <summary>Dashboards: their sizes, revisions, refreshing, caching, and public ones.</summary>
+   [ValidateObjectMembers]
+   public DashboardSettings Dashboards { get; set; } = new();
+}
+
+/// <summary><c>*</c>, or sites written as browsers write origins (<c>https://example.com</c>, <c>https://*.example.com</c>), apart by spaces.</summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class FrameAncestorsAttribute : ValidationAttribute
+{
+   protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+   {
+      ArgumentNullException.ThrowIfNull(validationContext);
+      if (value is not string text) { return ValidationResult.Success; }
+      try
+      {
+         _ = Dashboards.PublicDashboards.AllowedAncestors(text);
+         return ValidationResult.Success;
+      }
+      catch (FormatException e)
+      {
+         string member = validationContext.MemberName ?? validationContext.DisplayName;
+         return new ValidationResult($"{member}: {e.Message}, or *", [member]);
+      }
+   }
+}
+
+public sealed class DashboardSettings
+{
+   /// <summary>Whether dashboards may be public (viewed by anyone with their link, embedded in other sites); off, no public link works.</summary>
+   public bool AllowPublic { get; set; } = true;
+
+   /// <summary>
+   /// The sites that may frame public dashboards, as a content security policy's <c>frame-ancestors</c> sources
+   /// (<c>https://example.com</c>, <c>https://*.example.com</c>), or <c>*</c> for any; a dashboard may name fewer.
+   /// </summary>
+   [Required, FrameAncestors]
+   public string EmbedFrameAncestors { get; set; } = "*";
+
+   /// <summary>The revisions kept for each dashboard, the newest; the published one is kept whatever its age.</summary>
+   [Range(1, 1000)]
+   public int KeepRevisions { get; set; } = 20;
+
+   [Range(1, 500)]
+   public int MaxWidgets { get; set; } = 50;
+
+   [Range(1, 200)]
+   public int MaxSources { get; set; } = 20;
+
+   [Range(0, 200)]
+   public int MaxFilters { get; set; } = 30;
+
+   /// <summary>The longest a dashboard's definition may be, as JSON, in characters.</summary>
+   [Range(1024, 16 * 1024 * 1024)]
+   public int MaxDefinitionLength { get; set; } = 256 * 1024;
+
+   /// <summary>The most rows (points, bars, slices) a chart may show.</summary>
+   [Range(1, 1_000_000)]
+   public int MaxChartRows { get; set; } = 10_000;
+
+   /// <summary>The most slices a selection of a widget's may hold, signed in and in public dashboards.</summary>
+   [Range(1, 10_000)]
+   public int MaxSelectionKeys { get; set; } = 50;
+
+   [Range(1, 10_000)]
+   public int MaxPublicSelectionKeys { get; set; } = 25;
+
+   /// <summary>The most values a condition may list, signed in and in public dashboards.</summary>
+   [Range(1, 10_000)]
+   public int MaxFilterValues { get; set; } = 500;
+
+   [Range(1, 10_000)]
+   public int MaxPublicFilterValues { get; set; } = 100;
+
+   /// <summary>The shortest a dashboard's refresh interval may be.</summary>
+   [Range(1, 86_400)]
+   public int MinRefreshSeconds { get; set; } = 30;
+
+   /// <summary>How long a widget's query may run, signed in and in public dashboards.</summary>
+   [Range(typeof(TimeSpan), "00:00:01", "01:00:00")]
+   public TimeSpan WidgetTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+   [Range(typeof(TimeSpan), "00:00:01", "01:00:00")]
+   public TimeSpan PublicWidgetTimeout { get; set; } = TimeSpan.FromSeconds(15);
+
+   /// <summary>How long a widget's rows are kept for the next to ask the same, signed in and in public dashboards.</summary>
+   [Range(typeof(TimeSpan), "00:00:00", "1.00:00:00")]
+   public TimeSpan CacheDuration { get; set; } = TimeSpan.FromSeconds(30);
+
+   [Range(typeof(TimeSpan), "00:00:01", "1.00:00:00")]
+   public TimeSpan PublicCacheDuration { get; set; } = TimeSpan.FromSeconds(30);
+
+   /// <summary>The most widgets' rows kept at once.</summary>
+   [Range(1, 1_000_000)]
+   public int CacheSize { get; set; } = 2000;
+
+   /// <summary>The queries a public dashboard may have running at once, for all its viewers (rows kept don't count).</summary>
+   [Range(1, 1000)]
+   public int PublicQueriesPerDashboard { get; set; } = 4;
 }
 
 public sealed class SecuritySettings

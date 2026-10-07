@@ -7,8 +7,10 @@ GalaxyData is two things built together:
   once. Results say where each column comes from (lineage) and how rows lead to other rows (links), and changes to
   rows are written back as each database's SQL.
 - **GalaxyData Manager**, a web application on the library (ASP.NET Core and Angular): browsing the data and
-  following its links, changing rows (previewed as SQL, committed together), writing and saving queries, and
-  looking after users, connections and the catalog's overlay (relations, virtual entities, settings).
+  following its links, changing rows (previewed as SQL, committed together), writing and saving queries, building
+  dashboards (charts, tables and text on a grid, filtered by what is chosen in them; shared, published, and public
+  by a link other sites may frame), and looking after users, connections and the catalog's overlay (relations,
+  virtual entities, settings).
 
 ## What it needs
 
@@ -61,6 +63,8 @@ dotnet run --project src/GalaxyData.Query.Cli -- run -s shop=sqlite:tests/fixtur
 - [docs/client.md](docs/client.md): developing the client, and what each page does.
 - [plans/federated-query-engine-and-kind-flame.md](plans/federated-query-engine-and-kind-flame.md): the design, and
   what each milestone built.
+- [plans/interactive-dashboard-builder-dashboards-soft-gem.md](plans/interactive-dashboard-builder-dashboards-soft-gem.md):
+  the dashboards' design, and what each of their milestones built.
 
 ## Layout
 

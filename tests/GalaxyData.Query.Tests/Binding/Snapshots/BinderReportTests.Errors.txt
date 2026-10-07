@@ -148,6 +148,11 @@ GDQ2006 Error: expected a date or date-time here, but this is text
   sales.orders.select(x: year(status))
                               ^^^^^^
 
+### sales.orders.select(x: startOfMonth(status))
+GDQ2006 Error: expected a date or date-time here, but this is text
+  sales.orders.select(x: startOfMonth(status))
+                                      ^^^^^^
+
 ### sales.orders.select(x: status.foo)
 GDQ2014 Error: A text has no members, so '.foo' means nothing here
   sales.orders.select(x: status.foo)

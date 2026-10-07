@@ -35,11 +35,32 @@ internal sealed partial class ApiExceptionHandler(IProblemDetailsService problem
          return true;
       }
       ProblemDetails problem = Describe(exception, environment.IsDevelopment());
+      // Anyone may ask a public dashboard: they are told what went wrong by its code alone, never by sources' words.
+      if (httpContext.Request.Path.StartsWithSegments("/api/public", StringComparison.OrdinalIgnoreCase)) { problem = Plain(problem); }
       Log(exception);
       httpContext.Response.StatusCode = problem.Status ?? StatusCodes.Status500InternalServerError;
       // A client that takes no JSON gets the status alone.
       await problems.TryWriteAsync(new ProblemDetailsContext { HttpContext = httpContext, ProblemDetails = problem, Exception = exception });
       return true;
+   }
+
+   /// <summary>A problem with its status and code alone, and a title of its status's (titles may name sources).</summary>
+   internal static ProblemDetails Plain(ProblemDetails problem)
+   {
+      ArgumentNullException.ThrowIfNull(problem);
+      int status = problem.Status ?? StatusCodes.Status500InternalServerError;
+      string code = problem.Extensions.TryGetValue("code", out object? value) && value is string text ? text : ProblemCodes.ForStatus(status);
+      string title = status switch
+      {
+         StatusCodes.Status400BadRequest => "The request isn't one the dashboard takes",
+         StatusCodes.Status404NotFound => "There is no such dashboard",
+         StatusCodes.Status422UnprocessableEntity => "The widget can't be shown",
+         StatusCodes.Status429TooManyRequests => "The dashboard is busy",
+         StatusCodes.Status502BadGateway => "The data isn't available now",
+         StatusCodes.Status504GatewayTimeout => "The data took too long",
+         _ => "Something went wrong",
+      };
+      return ApiProblems.Create(status, code, title, null);
    }
 
    /// <summary>The problem an exception is; <paramref name="development"/> tells what an unexpected one was.</summary>

@@ -327,6 +327,99 @@ public sealed class SavedQuery : IVersioned
 }
 
 /// <summary>
+/// A dashboard: its owner's working copy (<see cref="WorkingJson"/>, which only they see) and the copy published
+/// (what everyone else sees), who it is shared with (everyone, or <see cref="Shares"/>), and its public link. Who
+/// may see it follows from those, so nothing says it twice. When its owner is deleted, it stays, as saved queries do.
+/// </summary>
+public sealed class Dashboard : IVersioned
+{
+   public int Id { get; set; }
+
+   /// <summary>Null once the owner is deleted.</summary>
+   public int? OwnerId { get; set; }
+
+   /// <summary>The owner's name when they last saved it, which outlives them.</summary>
+   public string OwnerName { get; set; } = string.Empty;
+
+   /// <summary>Unique for its owner, ignoring case.</summary>
+   public string Name { get; set; } = string.Empty;
+
+   public string? Description { get; set; }
+
+   /// <summary>The working copy's definition, as the server writes it (canonical JSON).</summary>
+   public string WorkingJson { get; set; } = string.Empty;
+
+   /// <summary>The working copy's hash (SHA-256 of its JSON, hex): the same as the published one's when nothing changed since.</summary>
+   public string WorkingHash { get; set; } = string.Empty;
+
+   /// <summary>The published copy's definition; null until it is first published.</summary>
+   public string? PublishedJson { get; set; }
+
+   public string? PublishedHash { get; set; }
+
+   /// <summary>The revision published: its number.</summary>
+   public int? PublishedNumber { get; set; }
+
+   public DateTime? PublishedAt { get; set; }
+
+   public string? PublishedByName { get; set; }
+
+   /// <summary>Whether everyone signed in sees the published copy; otherwise those in <see cref="Shares"/>.</summary>
+   public bool SharedWithEveryone { get; set; }
+
+   public List<DashboardShare> Shares { get; set; } = [];
+
+   /// <summary>The public link's token (128 random bits, base64url); null when it isn't public.</summary>
+   public string? PublicToken { get; set; }
+
+   /// <summary>Who made it public: the link works while they still may (null once they are deleted, which ends it).</summary>
+   public int? PublicEnabledById { get; set; }
+
+   public string? PublicEnabledByName { get; set; }
+
+   public DateTime? PublicEnabledAt { get; set; }
+
+   /// <summary>The sites that may frame it (origins, <c>https://*.example.com</c>); none for any the application allows.</summary>
+   public List<string> EmbedOrigins { get; set; } = [];
+
+   public DateTime CreatedAt { get; set; }
+
+   public DateTime UpdatedAt { get; set; }
+
+   public int Version { get; set; }
+}
+
+/// <summary>A user a dashboard is shared with.</summary>
+public sealed class DashboardShare
+{
+   public int DashboardId { get; set; }
+
+   public int UserId { get; set; }
+}
+
+/// <summary>A copy of a dashboard as it was published, numbered from 1; the newest are kept.</summary>
+public sealed class DashboardRevision
+{
+   public int Id { get; set; }
+
+   public int DashboardId { get; set; }
+
+   public int Number { get; set; }
+
+   public string DefinitionJson { get; set; } = string.Empty;
+
+   public string Hash { get; set; } = string.Empty;
+
+   public DateTime PublishedAt { get; set; }
+
+   public int? PublishedById { get; set; }
+
+   public string PublishedByName { get; set; } = string.Empty;
+
+   public string? Note { get; set; }
+}
+
+/// <summary>
 /// The changes a user has made to rows and not yet committed: one set for each user, kept until they are committed
 /// or reverted, through refreshes, tabs and restarts. Its version goes up with each change to it.
 /// </summary>

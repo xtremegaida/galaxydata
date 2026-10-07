@@ -137,6 +137,12 @@ internal sealed class PostgreSqlDialect : SqlDialect
          ? Cast(Binary(SqlBinaryOp.Add, c.Arg(0), Binary(SqlBinaryOp.Multiply, c.Arg(1), Raw("INTERVAL '1 month'"))), ScalarType.Date)
          : Binary(SqlBinaryOp.Add, c.Arg(0), Binary(SqlBinaryOp.Multiply, c.Arg(1), Raw("INTERVAL '1 month'"))),
       FunctionId.DaysBetween => Binary(SqlBinaryOp.Subtract, Cast(c.Arg(1), ScalarType.Date), Cast(c.Arg(0), ScalarType.Date)),
+      FunctionId.StartOfWeek => StartOf("week", c),
+      FunctionId.StartOfMonth => StartOf("month", c),
+      FunctionId.StartOfQuarter => StartOf("quarter", c),
+      FunctionId.StartOfYear => StartOf("year", c),
+      FunctionId.Quarter => Extract("QUARTER", c),
+      FunctionId.DayOfWeek => Extract("ISODOW", c),
       FunctionId.Coalesce => Call("coalesce", c.Args()),
       FunctionId.NullIf => Call("nullif", c.Arg(0), c.Arg(1)),
       FunctionId.Iif => Iif(c.Condition(0), c.Arg(1), c.Arg(2)),
@@ -153,6 +159,21 @@ internal sealed class PostgreSqlDialect : SqlDialect
    };
 
    private SqlExpr Extract(string field, SqlCall c) => Cast(Template($"EXTRACT({field} FROM {{0}})", c.Arg(0)), ScalarType.Int32);
+
+   /// <summary>
+   /// The first day of the date's week (a Monday), month, quarter or year: truncated as a timestamp, a date-time with an
+   /// offset at its UTC time (as the sessions are), so neither the date's cast nor the session's zone moves the day.
+   /// </summary>
+   private SqlExpr StartOf(string unit, SqlCall c)
+   {
+      SqlExpr value = c.Type(0).Kind switch
+      {
+         ScalarKind.Date => Cast(c.Arg(0), ScalarType.DateTime),
+         ScalarKind.DateTimeOffset => Template("({0} AT TIME ZONE 'UTC')", c.Arg(0)),
+         _ => c.Arg(0),
+      };
+      return Cast(Call("date_trunc", Text(unit), value), ScalarType.Date);
+   }
 
    /// <summary>
    /// Doubles round as numeric and convert back: round(double, digits) doesn't exist, and round(double) rounds halves

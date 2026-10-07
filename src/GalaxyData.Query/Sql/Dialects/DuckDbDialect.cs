@@ -99,6 +99,12 @@ internal sealed class DuckDbDialect : SqlDialect
          ? Cast(Binary(SqlBinaryOp.Add, c.Arg(0), Call("to_months", Int(c, 1))), ScalarType.Date)
          : Binary(SqlBinaryOp.Add, c.Arg(0), Call("to_months", Int(c, 1))),
       FunctionId.DaysBetween => Call("date_diff", Text("day"), Cast(c.Arg(0), ScalarType.Date), Cast(c.Arg(1), ScalarType.Date)),
+      FunctionId.StartOfWeek => StartOf("week", c),
+      FunctionId.StartOfMonth => StartOf("month", c),
+      FunctionId.StartOfQuarter => StartOf("quarter", c),
+      FunctionId.StartOfYear => StartOf("year", c),
+      FunctionId.Quarter => Cast(Call("quarter", Instant(c)), ScalarType.Int32),
+      FunctionId.DayOfWeek => Cast(Call("isodow", Instant(c)), ScalarType.Int32),
       FunctionId.Coalesce => Call("coalesce", c.Args()),
       FunctionId.NullIf => Call("nullif", c.Arg(0), c.Arg(1)),
       FunctionId.Iif => Iif(c.Condition(0), c.Arg(1), c.Arg(2)),
@@ -113,6 +119,15 @@ internal sealed class DuckDbDialect : SqlDialect
       FunctionId.ToBool => c.Type(0).IsNumeric ? Binary(SqlBinaryOp.NotEqual, c.Arg(0), Integer(0)) : Cast(c.Arg(0), ScalarType.Boolean),
       _ => null,
    };
+
+   /// <summary>The first day of the date's week (a Monday), month, quarter or year.</summary>
+   private SqlExpr StartOf(string unit, SqlCall c) => Cast(Call("date_trunc", Text(unit), Instant(c)), ScalarType.Date);
+
+   /// <summary>
+   /// A date as it is, other values as a TIMESTAMP: one with an offset as its UTC time (sessions work in UTC), which
+   /// keeps clear of date_trunc's TIMESTAMPTZ form (ICU's alone), and nanoseconds as microseconds.
+   /// </summary>
+   private SqlExpr Instant(SqlCall c) => c.Type(0).Kind == ScalarKind.Date ? c.Arg(0) : Cast(c.Arg(0), ScalarType.DateTime);
 
    /// <summary>A whole number; fractions are truncated, as the language defines, where a plain CAST would round.</summary>
    private SqlExpr Whole(SqlCall c, ScalarType type) =>

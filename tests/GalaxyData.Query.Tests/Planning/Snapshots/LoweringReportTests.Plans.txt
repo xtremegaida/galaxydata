@@ -263,6 +263,24 @@ Project id#1, d#9 = daysBetween(order_date#5, shipped_at#6), m#10 = addMonths(or
 => at datetime: constant (now())
 => on date: constant (today())
 
+### sales.orders.select(w: startOfWeek(order_date), m: startOfMonth(shipped_at), q: startOfQuarter(order_date), y: startOfYear(shipped_at), qn: quarter(shipped_at), wd: dayOfWeek(order_date))
+Project w#9 = startOfWeek(order_date#5), m#10 = startOfMonth(shipped_at#6), q#11 = startOfQuarter(order_date#5), y#12 = startOfYear(shipped_at#6), qn#13 = quarter(shipped_at#6), wd#14 = dayOfWeek(order_date#5)
+  Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+=> w date: computed (startOfWeek(order_date)) from sales.orders.order_date
+=> m date?: computed (startOfMonth(shipped_at)) from sales.orders.shipped_at
+=> q date: computed (startOfQuarter(order_date)) from sales.orders.order_date
+=> y date?: computed (startOfYear(shipped_at)) from sales.orders.shipped_at
+=> qn int32?: computed (quarter(shipped_at)) from sales.orders.shipped_at
+=> wd int32: computed (dayOfWeek(order_date)) from sales.orders.order_date
+
+### sales.orders.groupBy(m: startOfMonth(shipped_at), w: dayOfWeek(shipped_at)).select(m, w, n: count())
+Project m#9, w#10, n#12 = count#11
+  Aggregate by m#9 = startOfMonth(shipped_at#6), w#10 = dayOfWeek(shipped_at#6): count#11 = count(*)
+    Scan sales.orders (id#1, customer_id#2, status#3, total#4, order_date#5, shipped_at#6, ship_customer_id#7, attachment#8)
+=> m date?: computed (startOfMonth(shipped_at)) from sales.orders.shipped_at
+=> w int32?: computed (dayOfWeek(shipped_at)) from sales.orders.shipped_at
+=> n int64: aggregated (count())
+
 ### sales.order_lines.select(a: toInt(price), b: toDecimal(qty, 10, 2), c: toString(price), d: toDouble(qty), e: substring(product_code, 2, 3), f: indexOf(product_code, '-'), g: left(product_code, 2), h: right(product_code, 3))
 Project a#6 = toInt(price#5), b#7 = toDecimal(qty#4, 10, 2), c#8 = toString(price#5), d#9 = toDouble(qty#4), e#10 = substring(product_code#3, 2, 3), f#11 = indexOf(product_code#3, '-'), g#12 = left(product_code#3, 2), h#13 = right(product_code#3, 3)
   Scan sales.order_lines (order_id#1, line_no#2, product_code#3, qty#4, price#5)

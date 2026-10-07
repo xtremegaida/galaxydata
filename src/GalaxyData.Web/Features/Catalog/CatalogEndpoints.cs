@@ -122,7 +122,36 @@ public static class CatalogEndpoints
          .RequiresQuery("name")
          .ProducesValidationProblem()
          .ProducesProblem(StatusCodes.Status404NotFound);
+      catalog.MapGet("/paths", PathsAsync).WithName("FindCatalogPaths")
+         .WithSummary("The navigations that lead from one entity's rows to another's, shortest first")
+         .RequiresQuery("from")
+         .RequiresQuery("to")
+         .ProducesValidationProblem()
+         .ProducesProblem(StatusCodes.Status404NotFound);
       return api;
+   }
+
+   /// <summary>
+   /// Ways from one entity's rows to another's, through navigations (forward and back, inherited ones, across
+   /// sources), at most <paramref name="depth"/> long (3): to the entity, or to the base a virtual entity filters.
+   /// </summary>
+   private static async Task<Results<Ok<List<CatalogPathDto>>, ValidationProblem, ProblemHttpResult>> PathsAsync(string? from, string? to, [System.ComponentModel.DataAnnotations.Range(1, 3)] int? depth,
+      HttpResponse response, CatalogService catalogs, CancellationToken cancellationToken)
+   {
+      Dictionary<string, string[]> errors = [];
+      if (!EntityName.TryParse(from, out EntityName? fromName)) { errors["from"] = [$"'{from}' isn't an entity's name, such as shop.orders"]; }
+      if (!EntityName.TryParse(to, out EntityName? toName)) { errors["to"] = [$"'{to}' isn't an entity's name, such as shop.customers"]; }
+      if (errors.Count > 0) { return ApiProblems.Invalid(errors); }
+      CatalogState state = await StateAsync(response, catalogs, cancellationToken);
+      EntityDef? start = state.Catalog.FindEntity(fromName!);
+      EntityDef? end = state.Catalog.FindEntity(toName!);
+      if (start == null || end == null)
+      {
+         return ApiProblems.Result(StatusCodes.Status404NotFound, ProblemCodes.NotFound, "There is no such entity", $"There is no entity {(start == null ? from : to)} in the catalog");
+      }
+      return TypedResults.Ok(CatalogPaths.Find(start, end, depth ?? 3, CatalogPaths.MaxPaths)
+         .Select(p => new CatalogPathDto(p.Select(n => new CatalogPathStepDto(n.Name, n.Owner.DisplayName, n.Target.DisplayName, n.IsCollection)).ToList()))
+         .ToList());
    }
 
    private static async Task<Ok<CatalogDto>> GetAsync(HttpResponse response, CatalogService catalogs, CancellationToken cancellationToken)

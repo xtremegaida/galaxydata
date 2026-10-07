@@ -166,32 +166,13 @@ public static class SavedQueryEndpoints
       // Checked as a query would read them, and kept as given (typed values as they were sent), named without their $.
       _ = QueryInputs.Parameters(input.Parameters, prefix + "parameters", errors);
       if (errors.Count > 0) { return; }
-      List<QueryParameterInput> kept = [.. (input.Parameters ?? []).Select(p => new QueryParameterInput(p.Name.TrimStart('$'), p.Type?.Trim(), Canonical(ValueCodec.Json(p.Value))))];
+      List<QueryParameterInput> kept = [.. (input.Parameters ?? []).Select(p => new QueryParameterInput(p.Name.TrimStart('$'), p.Type?.Trim(), ValueCodec.ShortestNumber(ValueCodec.Json(p.Value))))];
       // EF changes only what is set to another value: a save of nothing new changes nothing, not even the version.
       row.Name = name;
       row.Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim();
       row.Text = input.Text;
       row.ParametersJson = JsonSerializer.Serialize(kept, ParametersJson);
       row.IsShared = input.IsShared;
-   }
-
-   /// <summary>
-   /// A number as JSON writes it shortest (<c>50.0</c> as <c>50</c>, <c>1E3</c> as <c>1000</c>), as a browser would send it
-   /// back: so saving a query as it was read changes nothing.
-   /// </summary>
-   private static JsonElement Canonical(JsonElement value)
-   {
-      if (value.ValueKind != JsonValueKind.Number) { return value; }
-      if (value.TryGetInt64(out long whole)) { return JsonSerializer.SerializeToElement(whole); }
-      if (decimal.TryParse(value.GetRawText(), NumberStyles.Float, CultureInfo.InvariantCulture, out decimal number))
-      {
-         // Dividing by one with 28 zeros drops a decimal's trailing zeros.
-         number /= 1.0000000000000000000000000000m;
-         return decimal.Truncate(number) == number && number is >= long.MinValue and <= long.MaxValue
-            ? JsonSerializer.SerializeToElement((long)number)
-            : JsonSerializer.SerializeToElement(number);
-      }
-      return value;
    }
 
    private static SavedQueryDto Dto(SavedQuery query, ClaimsPrincipal me) =>

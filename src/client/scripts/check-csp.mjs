@@ -1,9 +1,9 @@
-// Checks the built page and stylesheets against the server's content security policy (see csp.mjs), and fails
+// Checks the built page, stylesheets and scripts against the server's content security policy (see csp.mjs), and fails
 // when they have what it refuses: Angular's inlined critical CSS, for one, loads its stylesheet with an onload
 // handler (so the build turns it off). npm run build runs it after building.
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { pageProblems, styleProblems } from './csp.mjs';
+import { pageProblems, scriptProblems, styleProblems } from './csp.mjs';
 
 const outputUrl = new URL('../dist/browser/', import.meta.url);
 
@@ -15,6 +15,11 @@ for (const problem of pageProblems(await readFile(page, 'utf8'))) {
 for (const entry of await readdir(outputUrl, { recursive: true })) {
   if (entry.endsWith('.css')) {
     for (const problem of styleProblems(await readFile(new URL(entry, outputUrl), 'utf8'))) {
+      problems.push(`${entry}: ${problem}`);
+    }
+  }
+  if (entry.endsWith('.js')) {
+    for (const problem of scriptProblems(await readFile(new URL(entry, outputUrl), 'utf8'))) {
       problems.push(`${entry}: ${problem}`);
     }
   }

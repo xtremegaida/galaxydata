@@ -8,6 +8,8 @@ using GalaxyData.Query.Binding;
 using GalaxyData.Query.Language;
 using GalaxyData.Query.Results;
 using GalaxyData.Query.Types;
+using GalaxyData.Web.Dashboards;
+using GalaxyData.Web.Queries;
 
 namespace GalaxyData.Web.Browse;
 
@@ -37,21 +39,10 @@ public static class GridQueryComposer
       ArgumentNullException.ThrowIfNull(columns);
       ArgumentNullException.ThrowIfNull(grid);
       ArgumentNullException.ThrowIfNull(errors);
-      QueryParameters values = new();
-      foreach (QueryParameter parameter in parameters.All) { values.Add(parameter.Name, parameter.Value, parameter.Type); }
       // Its start kept, so positions in it are the client's.
       string where = grid.Where?.TrimEnd() ?? string.Empty;
       // Names the query and the where expression don't use.
-      string used = text + " " + where;
-      int next = 0;
-      string Parameter(object? value, ScalarType type)
-      {
-         string name;
-         do { name = "f" + (++next).ToString(CultureInfo.InvariantCulture); }
-         while (values.TryGet(name, out _) || used.Contains("$" + name, StringComparison.OrdinalIgnoreCase));
-         values.Add(name, value, type.AsNonNullable());
-         return "$" + name;
-      }
+      QueryParameterAllocator allocator = new(parameters, text + " " + where);
 
       List<string> filters = [];
       for (int i = 0; i < (grid.Filters?.Count ?? 0); i++)
@@ -67,7 +58,10 @@ public static class GridQueryComposer
          for (int j = 0; j < filter.Conditions.Count; j++)
          {
             if (filter.Conditions[j] is not { } given) { errors[$"{field}.conditions[{j}]"] = ["A condition can't be null"]; }
-            else if (Condition(column, given, $"{field}.conditions[{j}]", Parameter, errors) is { } condition) { conditions.Add(condition); }
+            else if (ConditionWriter.Write(QueryText.QuoteName(column.Name), column.Type, column.Name, Spec(given), $"{field}.conditions[{j}]", allocator, errors) is { } condition)
+            {
+               conditions.Add(condition);
+            }
          }
          if (conditions.Count == 0) { continue; }
          filters.Add(conditions.Count == 1 ? conditions[0] : "(" + string.Join(filter.Any ? " or " : " and ", conditions) + ")");
@@ -97,7 +91,7 @@ public static class GridQueryComposer
       if (wrapped != null) { filters.Add(wrapped); }
       string composed = QueryText.Compose(text, filters, sort);
       int? whereStart = wrapped == null ? null : composed.LastIndexOf(".where(" + wrapped + ")", StringComparison.Ordinal) + ".where((".Length;
-      return new ComposedQuery(composed, values, whereStart);
+      return new ComposedQuery(composed, allocator.Values, whereStart);
    }
 
    /// <summary>Why the where expression can't be one; null when it can.</summary>
@@ -129,129 +123,8 @@ public static class GridQueryComposer
       return null;
    }
 
-   private static string? Condition(ResultColumn column, GridConditionDto condition, string field, Func<object?, ScalarType, string> parameter,
-                                    Dictionary<string, string[]> errors)
-   {
-      ScalarType type = column.Type;
-      string name = QueryText.QuoteName(column.Name);
-      bool text = type.Kind == ScalarKind.String;
-      bool ordered = type.IsNumeric || type.IsTemporal || type.Kind is ScalarKind.String or ScalarKind.Interval;
-      bool equatable = ordered || type.Kind is ScalarKind.Boolean or ScalarKind.Guid;
-      bool allowed = condition.Op switch
-      {
-         GridOp.Blank or GridOp.NotBlank => true,
-         GridOp.Eq or GridOp.Ne => equatable,
-         GridOp.Contains or GridOp.NotContains or GridOp.StartsWith or GridOp.EndsWith => text,
-         _ => ordered,
-      };
-      if (!allowed)
-      {
-         errors[field + ".op"] = [$"'{column.Name}' is {TypeName(type)}, which can't be filtered by {Camel(condition.Op)}"];
-         return null;
-      }
-      switch (condition.Op)
-      {
-         case GridOp.Blank:
-            return text ? $"({name} == null or {name} == '')" : $"{name} == null";
-         case GridOp.NotBlank:
-            return text ? $"({name} != null and {name} != '')" : $"{name} != null";
-         case GridOp.Contains or GridOp.NotContains or GridOp.StartsWith or GridOp.EndsWith:
-         {
-            if (Value(condition.Value, type, field + ".value", errors) is not string find) { return null; }
-            return condition.Op switch
-            {
-               GridOp.Contains => $"icontains({name}, {parameter(find, ScalarType.Text())})",
-               GridOp.NotContains => $"(not icontains({name}, {parameter(find, ScalarType.Text())}) or {name} == null)",
-               GridOp.StartsWith => $"ilike({name}, {parameter(Escape(find) + "%", ScalarType.Text())})",
-               _ => $"ilike({name}, {parameter("%" + Escape(find), ScalarType.Text())})",
-            };
-         }
-      }
-      if (condition.Value is null || ValueCodec.Json(condition.Value) is not { ValueKind: not JsonValueKind.Null } given)
-      {
-         errors[field + ".value"] = [$"{Camel(condition.Op)} needs a value"];
-         return null;
-      }
-      // A date alone compares with the days of date-times: 'on' a day is from its start to the next day's (when
-      // there is one: the last day has none, and nothing is after it).
-      if (type.Kind is ScalarKind.DateTime or ScalarKind.DateTimeOffset && ValueCodec.IsDateOnly(given, out DateOnly day))
-      {
-         string From(DateOnly date) => parameter(DayStart(date, type), type);
-         string? After() => day == DateOnly.MaxValue ? null : From(day.AddDays(1));
-         switch (condition.Op)
-         {
-            case GridOp.Eq:
-            {
-               string start = From(day);
-               return After() is { } end ? $"({name} >= {start} and {name} < {end})" : $"{name} >= {start}";
-            }
-            case GridOp.Ne:
-            {
-               string start = From(day);
-               return After() is { } end ? $"({name} < {start} or {name} >= {end} or {name} == null)" : $"({name} < {start} or {name} == null)";
-            }
-            case GridOp.Lt: return $"{name} < {From(day)}";
-            case GridOp.Le: return After() is { } leEnd ? $"{name} < {leEnd}" : $"{name} != null";
-            case GridOp.Gt: return After() is { } gtStart ? $"{name} >= {gtStart}" : "false";
-            case GridOp.Ge: return $"{name} >= {From(day)}";
-         }
-      }
-      if (!Decoded(given, type, field + ".value", errors, out object? value)) { return null; }
-      switch (condition.Op)
-      {
-         case GridOp.Eq: return $"{name} == {parameter(value, type)}";
-         case GridOp.Ne: return $"({name} != {parameter(value, type)} or {name} == null)";
-         case GridOp.Lt: return $"{name} < {parameter(value, type)}";
-         case GridOp.Le: return $"{name} <= {parameter(value, type)}";
-         case GridOp.Gt: return $"{name} > {parameter(value, type)}";
-         case GridOp.Ge: return $"{name} >= {parameter(value, type)}";
-      }
-      // Between, from the value to the value up to, both included; days of date-times whole.
-      if (condition.ValueTo is null || ValueCodec.Json(condition.ValueTo) is not { ValueKind: not JsonValueKind.Null } to)
-      {
-         errors[field + ".valueTo"] = ["between needs a value up to"];
-         return null;
-      }
-      bool days = type.Kind is ScalarKind.DateTime or ScalarKind.DateTimeOffset;
-      string lower = days && ValueCodec.IsDateOnly(given, out DateOnly first) ? parameter(DayStart(first, type), type) : parameter(value, type);
-      if (days && ValueCodec.IsDateOnly(to, out DateOnly last))
-      {
-         return last == DateOnly.MaxValue ? $"{name} >= {lower}" : $"({name} >= {lower} and {name} < {parameter(DayStart(last.AddDays(1), type), type)})";
-      }
-      return Decoded(to, type, field + ".valueTo", errors, out object? upper) ? $"({name} >= {lower} and {name} <= {parameter(upper, type)})" : null;
-   }
-
-   private static object? Value(object? value, ScalarType type, string field, Dictionary<string, string[]> errors)
-   {
-      if (value is null || ValueCodec.Json(value) is not { ValueKind: not JsonValueKind.Null } given)
-      {
-         errors[field] = ["The condition needs a value"];
-         return null;
-      }
-      return Decoded(given, type, field, errors, out object? decoded) ? decoded : null;
-   }
-
-   private static bool Decoded(JsonElement value, ScalarType type, string field, Dictionary<string, string[]> errors, out object? decoded)
-   {
-      try
-      {
-         decoded = ValueCodec.Decode(value, type);
-         return true;
-      }
-      catch (ValueFormatException e)
-      {
-         errors[field] = [e.Message];
-         decoded = null;
-         return false;
-      }
-   }
-
-   /// <summary>The start of a day as a value of the column's type: a date-time, or (days in UTC) a date-time with an offset.</summary>
-   /// <remarks>Each boxed apart: a conditional of the two would make the date-time one with the machine's offset.</remarks>
-   private static object DayStart(DateOnly day, ScalarType type) =>
-      type.Kind == ScalarKind.DateTimeOffset
-         ? (object)new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
-         : (object)day.ToDateTime(TimeOnly.MinValue);
+   /// <summary>A grid's condition as a condition to write: the grid's ops are among the writer's, by name.</summary>
+   private static ConditionSpec Spec(GridConditionDto condition) => new(Enum.Parse<ConditionOp>(condition.Op.ToString()), condition.Value, condition.ValueTo);
 
    /// <summary>Text matched as it is in an <c>ilike</c> pattern: its <c>%</c>, <c>_</c> and <c>\</c> made plain.</summary>
    public static string Escape(string text)
@@ -259,8 +132,4 @@ public static class GridQueryComposer
       ArgumentNullException.ThrowIfNull(text);
       return text.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("%", "\\%", StringComparison.Ordinal).Replace("_", "\\_", StringComparison.Ordinal);
    }
-
-   private static string TypeName(ScalarType type) => type.WithNullable(false).ToString();
-
-   private static string Camel(GridOp op) => JsonNamingPolicy.CamelCase.ConvertName(op.ToString());
 }

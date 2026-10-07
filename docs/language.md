@@ -1660,14 +1660,42 @@ shop.order_lines.select(price, a: abs(-price), r: round(price), r1: round(price,
 | `addDays(date, days)` | the date's type | the date plus a (possibly negative) number of days |
 | `addMonths(date, months)` | the date's type | the date plus a number of months, kept in the month it lands in: 31 January plus a month is 28 February |
 | `daysBetween(from, to)` | `int32` | the number of days from `from` to `to`, negative when `to` is earlier |
+| `startOfWeek(date)` | `date` | the Monday of the date's week |
+| `startOfMonth(date)` | `date` | the first day of its month |
+| `startOfQuarter(date)` | `date` | the first day of its quarter: 1 January, 1 April, 1 July or 1 October |
+| `startOfYear(date)` | `date` | 1 January of its year |
+| `quarter(date)` | `int32` | the quarter, 1 to 4 |
+| `dayOfWeek(date)` | `int32` | the day of the week, 1 (Monday) to 7 (Sunday) |
 
 Notes:
 
 - `now()` and `today()` are the moment the query started to run (the engine's clock, `QueryEngineOptions.Clock`),
   the same everywhere in the query and in every source it reads.
-- The parts of a date-time with offset (`year` to `second`, `date`) are those of its UTC time, and `addDays`,
-  `addMonths` and `daysBetween` work on its UTC time too (section 9).
+- The parts of a date-time with offset (`year` to `second`, `date`, `quarter`, `dayOfWeek`) are those of its UTC
+  time, and `addDays`, `addMonths`, `daysBetween` and the `startOf…` functions work on its UTC time too (section 9).
 - `daysBetween` counts the change of date: from 23:00 on one day to 01:00 on the next is 1.
+- `startOfWeek`, `startOfMonth`, `startOfQuarter` and `startOfYear` give a date whatever they are given, which makes
+  them the periods to group by: weeks start on Monday (as ISO 8601 has them), and `dayOfWeek` counts from Monday,
+  whatever the database's or the session's settings say.
+
+```gdq
+shop.orders.groupBy(m: startOfMonth(order_date)).select(m, n: count(), total: sum(total)).orderBy(m)
+```
+
+```text
+m          | n | total
+-----------+---+-------
+2026-01-01 | 2 | 349.50
+2026-02-01 | 2 |  12.25
+```
+
+```gdq
+shop.orders.where(placed_at != null).select(id, w: startOfWeek(placed_at), q: startOfQuarter(placed_at), y: startOfYear(placed_at), qn: quarter(placed_at), wd: dayOfWeek(placed_at)).orderBy(id)
+```
+
+```gdq-error
+shop.orders.select(id, m: startOfMonth(status))
+```
 
 ```gdq
 shop.orders.select(id, y: year(order_date), m: month(order_date), d: day(order_date), next: addMonths(order_date, 1), plus: addDays(order_date, 30), days: daysBetween(order_date, toDate('2026-03-01'))).orderBy(id)

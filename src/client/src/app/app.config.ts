@@ -1,3 +1,4 @@
+import { DOCUMENT } from '@angular/common';
 import { provideHttpClient, withInterceptors, withXsrfConfiguration } from '@angular/common/http';
 import {
   ApplicationConfig,
@@ -11,7 +12,7 @@ import { routes } from './app.routes';
 import { sessionInterceptor, xsrfCookie, xsrfHeader } from './core/auth/session.interceptor';
 import { catalogVersionInterceptor } from './core/catalog/catalog-version';
 import { PageTitles } from './core/page-titles';
-import { ColorScheme } from './core/theme/color-scheme';
+import { ColorScheme, embedScheme } from './core/theme/color-scheme';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -28,8 +29,8 @@ export const appConfig: ApplicationConfig = {
         'material-symbols-outlined',
         'mat-ligature-font',
       );
-      // The color scheme chosen before, from the start.
-      inject(ColorScheme);
+      // The color scheme chosen before, from the start; an embedded dashboard's is its address's.
+      embedScheme(inject(DOCUMENT).location, inject(ColorScheme));
     }),
   ],
 };

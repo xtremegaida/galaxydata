@@ -149,6 +149,18 @@ FROM orders AS o
 -- p0 datetime = now()
 -- p1 date = today()
 
+### sales.orders.select(w: startOfWeek(order_date), m: startOfMonth(shipped_at), q: startOfQuarter(order_date), y: startOfYear(shipped_at), qn: quarter(shipped_at), wd: dayOfWeek(order_date))
+SELECT DATEADD(day, -((DATEDIFF(day, CAST('1900-01-01' AS date), o.order_date) % 7 + 7) % 7), o.order_date) AS w, DATEFROMPARTS(DATEPART(year, o.shipped_at), DATEPART(month, o.shipped_at), 1) AS m, DATEFROMPARTS(DATEPART(year, o.order_date), (DATEPART(quarter, o.order_date) - 1) * 3 + 1, 1) AS q, DATEFROMPARTS(DATEPART(year, o.shipped_at), 1, 1) AS y, DATEPART(quarter, o.shipped_at) AS qn, ((DATEDIFF(day, CAST('1900-01-01' AS date), o.order_date) % 7 + 7) % 7 + 1) AS wd
+FROM orders AS o
+
+### sales.orders.groupBy(m: startOfMonth(shipped_at), w: dayOfWeek(shipped_at)).select(m, w, n: count())
+SELECT d.m, d.w, COUNT_BIG(*) AS n
+FROM (
+   SELECT DATEFROMPARTS(DATEPART(year, o.shipped_at), DATEPART(month, o.shipped_at), 1) AS m, ((DATEDIFF(day, CAST('1900-01-01' AS date), CAST(o.shipped_at AS date)) % 7 + 7) % 7 + 1) AS w
+   FROM orders AS o
+) AS d
+GROUP BY d.m, d.w
+
 ### sales.order_lines.select(a: toInt(price), b: toDecimal(qty, 10, 2), c: toString(price), d: toDouble(qty), e: substring(product_code, 2, 3), f: indexOf(product_code, '-'), g: left(product_code, 2), h: right(product_code, 3))
 SELECT CAST(o.price AS int) AS a, CAST(o.qty AS decimal(10,2)) AS b, CAST(CAST(o.price AS decimal(10,2)) AS nvarchar(max)) AS c, CAST(o.qty AS float) AS d, SUBSTRING(o.product_code, 2, 3) AS e, CHARINDEX(@p0, o.product_code) + CASE WHEN DATALENGTH(@p0) = 0 THEN 1 ELSE 0 END AS f, LEFT(o.product_code, 2) AS g, RIGHT(o.product_code, 3) AS h
 FROM order_lines AS o

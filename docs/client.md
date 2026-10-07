@@ -500,6 +500,75 @@ changes:
   Copy a link copies a shared saved query's own address, else one with the query's text and values (shown, to copy
   by hand, when the browser won't).
 
+## Dashboards
+
+`/dashboards` (`src/app/features/dashboards`), for everyone who reads data: dashboards to see, built in an editor,
+published, shared, and public by a link that other sites may frame ([server.md](server.md#dashboards) says what
+the server keeps and checks).
+
+- **The list:** the user's own and those shared with them (administrators: also others' shared, public and
+  ownerless ones), found by name; each with its sharing, whether it is public, published and changed since. A menu
+  each: Edit and Delete one's own, Copy, and for administrators Make private and Stop its public link.
+- **A dashboard** (`dashboard-page.ts`): its published copy (its owner's working copy while there is none, or on
+  asking, `?copy=working`). It has no title section: headings and notes are text widgets, so a blank dashboard is a
+  blank page; its name is the page's title and a heading only screen readers find. A bar holds Refresh (and when
+  the rows were read), Publish, Share and Edit as the user may, and a menu: Revisions, Copy, Delete.
+- **The grid** (`layout/`): a CSS grid of the breakpoint the grid's own width reaches (`ResizeObserver`), the
+  widest the one designed; narrower ones derived from it (widths scaled, placed in reading order) unless laid out
+  by hand. Its order is the reading order, so tabbing follows what is seen. `grid-layout.ts` is the layout's pure
+  functions (moves, resizes, placing, deriving), property-tested.
+- **Widgets** (`model/widget-registry.ts`, `WIDGET_KINDS`): a kind is its label, icon, default and least sizes,
+  defaults, and two components loaded when needed, its view and its settings' editor. Text (Markdown, `marked`, its
+  HTML escaped, links in new tabs, headings a level down, images of this site only); pie, bar and line charts
+  (ECharts, loaded with the first chart, `ECHARTS_IMPORT`; options built by pure functions; colors by category,
+  kept while the page is open; a table of the rows instead, with buttons, for the keyboard); tables. A kind the page
+  doesn't know is said so. A new kind is a server `IWidgetKind` and a client `WidgetKind`.
+- **Choosing slices.** A click chooses a slice alone, Ctrl (⌘) adds or takes it out, Alt leaves it out; a menu at
+  the slice (right-click, or a long press) does the same, and so do a chart's table's buttons. Slices chosen in a
+  widget filter the widgets that listen to it (on linked sources), and show as chips ("Status: open, shipped",
+  "Region: not EMEA"). A widget asks for its rows again only when what reaches it changes.
+- **Filters:** those shown, as controls by kind (values found as typing pauses, under the other filters; ranges;
+  periods till today; text; yes or no), fixed ones as chips, hidden ones not at all.
+- **The address** (`core/dashboards/dashboard-url.ts`, the only place it is read and written) keeps filters' values
+  (`f.status=open,shipped`, `f.total=10~100`, `f.placed=last.3.month`) and slices chosen (`s.by-city=Cape Town`,
+  `!` first for left out, `|` between a series' parts), written in place; values keep their types (bare `null`,
+  numbers and booleans; text that would read as one, quoted). What it can't read is said and left out.
+- **Popups:** a widget's Data (its rows; signed in, the rows they were worked out from, in the query results'
+  grid) and View query (its GDQ, its parameters, its SQL and plan, Open in the query editor).
+- **Refreshing:** by hand, or on the dashboard's timer while the page is shown (not while it is hidden or reading;
+  longer after failures).
+
+**The editor** (`editor/`, `/dashboards/new` and `/dashboards/<id>/edit`): the dashboard as viewers see it on a
+canvas, at each breakpoint (narrower ones as wide as they are); a palette; panels for the widget chosen, the sources
+and their links (paths of navigations the catalog suggests), the filters, the layout (breakpoints, rows' height,
+gaps, a narrower width laid out by hand or derived again), the refresh, and the issues (the editor's, the server's
+for the dashboard and each widget's preview, a save's by field, each with Go to).
+
+- **Widgets** are chosen by a click (Try it, to choose slices instead), moved by their handles and resized by their
+  corners, by pointer or keyboard: Enter or Space on a handle, arrows to move, Shift and arrows to resize, Enter to
+  drop, Escape to put back, each step said.
+- **Fields** are picked by name (`customer.country`: columns, and navigations to one row stepped into), by the types
+  their use takes (numbers to sum, periods for dates).
+- **Previews:** each widget's rows, of its slice of the definition (what its rows depend on), asked for as edits
+  pause and only when that changes; a widget still being made says what it needs.
+- **Every edit is a step** undone and redone by name (Ctrl+Z; Ctrl+Shift+Z or Ctrl+Y), edits of one field (or a
+  drag) one step. Ctrl+S saves the working copy at the version read: changed elsewhere since, it is read again (the
+  edits stay) or saved as a copy. Leaving with changes not saved asks first.
+
+**Publishing and sharing:** Publish (what changed since the last revision, a note); Revisions (restored into the
+working copy, or its changes discarded); Share (only the owner, people chosen, everyone signed in; and, for data
+managers and administrators, a public link with the snippet that frames it and the sites that may, renewed or
+stopped after asking).
+
+**Embedded** (`embed/`, `/embed/<token>`, outside the shell): the published copy alone, for anyone, with no session
+(nothing in it asks who is signed in: `sessionInterceptor` handles only `/api/` requests but `/api/public/`, and the
+view never injects `AuthStore`, which lint keeps so). `?theme=light` or `dark`, else the system's, whatever the
+application's choice (`embedScheme`, at startup). Its address keeps its state as the dashboard's page does
+(written in place: a frame's history is its parent's). Framed, it posts its height to its parent as it changes
+(`{type: 'galaxydata.dashboard.size', version: 1, height}`); the parent's side is the snippet in
+[server.md](server.md#dashboards), which checks `event.origin`. What it can't show it says, never asking anyone to
+sign in.
+
 ## Administration
 
 Administrators' pages are under `/admin` (`features/admin`). They are loaded when one is opened, and only for
@@ -727,8 +796,13 @@ queries.
   those imports are empty (`loader: {".css": "empty"}` in `angular.json`), and Monaco's whole stylesheet is a
   bundle of its own (`monaco.css`, `inject: false`), linked as Monaco loads. Its worker (`editor.worker.ts`, with
   `tsconfig.worker.json`) is a file of the application's (the policy's `worker-src 'self'`).
-- **The theme** follows the page's colour scheme (`vs`, `vs-dark`); the font is the page's code font, measured
-  again once loaded.
+- **The theme** follows the page's colour scheme (`vs`, `vs-dark`); the font is the page's code font. Monaco
+  measures a font once, as the first editor with it is made, and places the cursor and selections by those widths;
+  a browser fetches a font only once something uses it, so the code font would be measured as the font it falls back
+  on, and the cursor drift from the text drawn once it loads. The loader loads it first (`document.fonts.load`, for
+  `CODE_FONT_WAIT` at most: 3 s), and has fonts measured again whenever more load (`loadingdone`: the code font's
+  parts for other scripts, or the code font after the wait). `document.fonts.ready` doesn't do: it resolves at once
+  when nothing is loading yet.
 - **The text** is two-way (`[(text)]`): as typed, and set from outside as an edit that can be undone. Its line
   breaks are line feeds (Monaco would take the system's for an empty text: Windows' `\r\n`), unless the text it is
   given has `\r\n`. Markers (`EditorMarker`: an offset, a length, a message, and an error unless said: a warning,
@@ -754,7 +828,8 @@ sets its system colors as `light-dark()` values, so the page's `color-scheme` ma
 
 **Light or dark.** `ColorScheme` holds the scheme chosen: the system's (the default), light or dark. It sets the
 page's `color-scheme`, and keeps the choice in the browser. Its `dark` signal says whether the application is dark,
-with the system's setting resolved. It is for what Material doesn't theme: the grid and the editor.
+with the system's setting resolved. It is for what Material doesn't theme: the grid, the editor and the charts. `override` shows a scheme
+without keeping it (an embedded dashboard's).
 
 **Fonts.** Fonts are served with the client, as the content security policy loads none from elsewhere: Roboto,
 Roboto Mono for code (`--gd-code-font-family`), and Material Symbols (outlined) for icons. `<mat-icon>` shows the
@@ -778,7 +853,7 @@ policy refuses:
 This is why the build doesn't inline critical CSS (`inlineCritical: false` in `angular.json`). Angular would load
 the rest of the stylesheet with an inline script, which the policy refuses.
 
-**Size.** The first load holds the framework, the Material parts of the shell, and the shell: about 721 kB, 170 kB
+**Size.** The first load holds the framework, the Material parts of the shell, and the shell: about 728 kB, 174 kB
 compressed (the pending changes' store and badge are in it; their drawer, about 13 kB, and the commit dialog, about
 25 kB, load when first opened). It grows as the features use more of Angular's core (resources, for one), which every page shares, and
 of modules the shell uses: the CDK's virtual scrolling is in the module of the scrolling the shell's navigation
@@ -790,7 +865,9 @@ compressed), nearly all AG Grid. The editor (Monaco) is a
 chunk of 3.3 MB (660 kB compressed), with its stylesheet (`monaco.css`, 390 kB, 108 kB compressed, its icons'
 font in it) and worker (300 kB), loaded when an editor is first shown. The grids' chunk holds AG Grid's core and
 the modules the grids register (the infinite row model, pages, filters, choosing rows, tooltips, refreshing cells,
-the grid's state and words, its editors, rows' classes, pinned rows, scrolling). The build
+the grid's state and words, its editors, rows' classes, pinned rows, scrolling). Dashboards load when opened:
+ECharts is a chunk of its own (562 kB, 162 kB compressed) loaded with the first chart, the editor one of about 94
+kB, and their popups and dialogs load when opened (a widget's underlying rows bring the grids' chunk). The build
 warns above 750 kB (700 kB until F6) and fails above 1 MB for the first load (`budgets` in `angular.json`). GalaxyData isn't meant
 for slow networks, so these can be raised when a feature needs it.
 
@@ -809,7 +886,18 @@ its own: the client's `npm ci`, which publishing runs, doesn't install it). In o
 8. opens the reference picker at the row a reference refers to (on its second page, chosen, the keyboard on it);
 9. makes an entity's settings from its page (a column's label), which its page shows;
 10. runs a query, and explains it;
-11. and the browser's console said nothing all along (no errors, nothing the content security policy refused).
+11. builds a dashboard in the editor: the orders and customers linked through `customer`, a text widget with a
+    heading and a link, a bar chart, a pie, a table grouped through a navigation, a Status filter; saved with Ctrl+S;
+12. lays it out: a widget moved by keyboard (Enter, arrows, Enter) and by pointer, one resized by its corner (their
+    `data-gd-cell`), and the narrow width laid out by hand;
+13. publishes it, chooses slices through the bar chart's table, and the pie (listening) is filtered; reloaded, the
+    address keeps them;
+14. shows a widget's query and its SQL, opens it in the query editor (run), and another's data and underlying rows;
+15. makes it public: in a browser context of its own (no cookies), a page of another origin (a server of the
+    test's, at `127.0.0.1`) frames it with `?f.status=open&theme=dark`: its heading, filter and a chart show, the
+    frame grows to the height it says, nothing but `/api/public/` is asked for, its link opens a tab, and no frame
+    logs an error or a content security policy's refusal; its link stopped, the frame says it isn't there;
+16. and the browser's console said nothing all along (no errors, nothing the content security policy refused).
 
 **Running it**, in `tests/e2e`:
 

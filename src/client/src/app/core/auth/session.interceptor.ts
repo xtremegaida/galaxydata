@@ -15,6 +15,14 @@ export const xsrfCookie = 'XSRF-TOKEN';
 export const xsrfHeader = 'X-XSRF-TOKEN';
 
 /**
+ * Whether a request is the session's business: the API's, but its public part (dashboards anyone may see, embedded
+ * in other sites), which is no one's.
+ */
+export function isSessionRequest(url: string): boolean {
+  return url.startsWith('/api/') && !url.startsWith('/api/public/');
+}
+
+/**
  * The session's problems, whichever request meets them:
  * - no one is signed in (any more): the user signs in again, and comes back;
  * - the password must be changed first: its page;
@@ -25,17 +33,17 @@ export const xsrfHeader = 'X-XSRF-TOKEN';
  * session, and left alone. The errors go on to the request's caller all the same.
  */
 export const sessionInterceptor: HttpInterceptorFn = (request, next) => {
+  // Without making the session's store, whose tabs and checks a public page has nothing to do with.
+  if (!isSessionRequest(request.url)) {
+    return next(request);
+  }
   const auth = inject(AuthStore);
   const tokens = inject(HttpXsrfTokenExtractor);
   const send = (sent: HttpRequest<unknown>, resending: boolean): Observable<HttpEvent<unknown>> => {
     const epoch = auth.epoch;
     return next(sent).pipe(
       catchError((error: unknown) => {
-        if (
-          !(error instanceof HttpErrorResponse) ||
-          !sent.url.startsWith('/api/') ||
-          epoch !== auth.epoch
-        ) {
+        if (!(error instanceof HttpErrorResponse) || epoch !== auth.epoch) {
           return throwError(() => error);
         }
         const code = problemOf(error).code;

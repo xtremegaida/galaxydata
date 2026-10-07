@@ -26,7 +26,7 @@ import { Message } from '../../../core/ui/message';
 import { EntityStructure } from '../../browse/entity-structure';
 import { positionOf } from '../../query/query-messages';
 import { QueryResults, type FollowedLink, type QueryRun } from '../../query/query-results';
-import { suggestions } from './catalog-lookups';
+import { suggestions } from '../../../core/catalog/catalog-lookups';
 import { OverlayCheckPanel } from './overlay-check';
 import { OverlayItemPage } from './overlay-item-page';
 import {

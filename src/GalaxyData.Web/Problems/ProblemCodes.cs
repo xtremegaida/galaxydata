@@ -63,6 +63,18 @@ public static class ProblemCodes
    /// <summary>409: the owner has a saved query of the name.</summary>
    public const string QueryNameTaken = "query-name-taken";
 
+   /// <summary>409: the owner has a dashboard of the name.</summary>
+   public const string DashboardNameTaken = "dashboard-name-taken";
+
+   /// <summary>409: the dashboard was published again since it was read (its hash isn't the published one's).</summary>
+   public const string DashboardChanged = "dashboard-changed";
+
+   /// <summary>422: a widget can't be shown as the catalog is now; <c>issues</c> say why.</summary>
+   public const string WidgetInvalid = "widget-invalid";
+
+   /// <summary>403: public dashboards are turned off (<c>Dashboards:AllowPublic</c>).</summary>
+   public const string PublicDashboardsDisabled = "public-dashboards-disabled";
+
    /// <summary>409: another connection has the alias.</summary>
    public const string AliasTaken = "alias-taken";
 

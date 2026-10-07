@@ -1,0 +1,57 @@
+### missing
+issue Error (, sources[2].entity): There is no entity shop.ghosts in the catalog
+issue Error (missing, widgets[0].config.dimension.field): shop.orders has no column colour
+(no plan)
+
+### summed
+issue Error (, sources[2].entity): There is no entity shop.ghosts in the catalog
+issue Error (summed, widgets[1].config.measures[0].aggregate): status is string, which has no sum
+(no plan)
+
+### instants
+issue Error (, sources[2].entity): There is no entity shop.ghosts in the catalog
+issue Error (instants, widgets[2].config.dimension.bucket): placed_at is a date-time: group it by a period (a day, a month)
+(no plan)
+
+### hours
+issue Error (, sources[2].entity): There is no entity shop.ghosts in the catalog
+issue Error (hours, widgets[3].config.dimension.bucket): order_date is date, which has no hourOfDay
+(no plan)
+
+### many
+issue Error (, sources[2].entity): There is no entity shop.ghosts in the catalog
+issue Error (many, widgets[4].config.dimension.field): orders leads to many rows; a field goes through navigations to one row
+(no plan)
+
+### nowhere
+issue Error (, sources[2].entity): There is no entity shop.ghosts in the catalog
+issue Error (nowhere, widgets[5].config.source): Its source ghosts isn't in the catalog
+(no plan)
+
+### deaf
+issue Error (, sources[2].entity): There is no entity shop.ghosts in the catalog
+issue Warning (deaf, widgets[6].config.listens): Choices in elsewhere don't reach it: link their sources
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: shop.orders.groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+d0 | m0
+"open" | "2"
+"cancelled" | "1"
+"shipped" | "1"
+underlying: shop.orders
+
+### Links that don't lead where they say
+issue Error (, links[0].path[0]): shop.orders has no navigation shipper
+issue Error (, links[1].path): The navigations lead to shop.orders, not shop.customers
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: shop.orders.groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+d0 | m0
+"open" | "2"
+"cancelled" | "1"
+"shipped" | "1"
+underlying: shop.orders
+
+### A key of the wrong size, a value that isn't the field's, a month not on its first day
+error state.selections.months.keys[0][0]: A month's slice is its first day (yyyy-MM-dd)
+error state.selections.months.keys[1][0]: A month's slice is its first day (yyyy-MM-dd)
+error state.selections.months.keys[2]: A slice's key has 1 value
+(no plan)

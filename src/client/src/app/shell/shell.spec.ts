@@ -86,6 +86,7 @@ describe('Shell', () => {
       'Start',
       'Browse',
       'Query',
+      'Dashboards',
     ]);
     expect(await (await items[0].host()).getAttribute('aria-current')).toBe('page');
     const groups = [...page.querySelectorAll('[role=navigation] [role=group]')];

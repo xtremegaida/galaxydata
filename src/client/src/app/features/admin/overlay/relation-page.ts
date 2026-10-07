@@ -20,7 +20,7 @@ import { MatInput } from '@angular/material/input';
 import { MatProgressBar } from '@angular/material/progress-bar';
 import { RouterLink } from '@angular/router';
 import { Message } from '../../../core/ui/message';
-import { EntityLookup, EntitySearch, suggestions } from './catalog-lookups';
+import { EntityLookup, EntitySearch, suggestions } from '../../../core/catalog/catalog-lookups';
 import { OverlayCheckPanel } from './overlay-check';
 import { OverlayItemPage } from './overlay-item-page';
 import { trimmed, type OverlayItemKind, type Relation, type RelationInput } from './overlay-items';

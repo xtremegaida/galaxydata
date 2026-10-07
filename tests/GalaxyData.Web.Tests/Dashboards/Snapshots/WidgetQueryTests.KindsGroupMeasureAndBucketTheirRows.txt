@@ -1,0 +1,173 @@
+### A line by month, counting and summing
+columns: d0 Dimension order_date, m0 Measure Rows, m1 Measure total; limit 1000
+main: shop.orders.groupBy(d0: startOfMonth(order_date)).select(d0, m0: count(), m1: sum(total)).orderBy(d0).take(1001)
+d0 | m0 | m1
+"2026-01-01" | "2" | "349.50"
+"2026-02-01" | "2" | "12.25"
+underlying: shop.orders
+
+### Bars by day of the week, in its order
+columns: d0 Dimension order_date, m0 Measure Rows; limit 25
+main: shop.orders.groupBy(d0: dayOfWeek(order_date)).select(d0, m0: count()).orderBy(d0).take(26)
+d0 | m0
+1 | "1"
+5 | "1"
+6 | "1"
+7 | "1"
+underlying: shop.orders
+
+### Bars by the hour (UTC) of a date-time with an offset
+columns: d0 Dimension placed_at, m0 Measure Rows; limit 25
+main: shop.orders.groupBy(d0: hour(placed_at)).select(d0, m0: count()).orderBy(d0).take(26)
+d0 | m0
+null | "1"
+4 | "1"
+6 | "1"
+8 | "1"
+underlying: shop.orders
+
+### Through a navigation: averages (counted once per order) and values counted
+columns: d0 Dimension city, m0 Measure total, m1 Measure ship_address_id; limit 25
+main: shop.orders.groupBy(d0: customer.city).select(d0, m0: avg(total), m1: count(r0 => r0.ship_address_id != null)).orderBy(desc(m0), d0).take(26)
+d0 | m0 | m1
+"Cape Town" | "174.75" | "2"
+"Johannesburg" | "12.25" | "1"
+null | "0" | "0"
+underlying: shop.orders
+
+### A pie of the largest two, and the total for the rest
+columns: d0 Dimension status, m0 Measure total; limit 2
+main: shop.orders.groupBy(d0: status).select(d0, m0: sum(total)).orderBy(desc(m0), d0).take(3)
+d0 | m0
+"open" | "262.25"
+"shipped" | "99.50"
+"cancelled" | "0.00"
+total: shop.orders.groupBy().select(m0: sum(total))
+m0
+"361.75"
+underlying: shop.orders
+
+### Bars by a series: the first category found first
+columns: d0 Dimension status, s0 Series customer_id, m0 Measure Rows; limit 1
+categories: shop.orders.groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(2)
+d0 | m0
+"open" | "2"
+"cancelled" | "1"
+main: (shop.orders).where(r0 => r0.status in [$f1]).groupBy(d0: status, s0: customer_id).select(d0, s0, m0: count()).orderBy(d0, s0).take(10001)
+  $f1 = "open" (string)
+d0 | s0 | m0
+"open" | "1" | "1"
+"open" | "2" | "1"
+underlying: shop.orders
+
+### ... with null among the categories
+columns: d0 Dimension status, s0 Series customer_id, m0 Measure Rows; limit 1
+categories: shop.orders.groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(2)
+d0 | m0
+"open" | "2"
+"cancelled" | "1"
+main: (shop.orders).where(r0 => r0.status in [$f1] or r0.status == null).groupBy(d0: status, s0: customer_id).select(d0, s0, m0: count()).orderBy(d0, s0).take(10001)
+  $f1 = "open" (string)
+d0 | s0 | m0
+"open" | "1" | "1"
+"open" | "2" | "1"
+underlying: shop.orders
+
+### A grouped table
+columns: d0 Dimension city, d1 Dimension status, m0 Measure Rows, m1 Measure order_date; limit 50, paged
+main: shop.orders.groupBy(d0: customer.city, d1: status).select(d0, d1, m0: count(), m1: max(order_date)).orderBy(desc(m0), d0, d1)
+d0 | d1 | m0 | m1
+null | "cancelled" | "1" | "2026-02-14"
+"Cape Town" | "open" | "1" | "2026-01-05"
+"Cape Town" | "shipped" | "1" | "2026-01-09"
+"Johannesburg" | "open" | "1" | "2026-02-01"
+underlying: shop.orders
+
+### A raw table, its key for choosing rows
+columns: c0 Column Total, c1 Column Customer, k0 Key id; limit 50, paged
+main: shop.orders.select(c0: total, c1: customer.name, k0: id).orderBy(desc(c0), k0)
+c0 | c1 | k0
+"250.00" | "Acme Ltd" | "1001"
+"99.50" | "Acme Ltd" | "1002"
+"12.25" | "Beta Corp" | "1003"
+"0.00" | "Gamma Inc" | "1004"
+underlying: shop.orders
+
+### Choosing a month: its days, as a range of the column
+columns: d0 Dimension order_date, m0 Measure Rows; limit 25
+main: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2)).groupBy(d0: dayOfWeek(order_date)).select(d0, m0: count()).orderBy(d0).take(26)
+  $f1 = "2026-01-01" (date), $f2 = "2026-02-01" (date)
+d0 | m0
+1 | "1"
+5 | "1"
+underlying: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2))
+
+### Excluding a month
+columns: d0 Dimension order_date, m0 Measure Rows; limit 25
+main: (shop.orders).where(r0 => not (r0.order_date != null and r0.order_date >= $f1 and r0.order_date < $f2)).groupBy(d0: dayOfWeek(order_date)).select(d0, m0: count()).orderBy(d0).take(26)
+  $f1 = "2026-01-01" (date), $f2 = "2026-02-01" (date)
+d0 | m0
+6 | "1"
+7 | "1"
+underlying: (shop.orders).where(r0 => not (r0.order_date != null and r0.order_date >= $f1 and r0.order_date < $f2))
+
+### Choosing a day of the week
+columns: d0 Dimension order_date, m0 Measure Rows, m1 Measure total; limit 1000
+main: (shop.orders).where(r0 => ((dayOfWeek(r0.order_date) == $f1) or (dayOfWeek(r0.order_date) == $f2))).groupBy(d0: startOfMonth(order_date)).select(d0, m0: count(), m1: sum(total)).orderBy(d0).take(1001)
+  $f1 = 1 (int32), $f2 = 7 (int32)
+d0 | m0 | m1
+"2026-01-01" | "1" | "250.00"
+"2026-02-01" | "1" | "12.25"
+underlying: (shop.orders).where(r0 => ((dayOfWeek(r0.order_date) == $f1) or (dayOfWeek(r0.order_date) == $f2)))
+
+### Choosing a bar of a series: both its parts
+columns: d0 Dimension order_date, m0 Measure Rows, m1 Measure total; limit 1000
+main: (shop.orders).where(r0 => (r0.status == $f1 and r0.customer_id == $f2)).groupBy(d0: startOfMonth(order_date)).select(d0, m0: count(), m1: sum(total)).orderBy(d0).take(1001)
+  $f1 = "open" (string), $f2 = "1" (int64)
+d0 | m0 | m1
+"2026-01-01" | "1" | "250.00"
+underlying: (shop.orders).where(r0 => (r0.status == $f1 and r0.customer_id == $f2))
+
+### Choosing raw rows by their key
+columns: d0 Dimension order_date, m0 Measure Rows, m1 Measure total; limit 1000
+main: (shop.orders).where(r0 => r0.id in [$f1, $f2]).groupBy(d0: startOfMonth(order_date)).select(d0, m0: count(), m1: sum(total)).orderBy(d0).take(1001)
+  $f1 = "1001" (int64), $f2 = "1003" (int64)
+d0 | m0 | m1
+"2026-01-01" | "1" | "250.00"
+"2026-02-01" | "1" | "12.25"
+underlying: (shop.orders).where(r0 => r0.id in [$f1, $f2])
+
+### Choosing grouped rows
+columns: d0 Dimension order_date, m0 Measure Rows, m1 Measure total; limit 1000
+main: (shop.orders).where(r0 => ((r0.customer.city == $f1 and r0.status == $f2) or (r0.customer.city == null and r0.status == $f3))).groupBy(d0: startOfMonth(order_date)).select(d0, m0: count(), m1: sum(total)).orderBy(d0).take(1001)
+  $f1 = "Cape Town" (string), $f2 = "open" (string), $f3 = "cancelled" (string)
+d0 | m0 | m1
+"2026-01-01" | "1" | "250.00"
+"2026-02-01" | "1" | "0.00"
+underlying: (shop.orders).where(r0 => ((r0.customer.city == $f1 and r0.status == $f2) or (r0.customer.city == null and r0.status == $f3)))
+
+### The last two months (to 2026-03-01): from 2026-01-02
+columns: d0 Dimension order_date, m0 Measure Rows, m1 Measure total; limit 1000
+main: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2)).groupBy(d0: startOfMonth(order_date)).select(d0, m0: count(), m1: sum(total)).orderBy(d0).take(1001)
+  $f1 = "2026-01-02" (date), $f2 = "2026-03-02" (date)
+d0 | m0 | m1
+"2026-01-01" | "2" | "349.50"
+"2026-02-01" | "2" | "12.25"
+underlying: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2))
+
+### A hidden range of a date-time with an offset, by its UTC days
+columns: d0 Dimension order_date, m0 Measure Rows, m1 Measure total; limit 1000
+main: (shop.orders).where(r0 => (r0.placed_at >= $f1 and r0.placed_at < $f2)).groupBy(d0: startOfMonth(order_date)).select(d0, m0: count(), m1: sum(total)).orderBy(d0).take(1001)
+  $f1 = "2026-01-05T00:00:00\u002B00:00" (datetimeoffset), $f2 = "2026-01-06T00:00:00\u002B00:00" (datetimeoffset)
+d0 | m0 | m1
+"2026-01-01" | "1" | "250.00"
+"2026-02-01" | "1" | "12.25"
+underlying: (shop.orders).where(r0 => (r0.placed_at >= $f1 and r0.placed_at < $f2))
+
+### Text through a navigation, ignoring case
+columns: d0 Dimension order_date, m0 Measure Rows, m1 Measure total; limit 1000
+main: (shop.orders).where(r0 => icontains(r0.customer.name, $f1)).groupBy(d0: startOfMonth(order_date)).select(d0, m0: count(), m1: sum(total)).orderBy(d0).take(1001)
+  $f1 = "ac" (string)
+d0 | m0 | m1
+"2026-01-01" | "2" | "349.50"
+underlying: (shop.orders).where(r0 => icontains(r0.customer.name, $f1))

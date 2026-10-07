@@ -1,0 +1,139 @@
+### A bar chart, counting rows
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: shop.orders.groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+d0 | m0
+"open" | "2"
+"cancelled" | "1"
+"shipped" | "1"
+underlying: shop.orders
+
+### A filter on orders reaches customers (some order kept) and lines (their order kept)
+columns: d0 Dimension city, m0 Measure Rows; limit 10
+main: (shop.customers).where(r0 => r0.orders.any(r1 => r1.status in [$f1, $f2])).groupBy(d0: city).select(d0, m0: count()).orderBy(desc(m0), d0).take(11)
+  $f1 = "open" (string), $f2 = "shipped" (string)
+d0 | m0
+"Cape Town" | "1"
+"Johannesburg" | "1"
+underlying: (shop.customers).where(r0 => r0.orders.any(r1 => r1.status in [$f1, $f2]))
+
+### ... and lines
+columns: d0 Dimension product_code, m0 Measure qty; limit 25
+main: (shop.order_lines).where(r0 => (r0.order != null and (r0.order.status in [$f1, $f2]))).groupBy(d0: product_code).select(d0, m0: sum(qty)).orderBy(desc(m0), d0).take(26)
+  $f1 = "open" (string), $f2 = "shipped" (string)
+d0 | m0
+"P-300" | "5"
+"P-100" | "3"
+"P-200" | "1"
+underlying: (shop.order_lines).where(r0 => (r0.order != null and (r0.order.status in [$f1, $f2])))
+
+### A viewer's value of an editable filter: not cancelled, nor null
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: (shop.orders).where(r0 => (not (r0.status in [$f1]) or r0.status == null)).groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+  $f1 = "cancelled" (string)
+d0 | m0
+"open" | "2"
+"shipped" | "1"
+underlying: (shop.orders).where(r0 => (not (r0.status in [$f1]) or r0.status == null))
+
+### Excepted from the filter
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: shop.orders.groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+d0 | m0
+"open" | "2"
+"cancelled" | "1"
+"shipped" | "1"
+underlying: shop.orders
+
+### Choosing open orders: customers with an open order
+columns: d0 Dimension city, m0 Measure Rows; limit 10
+main: (shop.customers).where(r0 => r0.orders.any(r1 => r1.status == $f1)).groupBy(d0: city).select(d0, m0: count()).orderBy(desc(m0), d0).take(11)
+  $f1 = "open" (string)
+d0 | m0
+"Cape Town" | "1"
+"Johannesburg" | "1"
+underlying: (shop.customers).where(r0 => r0.orders.any(r1 => r1.status == $f1))
+
+### Choosing open orders: never the emitter's own rows
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: shop.orders.groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+d0 | m0
+"open" | "2"
+"cancelled" | "1"
+"shipped" | "1"
+underlying: shop.orders
+
+### Choosing two statuses: one list
+columns: d0 Dimension product_code, m0 Measure qty; limit 25
+main: (shop.order_lines).where(r0 => (r0.order != null and (r0.order.status in [$f1, $f2]))).groupBy(d0: product_code).select(d0, m0: sum(qty)).orderBy(desc(m0), d0).take(26)
+  $f1 = "open" (string), $f2 = "cancelled" (string)
+d0 | m0
+"P-300" | "5"
+"P-100" | "2"
+"P-200" | "1"
+underlying: (shop.order_lines).where(r0 => (r0.order != null and (r0.order.status in [$f1, $f2])))
+
+### Excluding open orders: customers with an order that isn't open
+columns: d0 Dimension city, m0 Measure Rows; limit 10
+main: (shop.customers).where(r0 => r0.orders.any(r1 => not (r1.status != null and r1.status == $f1))).groupBy(d0: city).select(d0, m0: count()).orderBy(desc(m0), d0).take(11)
+  $f1 = "open" (string)
+d0 | m0
+null | "1"
+"Cape Town" | "1"
+underlying: (shop.customers).where(r0 => r0.orders.any(r1 => not (r1.status != null and r1.status == $f1)))
+
+### Choosing Cape Town: orders of its customers (to one row, which every order has)
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: (shop.orders).where(r0 => (r0.customer != null and (r0.customer.city == $f1))).groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+  $f1 = "Cape Town" (string)
+d0 | m0
+"open" | "1"
+"shipped" | "1"
+underlying: (shop.orders).where(r0 => (r0.customer != null and (r0.customer.city == $f1)))
+
+### Choosing no city (null): orders of customers without one
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: (shop.orders).where(r0 => (r0.customer != null and (r0.customer.city == null))).groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+d0 | m0
+"cancelled" | "1"
+underlying: (shop.orders).where(r0 => (r0.customer != null and (r0.customer.city == null)))
+
+### Excluding no city: customers with one, their orders
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: (shop.orders).where(r0 => (r0.customer != null and (not (r0.customer.city == null)))).groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+d0 | m0
+"open" | "2"
+"shipped" | "1"
+underlying: (shop.orders).where(r0 => (r0.customer != null and (not (r0.customer.city == null))))
+
+### Choosing a product: customers with an order with a line of it (two hops of many)
+columns: d0 Dimension city, m0 Measure Rows; limit 10
+main: (shop.customers).where(r0 => r0.orders.any(r1 => r1.order_lines.any(r2 => r2.product_code == $f1))).groupBy(d0: city).select(d0, m0: count()).orderBy(desc(m0), d0).take(11)
+  $f1 = "P-100" (string(20))
+d0 | m0
+"Cape Town" | "1"
+underlying: (shop.customers).where(r0 => r0.orders.any(r1 => r1.order_lines.any(r2 => r2.product_code == $f1)))
+
+### Its own condition, and a choice on the same source: one predicate
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: (shop.orders).where(r0 => r0.status == $f1 and r0.total > $f2).groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+  $f1 = "open" (string), $f2 = "50" (decimal(10,2))
+d0 | m0
+"open" | "1"
+underlying: (shop.orders).where(r0 => r0.status == $f1 and r0.total > $f2)
+
+### Listening to chosen widgets only
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: (shop.orders).where(r0 => (r0.customer != null and (r0.customer.city == $f1))).groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+  $f1 = "Johannesburg" (string)
+d0 | m0
+"open" | "1"
+underlying: (shop.orders).where(r0 => (r0.customer != null and (r0.customer.city == $f1)))
+
+### Listening to none
+columns: d0 Dimension status, m0 Measure Rows; limit 25
+main: shop.orders.groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+d0 | m0
+"open" | "2"
+"cancelled" | "1"
+"shipped" | "1"
+underlying: shop.orders

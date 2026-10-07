@@ -18,7 +18,28 @@ namespace GalaxyData.Web.Tests.Auth;
 public sealed class PolicyTests
 {
    /// <summary>The endpoints anyone may call; any other must name its policy.</summary>
-   private static readonly string[] Anonymous = ["GET api/health", "GET api/auth/session", "POST api/auth/sign-in", "POST api/auth/sign-out"];
+   private static readonly string[] Anonymous =
+   [
+      "GET api/health", "GET api/auth/session", "POST api/auth/sign-in", "POST api/auth/sign-out",
+      "GET api/public/dashboards/{token}", "GET api/public/dashboards/{token}/widgets/{widget}/data", "GET api/public/dashboards/{token}/filters/{filter}/values",
+   ];
+
+   /// <summary>Signing in and out aside, what anyone may call only reads: GETs, under <c>/api/public</c> (or health and the session).</summary>
+   [Fact]
+   public async Task WhatAnyoneMayCallOnlyReads()
+   {
+      await using WebAppFactory factory = new();
+      factory.CreateClient();
+      foreach (RouteEndpoint endpoint in factory.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>())
+      {
+         string pattern = endpoint.RoutePattern.RawText!.TrimStart('/');
+         if (!pattern.StartsWith("api", System.StringComparison.Ordinal) || endpoint.Metadata.GetMetadata<IAllowAnonymous>() == null) { continue; }
+         string[] methods = [.. endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods ?? ["*"]];
+         bool signing = pattern is "api/auth/sign-in" or "api/auth/sign-out";
+         (signing || (methods is ["GET"] && (pattern.StartsWith("api/public/", System.StringComparison.Ordinal) || pattern is "api/health" or "api/auth/session")))
+            .ShouldBeTrue($"{string.Join(",", methods)} {pattern}");
+      }
+   }
 
    [Fact]
    public async Task EveryEndpointOfTheApiSaysWhoMayCallIt()
@@ -58,7 +79,8 @@ public sealed class PolicyTests
          HttpStatusCode status = (await lee.GetAsync(path)).StatusCode;
          status.ShouldBe(admin, path);
       }
-      foreach (string path in (string[])["/api/catalog", "/api/catalog/tree/children", "/api/catalog/tree/search?text=x", "/api/saved-queries"])
+      foreach (string path in (string[])["/api/catalog", "/api/catalog/tree/children", "/api/catalog/tree/search?text=x", "/api/saved-queries", "/api/dashboards",
+                                          "/api/dashboards/people"])
       {
          (await lee.GetAsync(path)).StatusCode.ShouldBe(HttpStatusCode.OK, path);
       }

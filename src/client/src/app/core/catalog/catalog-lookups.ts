@@ -1,10 +1,11 @@
 import { computed, inject, linkedSignal, type Signal } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { catchError, map, of } from 'rxjs';
-import { ApiClient } from '../../../core/api/api-client';
-import { followCatalog } from '../../../core/catalog/catalog-changes';
-import { debounced } from '../../../core/ui/debounced';
-import type { Entity } from '../../browse/entity-structure';
+import { ApiClient, type Schema } from '../api/api-client';
+import { followCatalog } from './catalog-changes';
+import { debounced } from '../ui/debounced';
+
+type Entity = Schema<'EntityDto'>;
 
 /** How many entities a search suggests. */
 const suggested = 20;

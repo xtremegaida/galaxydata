@@ -142,6 +142,13 @@ internal sealed class SqliteDialect : SqlDialect
       FunctionId.AddDays => Shift(c, " days"),
       FunctionId.AddMonths => Shift(c, " months"),
       FunctionId.DaysBetween => Cast(Binary(SqlBinaryOp.Subtract, Call("julianday", Call("date", c.Arg(1))), Call("julianday", Call("date", c.Arg(0)))), ScalarType.Int64),
+      // date() and strftime() read a date-time's offset and give its UTC date, as year() does.
+      FunctionId.StartOfWeek => Call("date", c.Arg(0), Text("-6 days"), Text("weekday 1")),
+      FunctionId.StartOfMonth => Call("date", c.Arg(0), Text("start of month")),
+      FunctionId.StartOfQuarter => Template("date({0}, 'start of month', '-' || ((CAST(strftime('%m', {0}) AS INTEGER) - 1) % 3) || ' months')", c.Arg(0)),
+      FunctionId.StartOfYear => Call("date", c.Arg(0), Text("start of year")),
+      FunctionId.Quarter => Template("((CAST(strftime('%m', {0}) AS INTEGER) + 2) / 3)", c.Arg(0)),
+      FunctionId.DayOfWeek => Template("((CAST(strftime('%w', {0}) AS INTEGER) + 6) % 7 + 1)", c.Arg(0)),
       FunctionId.Coalesce => Call("coalesce", c.Args()),
       FunctionId.NullIf => Call("nullif", c.Arg(0), c.Arg(1)),
       FunctionId.Iif => Iif(c.Condition(0), c.Arg(1), c.Arg(2)),

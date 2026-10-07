@@ -47,6 +47,12 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
 
    public DbSet<SavedQuery> SavedQueries => Set<SavedQuery>();
 
+   public DbSet<Dashboard> Dashboards => Set<Dashboard>();
+
+   public DbSet<DashboardShare> DashboardShares => Set<DashboardShare>();
+
+   public DbSet<DashboardRevision> DashboardRevisions => Set<DashboardRevision>();
+
    public DbSet<UserChangeSet> ChangeSets => Set<UserChangeSet>();
 
    public DbSet<PendingChange> PendingChanges => Set<PendingChange>();
@@ -166,6 +172,42 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
          query.Property(q => q.Description).HasMaxLength(DescriptionLength);
          query.HasIndex(q => q.IsShared);
          query.Property(q => q.Version).IsConcurrencyToken();
+      });
+      modelBuilder.Entity<Dashboard>(dashboard =>
+      {
+         dashboard.ToTable("Dashboards");
+         dashboard.HasOne<AppUser>().WithMany().HasForeignKey(d => d.OwnerId).OnDelete(DeleteBehavior.SetNull);
+         dashboard.HasOne<AppUser>().WithMany().HasForeignKey(d => d.PublicEnabledById).OnDelete(DeleteBehavior.SetNull);
+         dashboard.Property(d => d.OwnerName).HasMaxLength(64);
+         dashboard.Property(d => d.Name).HasMaxLength(NameLength).UseCollation("NOCASE");
+         dashboard.HasIndex(d => new { d.OwnerId, d.Name }).IsUnique();
+         dashboard.Property(d => d.Description).HasMaxLength(DescriptionLength);
+         dashboard.Property(d => d.WorkingHash).HasMaxLength(64);
+         dashboard.Property(d => d.PublishedHash).HasMaxLength(64);
+         dashboard.Property(d => d.PublishedByName).HasMaxLength(64);
+         dashboard.Property(d => d.PublicToken).HasMaxLength(32);
+         dashboard.HasIndex(d => d.PublicToken).IsUnique();
+         dashboard.Property(d => d.PublicEnabledByName).HasMaxLength(64);
+         dashboard.HasIndex(d => d.SharedWithEveryone);
+         dashboard.HasMany(d => d.Shares).WithOne().HasForeignKey(s => s.DashboardId).OnDelete(DeleteBehavior.Cascade);
+         dashboard.Property(d => d.Version).IsConcurrencyToken();
+      });
+      modelBuilder.Entity<DashboardShare>(share =>
+      {
+         share.ToTable("DashboardShares");
+         share.HasKey(s => new { s.DashboardId, s.UserId });
+         share.HasOne<AppUser>().WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+         share.HasIndex(s => s.UserId);
+      });
+      modelBuilder.Entity<DashboardRevision>(revision =>
+      {
+         revision.ToTable("DashboardRevisions");
+         revision.HasOne<Dashboard>().WithMany().HasForeignKey(r => r.DashboardId).OnDelete(DeleteBehavior.Cascade);
+         revision.HasIndex(r => new { r.DashboardId, r.Number }).IsUnique();
+         revision.Property(r => r.Hash).HasMaxLength(64);
+         revision.HasOne<AppUser>().WithMany().HasForeignKey(r => r.PublishedById).OnDelete(DeleteBehavior.SetNull);
+         revision.Property(r => r.PublishedByName).HasMaxLength(64);
+         revision.Property(r => r.Note).HasMaxLength(200);
       });
       modelBuilder.Entity<UserChangeSet>(set =>
       {

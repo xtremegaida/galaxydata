@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { ColorScheme } from './color-scheme';
+import { ColorScheme, embedScheme } from './color-scheme';
 
 /** The browser's dark-scheme query, changed as a test says. */
 class SystemScheme extends EventTarget {
@@ -81,6 +81,42 @@ describe('ColorScheme', () => {
     scheme.choose('dark');
     expect(scheme.choice()).toBe('dark');
     expect(page()).toBe('dark');
+  });
+
+  it("gives an embedded dashboard its address's scheme, else the system's, whatever the application's", () => {
+    localStorage.setItem(ColorScheme.storageKey, 'light');
+    const scheme = schemeOf(true);
+    embedScheme({ pathname: '/embed/abc', search: '?f.status=open&theme=dark' }, scheme);
+    expect([scheme.dark(), page(), localStorage.getItem(ColorScheme.storageKey)]).toEqual([
+      true,
+      'dark',
+      'light',
+    ]);
+    embedScheme({ pathname: '/embed/abc', search: '?theme=sepia' }, scheme);
+    // The system's: dark here, though the application's choice is light.
+    expect(scheme.dark()).toBe(true);
+    embedScheme({ pathname: '/embed/abc', search: '?theme=light' }, scheme);
+    expect(scheme.dark()).toBe(false);
+    // Not an embed: the choice holds.
+    const other = TestBed.inject(ColorScheme);
+    other.override(null);
+    embedScheme({ pathname: '/dashboards/1', search: '?theme=dark' }, other);
+    expect(other.dark()).toBe(false);
+  });
+
+  it('shows a scheme while asked, keeping no choice', () => {
+    const scheme = schemeOf(false);
+    scheme.override('dark');
+    expect([
+      scheme.dark(),
+      page(),
+      scheme.choice(),
+      localStorage.getItem(ColorScheme.storageKey),
+    ]).toEqual([true, 'dark', 'system', null]);
+    scheme.choose('light');
+    expect(scheme.dark()).toBe(true);
+    scheme.override(null);
+    expect([scheme.dark(), page()]).toEqual([false, 'light']);
   });
 
   it("is light for the system's where the browser can't tell", () => {

@@ -55,6 +55,12 @@ public enum FunctionId
    ToDate,
    ToDateTime,
    ToBool,
+   StartOfWeek,
+   StartOfMonth,
+   StartOfQuarter,
+   StartOfYear,
+   Quarter,
+   DayOfWeek,
 }
 
 /// <summary>The arguments of a call being type-checked; failures throw, so a checker just returns the result type.</summary>

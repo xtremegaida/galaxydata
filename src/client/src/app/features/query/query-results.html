@@ -11,17 +11,19 @@
       Stop
     </button>
   }
-  <button
-    matIconButton
-    type="button"
-    aria-controls="gd-inspector"
-    [attr.aria-pressed]="inspecting()"
-    [matTooltip]="inspecting() ? 'Hide the inspector' : 'Show the inspector'"
-    [attr.aria-label]="'Inspector'"
-    (click)="toggleInspector()"
-  >
-    <mat-icon>info</mat-icon>
-  </button>
+  @if (inspector()) {
+    <button
+      matIconButton
+      type="button"
+      [attr.aria-controls]="inspectorId"
+      [attr.aria-pressed]="inspecting()"
+      [matTooltip]="inspecting() ? 'Hide the inspector' : 'Show the inspector'"
+      [attr.aria-label]="'Inspector'"
+      (click)="toggleInspector()"
+    >
+      <mat-icon>info</mat-icon>
+    </button>
+  }
 </div>
 
 <div role="alert">
@@ -67,10 +69,12 @@
       />
     }
   }
-  <gd-grid-inspector
-    id="gd-inspector"
-    class="inspector"
-    [hidden]="!inspecting()"
-    [inspected]="inspected()"
-  />
+  @if (inspector()) {
+    <gd-grid-inspector
+      class="inspector"
+      [id]="inspectorId"
+      [hidden]="!inspecting()"
+      [inspected]="inspected()"
+    />
+  }
 </div>

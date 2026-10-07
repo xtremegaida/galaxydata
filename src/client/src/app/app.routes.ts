@@ -18,6 +18,12 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./features/auth/change-password/change-password').then((m) => m.ChangePassword),
   },
+  // A public dashboard, by its link: alone, with no session (its frame may be another site's).
+  {
+    path: 'embed/:token',
+    title: 'Dashboard',
+    loadComponent: () => import('./features/dashboards/embed/embed-page').then((m) => m.EmbedPage),
+  },
   {
     path: '',
     component: Shell,
@@ -34,6 +40,12 @@ export const routes: Routes = [
         path: 'query',
         canMatch: [allowedTo('canRead')],
         loadChildren: () => import('./features/query/query.routes').then((m) => m.queryRoutes),
+      },
+      {
+        path: 'dashboards',
+        canMatch: [allowedTo('canRead')],
+        loadChildren: () =>
+          import('./features/dashboards/dashboards.routes').then((m) => m.dashboardRoutes),
       },
       {
         path: 'admin',

@@ -47,6 +47,8 @@ internal static class PlanCases
       "sales.customers.select(flag: credit_limit > 100, n: not (credit_limit > 100), t: toString(credit_limit > 100))",
       "sales.customers.where((credit_limit > 100) == (city != null))",
       "sales.orders.select(id, d: daysBetween(order_date, shipped_at), m: addMonths(order_date, 1), h: hour(shipped_at), at: now(), on: today())",
+      "sales.orders.select(w: startOfWeek(order_date), m: startOfMonth(shipped_at), q: startOfQuarter(order_date), y: startOfYear(shipped_at), qn: quarter(shipped_at), wd: dayOfWeek(order_date))",
+      "sales.orders.groupBy(m: startOfMonth(shipped_at), w: dayOfWeek(shipped_at)).select(m, w, n: count())",
       "sales.order_lines.select(a: toInt(price), b: toDecimal(qty, 10, 2), c: toString(price), d: toDouble(qty), e: substring(product_code, 2, 3), f: indexOf(product_code, '-'), g: left(product_code, 2), h: right(product_code, 3))",
       "sales.customers.select(region.name).distinct()",
       "sales.orders.orderBy(id).distinct()",

@@ -78,3 +78,22 @@ function attributesOf(text) {
   }
   return attributes;
 }
+
+/**
+ * Code a script would compile from text, which the policy refuses (it has no 'unsafe-eval'): eval and new
+ * Function. Allowed where known never to run in the application: AG Grid's expression service, which compiles
+ * the string expressions grids may be given (this application's never are).
+ */
+const allowedCompilers = [/createFunctionBody/];
+
+/** A script's problems: each place it compiles text into code. */
+export function scriptProblems(js) {
+  const problems = [];
+  for (const match of js.matchAll(/(?<![\w$.])(eval|new\s+Function)\s*\(/g)) {
+    const around = js.slice(Math.max(0, match.index - 120), match.index + 40);
+    if (!allowedCompilers.some((allowed) => allowed.test(around))) {
+      problems.push(`code compiled from text (${match[1]}) at ${match.index}`);
+    }
+  }
+  return problems;
+}

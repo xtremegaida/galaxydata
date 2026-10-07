@@ -295,6 +295,8 @@ public sealed class ServerEdgeTests(Servers servers)
       ("negation", "shop.p.select(id, a: -n, b: -f, c: -dm).orderBy(id)"),
       ("coalesce-arithmetic", "shop.p.select(id, a: coalesce(n, 0) + 1, b: coalesce(dm, 0) * 2).orderBy(id)"),
       ("date-parts", "shop.p.select(id, y: year(d), mo: month(d), dd: day(d), h: hour(ts), mi: minute(ts), se: second(ts), dt: date(ts)).orderBy(id)"),
+      ("date-buckets", "shop.p.select(id, w: startOfWeek(d), mo: startOfMonth(d), q: startOfQuarter(d), y: startOfYear(d), qn: quarter(d), wd: dayOfWeek(d), tw: startOfWeek(ts), tm: startOfMonth(ts), tq: startOfQuarter(ts), twd: dayOfWeek(ts)).orderBy(id)"),
+      ("date-bucket-groups", "shop.p.groupBy(m: startOfMonth(d)).select(m, c: count()).orderBy(m)"),
       ("date-arithmetic", "shop.p.select(id, a: addDays(d, 1), b: addDays(ts, -1), c: daysBetween(d, toDate('2026-03-01')), e: daysBetween(ts, d)).orderBy(id)"),
       ("between-dates", "shop.p.where(between(d, toDate('2025-01-01'), toDate('2026-01-31'))).select(id).orderBy(id)"),
       ("conversions", "shop.p.select(id, i: toInt(f), l: toLong(dm), x: toDouble(n), c: toDecimal(f, 10, 2), s1: toString(n), s2: toString(dm), s3: toString(d), s4: toString(ts)).orderBy(id)"),
@@ -342,6 +344,7 @@ public sealed class ServerEdgeTests(Servers servers)
       ("firstOrDefault-none", "shop.orders.where(total > 1000).firstOrDefault()"),
       ("set-operations", "shop.orders.select(customer_id).except(shop.addresses.select(customer_id)).union(shop.orders.select(customer_id).intersect(shop.addresses.select(customer_id))).orderBy(customer_id)"),
       ("dto-parts", "shop.p.where(z != null).select(id, y: year(z), mo: month(z), dd: day(z), h: hour(z), dz: date(z), ad: addDays(z, 1), db: daysBetween(z, toDate('2026-03-01')), dt: toDateTime(z)).orderBy(id)"),
+      ("dto-buckets", "shop.p.where(z != null).select(id, w: startOfWeek(z), mo: startOfMonth(z), q: startOfQuarter(z), y: startOfYear(z), qn: quarter(z), wd: dayOfWeek(z)).orderBy(id)"),
       ("dto-order", "shop.p.orderBy(z, id).select(id)"),
       ("dto-compare", "shop.p.where(z > toDateTime('2026-02-01 03:00')).select(id).orderBy(id)"),
       ("guid-order", "shop.p.orderBy(g, id).select(id)"),
@@ -387,6 +390,48 @@ public sealed class ServerEdgeTests(Servers servers)
    {
       await using TestSources sqlite = await SqliteProbeAsync();
       (await TextAsync(sqlite.Engine(), MonthEnds)).ShouldBe(MonthEndsExpected);
+   }
+
+   private const string DateBuckets = "shop.p.select(id, w: startOfWeek(d), mo: startOfMonth(d), q: startOfQuarter(d), y: startOfYear(d), qn: quarter(d), wd: dayOfWeek(d)).orderBy(id)";
+
+   private static readonly string DateBucketsExpected = Lines(
+      "1 | 2026-01-26 | 2026-01-01 | 2026-01-01 | 2026-01-01 | 1 | 6",
+      "2 | 2024-02-26 | 2024-02-01 | 2024-01-01 | 2024-01-01 | 1 | 4",
+      "3 | 2026-03-30 | 2026-03-01 | 2026-01-01 | 2026-01-01 | 1 | 2",
+      "4 | null | null | null | null | null | null",
+      "5 | 2026-12-28 | 2026-12-01 | 2026-10-01 | 2026-01-01 | 4 | 4",
+      "6 | 2025-01-13 | 2025-01-01 | 2025-01-01 | 2025-01-01 | 1 | 3",
+      "7 | 2025-06-30 | 2025-06-01 | 2025-04-01 | 2025-01-01 | 2 | 1");
+
+   private const string OffsetBuckets = "shop.p.where(z != null).select(id, w: startOfWeek(z), mo: startOfMonth(z), q: startOfQuarter(z), y: startOfYear(z), qn: quarter(z), wd: dayOfWeek(z)).orderBy(id)";
+
+   /// <summary>The UTC days: 2026-01-31 23:30 at -05:00 is a Sunday in February; 2026-12-31 22:00 at -03:00 a Friday in 2027.</summary>
+   private static readonly string OffsetBucketsExpected = Lines(
+      "1 | 2026-01-26 | 2026-01-01 | 2026-01-01 | 2026-01-01 | 1 | 4",
+      "2 | 2026-01-26 | 2026-02-01 | 2026-01-01 | 2026-01-01 | 1 | 7",
+      "3 | 2026-02-23 | 2026-02-01 | 2026-01-01 | 2026-01-01 | 1 | 6",
+      "5 | 2026-12-28 | 2027-01-01 | 2027-01-01 | 2027-01-01 | 1 | 5",
+      "6 | 2026-01-26 | 2026-01-01 | 2026-01-01 | 2026-01-01 | 1 | 4",
+      "7 | 2026-01-26 | 2026-02-01 | 2026-01-01 | 2026-01-01 | 1 | 7");
+
+   /// <summary>Weeks start on Monday and days of the week count from it, whatever the server's settings; offsets by their UTC days.</summary>
+   [Theory]
+   [InlineData(ServerKind.Postgres)]
+   [InlineData(ServerKind.SqlServer)]
+   public async Task DateBucketsAreTheFirstDaysOfTheirPeriods(ServerKind server)
+   {
+      await using TestSources sources = await ProbeSourcesAsync(server);
+      await GivesAsync(sources, DateBuckets, DateBucketsExpected);
+      await GivesAsync(sources, OffsetBuckets, OffsetBucketsExpected);
+   }
+
+   /// <summary>The reference, by hand too, as the servers are compared with it.</summary>
+   [Fact]
+   public async Task SqliteDateBucketsAreTheFirstDaysOfTheirPeriods()
+   {
+      await using TestSources sqlite = await SqliteProbeAsync();
+      (await TextAsync(sqlite.Engine(), DateBuckets)).ShouldBe(DateBucketsExpected);
+      (await TextAsync(sqlite.Engine(), OffsetBuckets)).ShouldBe(OffsetBucketsExpected);
    }
 
    /// <summary>A date-time with an offset is an instant: a month is added to its UTC time, as PostgreSQL and DuckDB do.</summary>
@@ -518,6 +563,9 @@ public sealed class ServerEdgeTests(Servers servers)
       { "enum-concat", "en + '!'" },
       { "domain-concat", "cd + '!'" },
       { "interval-hours", "toString(iv)" },
+      { "timestamptz-startOfWeek", "startOfWeek(tstz)" },
+      { "timestamp-startOfQuarter", "startOfQuarter(ts)" },
+      { "date-dayOfWeek", "dayOfWeek(d)" },
    };
 
    [Theory]
@@ -548,6 +596,10 @@ public sealed class ServerEdgeTests(Servers servers)
       { "datetime-date", "date(dt)" },
       { "dto-hour", "hour(dto)" },
       { "dto-addMonths", "addMonths(dto, 1)" },
+      { "datetime-startOfWeek", "startOfWeek(dt)" },
+      { "dto-startOfMonth", "startOfMonth(dto)" },
+      { "smalldatetime-startOfQuarter", "startOfQuarter(sdt)" },
+      { "dto-dayOfWeek", "dayOfWeek(dto)" },
       { "alias-type-concat", "cd + '!'" },
    };
 

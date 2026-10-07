@@ -149,6 +149,18 @@ FROM orders AS o
 -- p0 datetime = now()
 -- p1 date = today()
 
+### sales.orders.select(w: startOfWeek(order_date), m: startOfMonth(shipped_at), q: startOfQuarter(order_date), y: startOfYear(shipped_at), qn: quarter(shipped_at), wd: dayOfWeek(order_date))
+SELECT CAST(date_trunc('week', CAST(o.order_date AS timestamp)) AS date) AS w, CAST(date_trunc('month', o.shipped_at) AS date) AS m, CAST(date_trunc('quarter', CAST(o.order_date AS timestamp)) AS date) AS q, CAST(date_trunc('year', o.shipped_at) AS date) AS y, CAST(EXTRACT(QUARTER FROM o.shipped_at) AS integer) AS qn, CAST(EXTRACT(ISODOW FROM o.order_date) AS integer) AS wd
+FROM orders AS o
+
+### sales.orders.groupBy(m: startOfMonth(shipped_at), w: dayOfWeek(shipped_at)).select(m, w, n: count())
+SELECT d.m, d.w, count(*) AS n
+FROM (
+   SELECT CAST(date_trunc('month', o.shipped_at) AS date) AS m, CAST(EXTRACT(ISODOW FROM o.shipped_at) AS integer) AS w
+   FROM orders AS o
+) AS d
+GROUP BY d.m, d.w
+
 ### sales.order_lines.select(a: toInt(price), b: toDecimal(qty, 10, 2), c: toString(price), d: toDouble(qty), e: substring(product_code, 2, 3), f: indexOf(product_code, '-'), g: left(product_code, 2), h: right(product_code, 3))
 SELECT CAST(trunc(o.price) AS integer) AS a, CAST(o.qty AS numeric(10,2)) AS b, CAST(o.price AS text) AS c, CAST(o.qty AS double precision) AS d, substr(o.product_code, 2, 3) AS e, strpos(o.product_code, @p0) AS f, left(o.product_code, 2) AS g, right(o.product_code, 3) AS h
 FROM order_lines AS o
