@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { dashboardOf, rowsOf, salesDefinition, widgetDataUrl } from '../../../testing/dashboards';
 import { FakeECharts, fakeEChartsProviders } from '../../../testing/echarts';
-import { requestTo, settle } from '../../../testing/http';
+import { eventually, requestTo, settle } from '../../../testing/http';
 import { openPage, pageProviders, textOf } from '../../../testing/pages';
 import { FakeResizeObserver } from '../../../testing/resize';
 import { dashboardRoutes } from './dashboards.routes';
@@ -154,6 +154,74 @@ describe('a dashboard', () => {
     expect(textOf(frame.querySelector('[role=alert]'))).toContain('The query took too long');
     const bars = charts.chartIn(frame)!;
     expect((bars.option.series as { data: unknown[] }[])[0].data).toHaveLength(2);
+  });
+
+  it("is drawn with its palettes, a chart's own giving way to the dashboard's when it isn't there", async () => {
+    const { page, http, harness } = await openPage('/dashboards/1');
+    const sales = salesDefinition();
+    const definition = {
+      ...sales,
+      palette: 7,
+      widgets: sales.widgets.map((w) =>
+        w.config.kind === 'pie' ? { ...w, config: { ...w.config, palette: 8 } } : w,
+      ),
+    };
+    const palette = (open: string) => ({
+      id: 7,
+      name: 'Statuses',
+      owner: 'ada',
+      hash: open,
+      definition: {
+        colors: [
+          { light: '#111111', dark: null },
+          { light: '#222222', dark: null },
+        ],
+        assign: 'order' as const,
+        distinct: true,
+        whenOut: 'repeat' as const,
+        matching: {
+          ignoreCase: true,
+          ignoreWhitespace: false,
+          ignoreBrackets: false,
+          ignoreAccents: false,
+        },
+        overrides: [{ label: 'CAPE TOWN', color: { light: open, dark: null } }],
+      },
+    });
+    (await requestTo(http, '/api/dashboards/1')).flush(
+      dashboardOf(definition, { palettes: [palette('#abcdef')] }),
+    );
+    await settle();
+    (await requestTo(http, widgetDataUrl(1, 'by-status'), 'POST')).flush(
+      rowsOf('Status', [['open', '2']]),
+    );
+    const cityRows = rowsOf('City', [
+      ['Cape Town', '1'],
+      [null, '1'],
+    ]);
+    (await requestTo(http, widgetDataUrl(1, 'by-city'), 'POST')).flush(cityRows);
+    type Series = { itemStyle: { color: string }; data: { itemStyle: { color?: string } }[] }[];
+    const seriesIn = (cell: string) =>
+      charts.chartIn(page.querySelector(`[data-gd-cell="${cell}"]`)!)!.option.series as Series;
+    // The pie's slices, each its colour; the bars', their measure's.
+    const slices = () => seriesIn('6,1,6,6')[0].data.map((d) => d.itemStyle.color);
+    const bars = () => seriesIn('0,1,6,6').map((s) => s.itemStyle.color);
+    const drawn = (colors: string[]) => JSON.stringify(slices()) === JSON.stringify(colors);
+    await eventually(harness, () => drawn(['#abcdef', '#111111']) && bars().length === 1);
+    expect(slices()).toEqual(['#abcdef', '#111111']);
+    expect(bars()).toEqual(['#111111']);
+    // Refreshed, it reads its palettes again: changed since, its charts follow.
+    [...page.querySelectorAll<HTMLButtonElement>('button')]
+      .find((b) => textOf(b).endsWith('Refresh'))!
+      .click();
+    await settle();
+    (await requestTo(http, '/api/dashboards/1/palettes')).flush([palette('#fedcba')]);
+    (await requestTo(http, widgetDataUrl(1, 'by-status'), 'POST')).flush(
+      rowsOf('Status', [['open', '2']]),
+    );
+    (await requestTo(http, widgetDataUrl(1, 'by-city'), 'POST')).flush(cityRows);
+    await eventually(harness, () => drawn(['#fedcba', '#111111']));
+    expect(slices()).toEqual(['#fedcba', '#111111']);
   });
 
   it('is the working copy where there is nothing published', async () => {

@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using GalaxyData.Web.Dashboards;
 using GalaxyData.Web.Hosting;
+using GalaxyData.Web.Palettes;
 using GalaxyData.Web.Problems;
 using GalaxyData.Web.Tests.Catalog;
 using Microsoft.Extensions.Options;
@@ -139,6 +140,86 @@ public sealed class PublicDashboardApiTests
       foreach (string body in bodies)
       {
          foreach (string secret in (string[])["shop.", "Gamma", "not-gamma", "customer_id", "r0 =>", "colour", "sales", "buyers"]) { body.ShouldNotContain(secret, Case.Sensitive, body); }
+      }
+   }
+
+   [Fact]
+   public async Task ChartsGetTheOverridesOfWhatTheyShowAlone()
+   {
+      Setup setup = await PublicAsync();
+      await using WebAppFactory factory = setup.Factory;
+      TestApi anyone = new(setup.Factory);
+      List<string> bodies = [];
+      async Task<HttpResponseMessage> GetAsync(string path, string? tag = null)
+      {
+         using HttpRequestMessage request = new(HttpMethod.Get, path);
+         if (tag != null) { request.Headers.TryAddWithoutValidation("If-None-Match", tag); }
+         HttpResponseMessage response = await anyone.Client.SendAsync(request, Token);
+         bodies.Add(await response.Content.ReadAsStringAsync(Token));
+         return response;
+      }
+      async Task<string> ColorsAsync(string widget)
+      {
+         JsonElement data = await (await GetAsync($"/api/public/dashboards/{setup.Token}/widgets/{widget}/data")).JsonAsync(HttpStatusCode.OK);
+         return data.TryGetProperty("colors", out JsonElement colors) ? colors.GetRawText() : "none";
+      }
+
+      // Overrides of what it shows (open, with what the palette ignores; the measure's label), and of what it doesn't.
+      PaletteDefinition palette = PaletteDefinition.New([new("#2a78d6", "#3987e5"), new("#eb6834", null)]) with
+      {
+         Matching = new LabelMatching(IgnoreCase: true, IgnoreWhitespace: false, IgnoreBrackets: true, IgnoreAccents: false),
+         Overrides =
+         [
+            new("OPEN (codename Falcon)", new("#1baf7a", null)), new("Gamma Inc", new("#e34948", null)), new("Secret project", new("#4a3aa7", null)),
+            new("Orders", new("#eda100", "#c98500")),
+         ],
+      };
+      JsonElement made = await (await setup.Admin.PostAsync("/api/palettes", new { name = "Brand", definition = JsonSerializer.SerializeToElement(palette, DefinitionJson.Options) }))
+         .JsonAsync(HttpStatusCode.Created);
+      int id = made.GetProperty("id").GetInt32();
+      string path = $"/api/public/dashboards/{setup.Token}";
+      string before = (await GetAsync(path)).Headers.ETag!.Tag;
+      (await ColorsAsync("by-state")).ShouldBe("none", "no palette yet");
+
+      JsonElement dashboard = await (await setup.Admin.GetAsync($"/api/dashboards/{setup.Id}")).JsonAsync(HttpStatusCode.OK);
+      dashboard = await (await setup.Admin.PutAsync($"/api/dashboards/{setup.Id}", new
+      {
+         name = "Sales", description = (string?)null, definition = Definitions.Json(Definition() with { Palette = id }), version = dashboard.GetProperty("version").GetInt32(),
+      })).JsonAsync(HttpStatusCode.OK);
+      await (await setup.Admin.PostAsync($"/api/dashboards/{setup.Id}/publish", new { version = dashboard.GetProperty("version").GetInt32() })).JsonAsync(HttpStatusCode.OK);
+      HttpResponseMessage named = await GetAsync(path, before);
+      JsonElement shown = await named.JsonAsync(HttpStatusCode.OK);
+      string tag = named.Headers.ETag!.Tag;
+      tag.ShouldNotBe(before);
+      shown.GetProperty("palettes").GetRawText()
+         .ShouldBe($$$"""[{"id":{{{id}}},"colors":[{"light":"#2a78d6","dark":"#3987e5"},{"light":"#eb6834","dark":null}],"assign":"label","distinct":true,"whenOut":"repeat","matching":{"ignoreCase":true,"ignoreWhitespace":false,"ignoreBrackets":true,"ignoreAccents":false}}]""");
+      (await ColorsAsync("by-state")).ShouldBe("""[{"label":"open","light":"#1baf7a","dark":null},{"label":"Orders","light":"#eda100","dark":"#c98500"}]""",
+         "by the labels as they are in the answer");
+      (await ColorsAsync("towns")).ShouldBe("[]");
+      (await ColorsAsync("amounts")).ShouldBe("none", "tables aren't coloured");
+      (await GetAsync(path, tag)).StatusCode.ShouldBe(HttpStatusCode.NotModified);
+
+      // The palette changed: the dashboard's answer is a new one, and its rows' colours follow at once.
+      JsonElement read = await (await setup.Admin.GetAsync($"/api/palettes/{id}")).JsonAsync(HttpStatusCode.OK);
+      PaletteDefinition black = palette with { Overrides = [new("open", new("#000000", null))] };
+      (await setup.Admin.PutAsync($"/api/palettes/{id}", new { name = "Brand", description = (string?)null, definition = JsonSerializer.SerializeToElement(black, DefinitionJson.Options),
+         version = read.GetProperty("version").GetInt32() })).StatusCode.ShouldBe(HttpStatusCode.OK);
+      HttpResponseMessage edited = await GetAsync(path, tag);
+      edited.StatusCode.ShouldBe(HttpStatusCode.OK);
+      (await ColorsAsync("by-state")).ShouldBe("""[{"label":"open","light":"#000000","dark":null}]""");
+
+      // So does a rename (the name is in the answer).
+      dashboard = await (await setup.Admin.GetAsync($"/api/dashboards/{setup.Id}")).JsonAsync(HttpStatusCode.OK);
+      (await setup.Admin.PutAsync($"/api/dashboards/{setup.Id}", new
+      {
+         name = "Sales, renamed", description = (string?)null, definition = Definitions.Json(Definition() with { Palette = id }), version = dashboard.GetProperty("version").GetInt32(),
+      })).StatusCode.ShouldBe(HttpStatusCode.OK);
+      HttpResponseMessage renamed = await GetAsync(path, edited.Headers.ETag!.Tag);
+      (await renamed.JsonAsync(HttpStatusCode.OK)).GetProperty("name").GetString().ShouldBe("Sales, renamed");
+
+      foreach (string body in bodies)
+      {
+         foreach (string secret in (string[])["Gamma", "Secret", "Falcon", "Brand", "#e34948", "#4a3aa7", "\"admin\""]) { body.ShouldNotContain(secret, Case.Sensitive, body); }
       }
    }
 

@@ -61,6 +61,21 @@ export function widgetsById(definition: Definition): ReadonlyMap<string, Widget>
   return new Map(definition.widgets.map((widget) => [widget.id, widget]));
 }
 
+/** The palettes a definition names: its charts' default, and charts' own (each once, in order). */
+export function palettesOf(definition: Definition): number[] {
+  const named = new Set<number>();
+  if (definition.palette != null) {
+    named.add(definition.palette);
+  }
+  for (const widget of definition.widgets) {
+    const config = configOf(widget);
+    if (isChart(config) && config.palette != null) {
+      named.add(config.palette);
+    }
+  }
+  return [...named].sort((a, b) => a - b);
+}
+
 /** A key as text: the same for equal keys, whatever their values' types. */
 export function keyText(key: Key): string {
   return JSON.stringify(key);

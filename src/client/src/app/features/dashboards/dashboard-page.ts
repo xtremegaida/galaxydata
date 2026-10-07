@@ -24,6 +24,8 @@ import { problemMessage, problemOf } from '../../core/api/problem';
 import { PageTitle } from '../../core/page-titles';
 import { Confirmer } from '../../core/ui/confirmer';
 import { Message } from '../../core/ui/message';
+import { chartPalette } from './charts/series-colors';
+import { palettesOf } from './model/definition';
 import { maxSelectionKeys } from './model/selection';
 import { InlineHost, PublishedHost } from './state/dashboard-host';
 import { DashboardStore } from './state/dashboard-store';
@@ -217,6 +219,23 @@ export class DashboardPage {
     return error ? problemMessage(problemOf(error)) : null;
   });
 
+  /**
+   * The palettes its charts are drawn with: those of the dashboard's answer, read again as it is refreshed (they
+   * may have changed since: dashboards follow their palettes), when it names any.
+   */
+  private readonly palettesRead = rxResource({
+    params: () => {
+      const id = this.shown()?.id;
+      const refreshes = this.store.refreshes();
+      const named = palettesOf(this.store.definition()).length > 0;
+      return id !== undefined && refreshes > 0 && named ? { id, refreshes } : undefined;
+    },
+    stream: ({ params }) =>
+      this.api.get('/api/dashboards/{id}/palettes', { path: { id: params.id } }),
+  });
+
+  private readonly palettes = linkedSignal(() => this.shown()?.palettes ?? []);
+
   /** Whether the working copy is shown: asked for, or the only one there is. */
   protected readonly working = computed(() => {
     const shown = this.shown();
@@ -313,6 +332,18 @@ export class DashboardPage {
           this.store.host.set(new PublishedHost(this.api, shown.id, shown.publishedHash));
         }
       });
+    });
+    effect(() => {
+      if (this.palettesRead.hasValue()) {
+        const read = this.palettesRead.value();
+        untracked(() => this.palettes.set(read));
+      }
+    });
+    effect(() => {
+      const palettes = this.palettes();
+      untracked(() =>
+        this.store.palettes.set(new Map(palettes.map((p) => [p.id, chartPalette(p)]))),
+      );
     });
     inject(DestroyRef).onDestroy(() => this.title.detail.set(null));
   }

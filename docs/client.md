@@ -520,9 +520,17 @@ the server keeps and checks).
 - **Widgets** (`model/widget-registry.ts`, `WIDGET_KINDS`): a kind is its label, icon, default and least sizes,
   defaults, and two components loaded when needed, its view and its settings' editor. Text (Markdown, `marked`, its
   HTML escaped, links in new tabs, headings a level down, images of this site only); pie, bar and line charts
-  (ECharts, loaded with the first chart, `ECHARTS_IMPORT`; options built by pure functions; colors by category,
-  kept while the page is open; a table of the rows instead, with buttons, for the keyboard); tables. A kind the page
-  doesn't know is said so. A new kind is a server `IWidgetKind` and a client `WidgetKind`.
+  (ECharts, loaded with the first chart, `ECHARTS_IMPORT`; options built by pure functions; colours from their
+  palette, below; a table of the rows instead, with buttons, for the keyboard, and each row's colour); tables. A kind
+  the page doesn't know is said so. A new kind is a server `IWidgetKind` and a client `WidgetKind`.
+- **Colours** (`charts/series-colors.ts`): a chart is drawn with its own palette, else the dashboard's, else the
+  built-in eight (by order, grey after). `coloredEntities` says what a chart colours (a pie's slices, bars' and
+  lines' series values or measures, bars' categories when coloured by them), and `WidgetColors` gives them colours:
+  a label's own colour first (an override, matched as the palette says: `normalizeLabel`, as the server does), then
+  by order, or by label (FNV-1a of the label's text, then a jump consistent hash over the colours, so adding one
+  moves few); distinct keeps labels apart within a chart; what has a colour keeps it while the chart is shown (a
+  filter repaints nothing). Embedded, the overrides come with each answer's rows (`colors`). Pages read the palettes
+  with the dashboard, and again as they refresh; a palette changed elsewhere shows then, or once reloaded.
 - **Choosing slices.** A click chooses a slice alone, Ctrl (⌘) adds or takes it out, Alt leaves it out; a menu at
   the slice (right-click, or a long press) does the same, and so do a chart's table's buttons. Slices chosen in a
   widget filter the widgets that listen to it (on linked sources), and show as chips ("Status: open, shipped",
@@ -539,10 +547,11 @@ the server keeps and checks).
   longer after failures).
 
 **The editor** (`editor/`, `/dashboards/new` and `/dashboards/<id>/edit`): the dashboard as viewers see it on a
-canvas, at each breakpoint (narrower ones as wide as they are); a palette; panels for the widget chosen, the sources
-and their links (paths of navigations the catalog suggests), the filters, the layout (breakpoints, rows' height,
-gaps, a narrower width laid out by hand or derived again), the refresh, and the issues (the editor's, the server's
-for the dashboard and each widget's preview, a save's by field, each with Go to).
+canvas, at each breakpoint (narrower ones as wide as they are); the widgets to add; panels for the widget chosen,
+the sources and their links (paths of navigations the catalog suggests), the filters, the layout (breakpoints, rows'
+height, gaps, a narrower width laid out by hand or derived again), the dashboard's own (its refresh, its charts'
+palette), and the issues (the editor's, the server's for the dashboard and each widget's preview, a save's by field,
+each with Go to).
 
 - **Widgets** are chosen by a click (Try it, to choose slices instead), moved by their handles and resized by their
   corners, by pointer or keyboard: Enter or Space on a handle, arrows to move, Shift and arrows to resize, Enter to
@@ -554,6 +563,22 @@ for the dashboard and each widget's preview, a save's by field, each with Go to)
 - **Every edit is a step** undone and redone by name (Ctrl+Z; Ctrl+Shift+Z or Ctrl+Y), edits of one field (or a
   drag) one step. Ctrl+S saves the working copy at the version read: changed elsewhere since, it is read again (the
   edits stay) or saved as a copy. Leaving with changes not saved asks first.
+- **Colours:** a chart's settings choose its palette (or the dashboard's), bars' colours by category, and list what
+  its preview colours and how (its own, by label, by order, moved apart, grey), each with Set colour…, which keeps
+  the label's colour in the palette the chart is drawn with (saved there at once, not a step to undo: every
+  dashboard using it follows). A chart with no palette makes one for the dashboard, of its colours as they were;
+  another's palette is copied as the user's. A palette that is gone is an issue.
+
+**Palettes** (`palettes/`, `/dashboards/palettes`, linked from the list): every palette, with whose it is, its
+colours, and how many dashboards use it; Copy, and Delete (saying how many use it). A palette's page: its name; a
+base when new (`palettes/bases.ts`: the application's eight, Okabe and Ito's six for colour blindness, or one colour);
+its colours (the browser's picker or `#rrggbb`, and another for dark backgrounds), moved, removed (by label, that
+recolours labels, which it says); by order or by label, kept apart, grey or repeated when they run out; what labels
+match whatever (case, spaces, text in brackets, accents), with a label to try; labels of their own colour, written or
+found in the data (an entity's field's most common values); a preview of them, light and dark; and checks
+(`charts/color-checks.ts`: contrast against charts' surfaces, colours that read as grey, and pairs hard to tell apart
+as seen and with red–green colour blindness: neighbours by order, any two by label). Ctrl+S saves it at the version
+read; others' are read-only, to copy.
 
 **Publishing and sharing:** Publish (what changed since the last revision, a note); Revisions (restored into the
 working copy, or its changes discarded); Share (only the owner, people chosen, everyone signed in; and, for data
@@ -897,7 +922,11 @@ its own: the client's `npm ci`, which publishing runs, doesn't install it). In o
     test's, at `127.0.0.1`) frames it with `?f.status=open&theme=dark`: its heading, filter and a chart show, the
     frame grows to the height it says, nothing but `/api/public/` is asked for, its link opens a tab, and no frame
     logs an error or a content security policy's refusal; its link stopped, the frame says it isn't there;
-16. and the browser's console said nothing all along (no errors, nothing the content security policy refused).
+16. colours labels by a palette: made from the application's colours, with colours of their own for `open` and
+    `Cape Town`; chosen as the dashboard's charts' palette, the bars coloured by their categories; published, the
+    bar chart's and the pie's tables show those colours; public, each chart's rows carry only their own labels'
+    colours;
+17. and the browser's console said nothing all along (no errors, nothing the content security policy refused).
 
 **Running it**, in `tests/e2e`:
 

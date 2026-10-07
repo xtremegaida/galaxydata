@@ -19,6 +19,7 @@ import { ApiClient } from '../../../core/api/api-client';
 import { ProblemCode, problemOf } from '../../../core/api/problem';
 import { PageTitle } from '../../../core/page-titles';
 import { Message } from '../../../core/ui/message';
+import { publicPalette } from '../charts/series-colors';
 import { PublicHost } from '../state/dashboard-host';
 import { DashboardStore } from '../state/dashboard-store';
 import { refreshOnTimer } from '../state/refresh';
@@ -155,8 +156,16 @@ export class EmbedPage {
       untracked(() => {
         this.title.detail.set(shown.name);
         this.store.definition.set(shown.definition);
+        this.store.palettes.set(new Map(shown.palettes.map((p) => [p.id, publicPalette(p)])));
         this.store.host.set(new PublicHost(this.api, token));
       });
+    });
+    // Refreshed, it reads itself again (as it was, the browser's cache answers): its palettes may have changed, as
+    // its rows' colours do at once.
+    effect(() => {
+      if (this.store.refreshes() > 0) {
+        untracked(() => this.dashboard.reload());
+      }
     });
     // The address keeps what is chosen; an embed doesn't say what of it was left out (its parent wrote it).
     bindUrlState(this.store, maxPublicKeys);

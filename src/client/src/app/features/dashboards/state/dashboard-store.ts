@@ -12,6 +12,7 @@ import {
 } from '../model/definition';
 import { selectionAfter } from '../model/selection';
 import type { SelectionAction } from '../model/widget-context';
+import type { EntityColor, PaletteView } from '../charts/series-colors';
 import type { DashboardHost } from './dashboard-host';
 import { sameJson } from '../../../core/api/same-json';
 
@@ -54,6 +55,9 @@ export class DashboardStore {
   /** Where widgets get their rows; the page sets it. */
   readonly host = signal<DashboardHost | null>(null);
 
+  /** The palettes the dashboard names that are there, by id; the page sets them (a chart's own, else the dashboard's). */
+  readonly palettes = signal<ReadonlyMap<number, PaletteView>>(new Map());
+
   /** The values of the filters the viewer may change, by id (null: cleared); the others are the definition's. */
   readonly filters = signal<Readonly<Record<string, ConditionValue | null>>>({});
 
@@ -76,6 +80,9 @@ export class DashboardStore {
 
   /** What the server said is wrong with each widget (or may be), the last time it asked for its rows. */
   readonly issues = signal<ReadonlyMap<string, readonly DashboardIssue[]>>(new Map());
+
+  /** What each chart coloured, and how, as it shows now (the editor's canvas reports them). */
+  readonly colors = signal<ReadonlyMap<string, readonly EntityColor[]>>(new Map());
 
   readonly oldestRefresh = computed(() => {
     const times = [...this.refreshedAt().values()].sort();
@@ -111,6 +118,21 @@ export class DashboardStore {
       }
       this.failing.set(next);
     }
+  }
+
+  /** A chart's colours as it shows them now; none, once it is gone. */
+  setColors(widget: string, colors: readonly EntityColor[] | null): void {
+    const now = this.colors();
+    if (colors === null ? !now.has(widget) : sameJson(now.get(widget), colors)) {
+      return;
+    }
+    const next = new Map(now);
+    if (colors === null) {
+      next.delete(widget);
+    } else {
+      next.set(widget, colors);
+    }
+    this.colors.set(next);
   }
 
   setIssues(widget: string, issues: readonly DashboardIssue[]): void {

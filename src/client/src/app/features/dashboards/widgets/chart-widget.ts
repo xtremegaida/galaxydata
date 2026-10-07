@@ -10,6 +10,7 @@ import {
   effect,
   inject,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { MatIcon } from '@angular/material/icon';
@@ -18,9 +19,10 @@ import { elementSize } from '../../../core/browser/element-size';
 import { type Chart, EChartsLoader } from '../../../core/charts/echarts-loader';
 import { ColorScheme } from '../../../core/theme/color-scheme';
 import { actionOf, onMac } from '../charts/chart-events';
-import { ColorMemory, chartOption } from '../charts/chart-options';
+import { chartOption } from '../charts/chart-options';
 import { type ChartTheme, fallbackTheme, readTheme } from '../charts/chart-theme';
-import { type Key, isChart } from '../model/definition';
+import { AssignedColors, WidgetColors, cellEntity } from '../charts/series-colors';
+import { type Key, type WidgetColumn, isChart } from '../model/definition';
 import { type SelectionAction, WidgetContext } from '../model/widget-context';
 import { RowsTable } from './rows-table';
 
@@ -44,6 +46,7 @@ import { RowsTable } from './rows-table';
         [selection]="context.selection()"
         [choosing]="context.choosing() && emits()"
         [choose]="choose"
+        [swatch]="swatch"
       />
     }
     @if (failed()) {
@@ -140,7 +143,7 @@ export class ChartWidget {
   private readonly narrow = computed(() => (this.size()?.width ?? Infinity) < 420);
   private readonly chart = signal<Chart | null>(null);
   private readonly theme = signal<ChartTheme>(fallbackTheme(false));
-  private readonly colors = new ColorMemory();
+  private readonly painter = new WidgetColors();
   private readonly mac = onMac(this.document.defaultView?.navigator);
   private readonly reducedMotion =
     this.document.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
@@ -153,6 +156,32 @@ export class ChartWidget {
   });
   protected readonly emits = computed(() => this.dataConfig()?.emits ?? false);
   protected readonly asTable = computed(() => this.context.asTable() || this.failed());
+
+  /**
+   * What each slice, series or measure is painted: from the rows, the palette and the scheme, needing neither the
+   * chart nor what is chosen (so its table, and a chart that couldn't load, have the same colours).
+   */
+  readonly colors = computed(() => {
+    const config = this.dataConfig();
+    const data = this.data();
+    return config && data
+      ? this.painter.paint(config, data, this.context.palette(), this.theme(), this.locale)
+      : new AssignedColors([]);
+  });
+
+  /** The colour a cell of the chart's table shows beside its value (a header's, for measures); none for the others. */
+  protected readonly swatch = (
+    row: readonly unknown[] | null,
+    column: WidgetColumn,
+  ): string | null => {
+    const config = this.dataConfig();
+    const data = this.data();
+    if (!config || !data) {
+      return null;
+    }
+    const entity = cellEntity(config, data, row, data.columns.indexOf(column));
+    return entity === null ? null : this.colors().color(entity, this.theme());
+  };
 
   protected readonly choose = (key: Key, action: Parameters<WidgetContext['choose']>[1]) =>
     this.context.choose(key, action);
@@ -220,11 +249,16 @@ export class ChartWidget {
           locale: this.locale,
           selection: this.context.selection(),
           reducedMotion: this.reducedMotion,
-          colors: this.colors,
+          colors: this.colors(),
           narrow: this.narrow(),
         }),
         { notMerge: true },
       );
+    });
+    // What it coloured, for the editor to list.
+    effect(() => {
+      const entries = this.colors().entries;
+      untracked(() => this.context.colors.set(entries));
     });
     // As the widget's size changes (the page's width, the editor's resizing), the chart fits it again.
     effect(() => {

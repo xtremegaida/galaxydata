@@ -101,6 +101,8 @@ parts (`GalaxyData__DataDirectory`).
 | `Dashboards:CacheDuration`, `PublicCacheDuration` | `00:00:30`, `00:00:30` | How long a widget's rows are kept for the next to ask the same (a public link's are always kept). |
 | `Dashboards:CacheSize` | `2000` | The most widgets' rows kept at once. |
 | `Dashboards:PublicQueriesPerDashboard` | `4` | The queries a public dashboard may have running at once, for all its viewers (rows kept don't count). |
+| `Palettes:MaxColors`, `MaxOverrides` | `32`, `500` | The most colours, and labels of their own colour, a palette may have. |
+| `Palettes:MaxDefinitionLength` | `65536` | The longest a palette's definition may be, as JSON, in characters (a dashboard's answer carries the palettes it names). |
 
 Settings that don't make sense (a minimum password length of 3, a user name with spaces) stop the application at
 startup, naming the setting.
@@ -727,7 +729,10 @@ save that changes nothing is none.
 cells by widget, and narrower breakpoints laid out by hand), `sources`, `links` (paths of navigations between two
 sources' entities; a forest), `filters` (on a source's field, of a kind: `values`, `range`, `relative`, `text`,
 `boolean`; shown or hidden, the viewers' to change or not, a default), `widgets` (each `{id, title, config}`, the
-config's `kind` saying which), `refresh` (`manual`, or `interval` with `seconds`) and `public` (`showData`).
+config's `kind` saying which), `refresh` (`manual`, or `interval` with `seconds`), `public` (`showData`), and
+`palette` (the palette its charts are drawn with; none, the built-in colours). Pie, bar and line charts may have a
+`palette` of their own, and bars `colorBy: category` (each bar its category's colour, with one measure and no
+series). Those are left out when unset, so a definition saved before palettes is written as it was.
 
 - **Checked as it is saved:** its shape, ids (`[a-z0-9-]`, unique in their lists), what refers to what, each kind's
   rules and the limits (`Dashboards:*`): a 400 by the field's JSON path (`definition.widgets[2].config.measures[0]`).
@@ -812,6 +817,45 @@ page writes them) and `theme=light` or `dark` (the system's otherwise).
 
 **The audit.** Making a dashboard public, a new link, stopping it, changing its sites and deleting a public
 dashboard are in the administrators' audit, never with the link.
+
+### Palettes
+
+A palette is a set of colours for charts' slices, series and measures, which dashboards and their charts name, so
+a label keeps its colour across charts and dashboards. Everyone who reads data sees and uses every palette; its
+owner changes and deletes it, and administrators others' too (written to the audit as `palette.updated` and
+`palette.deleted`, without labels; they don't rename them). Dashboards refer to palettes: a palette's change shows
+in every dashboard using it at once, published copies too, without publishing. One deleted, the dashboards that
+named it are drawn with the next colours (a chart's own gives way to the dashboard's, that to the built-in ones),
+and their issues say so (`palette-missing`, a warning).
+
+**Its definition.** `colors` (`{light, dark}`: `#rrggbb`, and another for dark backgrounds or none), `assign`
+(`order`: in the order a chart meets its labels; `label`: by a hash of the label, the same in every chart),
+`distinct` (within a chart, what would take a colour another label has takes the next one free), `whenOut`
+(`repeat`, or `neutral`: grey), `matching` (`ignoreCase`, `ignoreWhitespace`, `ignoreBrackets`, `ignoreAccents`), and
+`overrides` (`{label, color}`: a label's own colour; a null label is no value's). Checked as it is saved: 1 to
+`MaxColors` colours, `MaxOverrides` overrides, labels of 200 characters at most, none that is nothing once matched
+(`(EMEA)` ignoring brackets), and no two matching the same.
+
+**Labels.** A label is matched by its value's text as answers carry it (text as it is, numbers as JavaScript writes
+them, `true` and `false`, dates and periods as ISO: January's bucket is `2026-01-01`), or a measure's label; never as
+it is shown, which depends on the locale. Matching composes it (NFC), leaves out text in `()`, `[]` and `{}`
+(nested; a bracket never closed, or closed without being opened, is text), accents, case (each character's own
+lowercase) and white space as the palette says (each run of white space is one space otherwise), and trims it. The
+client does the same; `tests/fixtures/palette-labels.json` holds both to it.
+
+| Endpoint | What |
+|---|---|
+| `GET /api/palettes` | Every palette, without its overrides: whose, its colours, how it assigns them, how many overrides, how many dashboards use it. |
+| `GET /api/palettes/{id}` | One, whole, with how many dashboards use it and those of them the user may see. |
+| `POST /api/palettes`, `PUT /api/palettes/{id}`, `DELETE /api/palettes/{id}?version=` | `{name, description, definition}` (and `version`): made, saved (no-op saves change nothing), deleted. |
+| `GET /api/dashboards/{id}/palettes` | The palettes the copies the user sees name, as they are now (a page refreshing reads them again). |
+
+A dashboard's answer carries the palettes its copies name, whole (`palettes`). A public dashboard's carries them
+without their names, owners or overrides, and each public widget's rows carry `colors`: the overrides of the labels
+in those rows alone, by those labels as the rows have them (an override written `Acme (codename)` that matches
+`Acme` says `Acme`), worked out after the rows kept, so a palette's change shows at once. The public dashboard's
+`ETag` is of its published copy, its name and description, and its palettes as they are now, so a change of any of
+them is a new answer.
 
 ## Security
 
@@ -936,6 +980,7 @@ Errors are problem details (RFC 9457, `application/problem+json`). Every problem
 | 409 | `alias-taken` | Another connection has the alias (aliases ignore case). |
 | 409 | `query-name-taken` | The owner has a saved query of the name (names ignore case). |
 | 409 | `dashboard-name-taken` | The owner has a dashboard of the name (names ignore case). |
+| 409 | `palette-name-taken` | The owner has a palette of the name (names ignore case). |
 | 409 | `dashboard-changed` | A published dashboard's widget was asked for by a hash that isn't its published copy's: it was published again. |
 | 422 | `widget-invalid` | A widget's config can't be planned against the catalog as it is; `issues` says why. |
 | 403 | `public-dashboards-disabled` | Public dashboards are turned off (`Dashboards:AllowPublic`). |

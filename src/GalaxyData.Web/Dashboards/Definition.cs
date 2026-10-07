@@ -7,7 +7,9 @@ namespace GalaxyData.Web.Dashboards;
 /// What a dashboard shows: its layout, its data sources and the links between them, its filters, its widgets and its
 /// refresh policy. A working copy holds one, and so does each revision published. Only its structure is checked when
 /// it is saved (<see cref="DefinitionRules"/>); entities, columns and navigations are checked when it is shown, as the
-/// catalog changes after a save.
+/// catalog changes after a save. <see cref="Palette"/>: the palette its charts are drawn with (none: the built-in
+/// colours), which a chart may name its own of; left out when there is none, so definitions saved before palettes
+/// are written as they were.
 /// </summary>
 public sealed record DashboardDefinition(
    int Schema,
@@ -17,7 +19,8 @@ public sealed record DashboardDefinition(
    List<DashboardFilter> Filters,
    List<DashboardWidget> Widgets,
    RefreshPolicy Refresh,
-   PublicSettings Public)
+   PublicSettings Public,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Palette = null)
 {
    public const int CurrentSchema = 1;
 
@@ -255,7 +258,10 @@ public enum LegendPosition
    Right,
 }
 
-/// <summary>A pie (or donut) of a measure by a dimension: the largest <see cref="Limit"/> slices, and the rest as one when <see cref="Other"/>.</summary>
+/// <summary>
+/// A pie (or donut) of a measure by a dimension: the largest <see cref="Limit"/> slices, and the rest as one when
+/// <see cref="Other"/>. <see cref="Palette"/>: its own palette (none: the dashboard's).
+/// </summary>
 public sealed record PieConfig(
    string Source,
    List<WidgetCondition> Conditions,
@@ -267,7 +273,8 @@ public sealed record PieConfig(
    bool Other,
    bool Donut,
    bool Labels,
-   LegendPosition Legend) : DataWidgetConfig(Source, Conditions, Emits, Listens);
+   LegendPosition Legend,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Palette = null) : DataWidgetConfig(Source, Conditions, Emits, Listens);
 
 public enum BarOrientation
 {
@@ -284,7 +291,19 @@ public enum BarStack
    Percent,
 }
 
-/// <summary>Bars of measures by a dimension, and by a series too (then one measure): the first <see cref="Limit"/> categories by <see cref="Sort"/>.</summary>
+/// <summary>What a bar chart's colours stand for: its measures (or series), or each bar's category.</summary>
+public enum BarColorBy
+{
+   Measure,
+
+   /// <summary>Each bar its category's colour (one measure, no series), as a pie's slices have.</summary>
+   Category,
+}
+
+/// <summary>
+/// Bars of measures by a dimension, and by a series too (then one measure): the first <see cref="Limit"/> categories
+/// by <see cref="Sort"/>. <see cref="Palette"/>: its own palette (none: the dashboard's).
+/// </summary>
 public sealed record BarConfig(
    string Source,
    List<WidgetCondition> Conditions,
@@ -300,7 +319,9 @@ public sealed record BarConfig(
    bool Labels,
    LegendPosition Legend,
    string? XTitle,
-   string? YTitle) : DataWidgetConfig(Source, Conditions, Emits, Listens);
+   string? YTitle,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Palette = null,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] BarColorBy ColorBy = BarColorBy.Measure) : DataWidgetConfig(Source, Conditions, Emits, Listens);
 
 public enum LineGaps
 {
@@ -314,7 +335,7 @@ public enum LineGaps
    Break,
 }
 
-/// <summary>Lines of measures over a dimension (x), by a series too (then one measure), in its order.</summary>
+/// <summary>Lines of measures over a dimension (x), by a series too (then one measure), in its order. <see cref="Palette"/>: its own palette (none: the dashboard's).</summary>
 public sealed record LineConfig(
    string Source,
    List<WidgetCondition> Conditions,
@@ -329,7 +350,8 @@ public sealed record LineConfig(
    bool Labels,
    LegendPosition Legend,
    string? XTitle,
-   string? YTitle) : DataWidgetConfig(Source, Conditions, Emits, Listens);
+   string? YTitle,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Palette = null) : DataWidgetConfig(Source, Conditions, Emits, Listens);
 
 public enum TableMode
 {

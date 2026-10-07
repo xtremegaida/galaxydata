@@ -1,5 +1,6 @@
 import { Injectable, type Signal, signal } from '@angular/core';
 import type { Problem } from '../../../core/api/problem';
+import type { EntityColor, PaletteView } from '../charts/series-colors';
 import type { Key, Selection, Widget, WidgetConfig, WidgetData } from './definition';
 
 /** What choosing a slice does: chooses it alone, adds it to (or takes it from) those chosen, leaves it out, or chooses none. */
@@ -26,6 +27,14 @@ export class WidgetContext {
   readonly editing = signal(false);
   /** Whether choosing slices does anything: widgets that emit, on a page that lets them. */
   readonly choosing = signal(true);
+  /** The palette a chart is drawn with (its own, else the dashboard's); none: the theme's colours. */
+  readonly palette = signal<PaletteView | null>(null, {
+    equal: (a, b) => a?.id === b?.id && a?.basis === b?.basis,
+  });
+  /** What a chart coloured, and how (its view sets it): the editor lists them, to give labels their colours. */
+  readonly colors = signal<readonly EntityColor[]>([], {
+    equal: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
 
   /** What choosing a slice asks of the dashboard; the frame sets it. */
   choose: (key: Key, action: SelectionAction) => void = () => undefined;

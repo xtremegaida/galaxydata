@@ -6746,6 +6746,91 @@
         }
       }
     },
+    "/api/dashboards/{id}/palettes": {
+      "get": {
+        "tags": [
+          "Dashboards"
+        ],
+        "summary": "The palettes the copies the user sees name, as they are now",
+        "operationId": "GetDashboardPalettes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChartPaletteDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/dashboards/{id}/publish": {
       "post": {
         "tags": [
@@ -8495,6 +8580,438 @@
         }
       }
     },
+    "/api/palettes": {
+      "get": {
+        "tags": [
+          "Palettes"
+        ],
+        "summary": "Every palette, by name",
+        "operationId": "ListPalettes",
+        "responses": {
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PaletteSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Palettes"
+        ],
+        "operationId": "CreatePalette",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePaletteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaletteDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/palettes/{id}": {
+      "get": {
+        "tags": [
+          "Palettes"
+        ],
+        "operationId": "GetPalette",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaletteDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Palettes"
+        ],
+        "operationId": "UpdatePalette",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePaletteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaletteDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Palettes"
+        ],
+        "operationId": "DeletePalette",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/public/dashboards/{token}": {
       "get": {
         "tags": [
@@ -8870,6 +9387,13 @@
           "min",
           "max"
         ]
+      },
+      "BarColorBy": {
+        "enum": [
+          "measure",
+          "category"
+        ],
+        "default": "measure"
       },
       "BarOrientation": {
         "enum": [
@@ -9635,6 +10159,34 @@
             "items": {
               "$ref": "#/components/schemas/PendingChangeDto"
             }
+          }
+        }
+      },
+      "ChartPaletteDto": {
+        "required": [
+          "id",
+          "name",
+          "owner",
+          "definition",
+          "hash"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/PaletteDefinition"
+          },
+          "hash": {
+            "type": "string"
           }
         }
       },
@@ -10513,6 +11065,28 @@
           }
         }
       },
+      "CreatePaletteRequest": {
+        "required": [
+          "name",
+          "description",
+          "definition"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "definition": {
+            "$ref": "#/components/schemas/PaletteDefinition"
+          }
+        }
+      },
       "CreateUserRequest": {
         "required": [
           "userName",
@@ -10587,6 +11161,13 @@
           },
           "public": {
             "$ref": "#/components/schemas/PublicSettings"
+          },
+          "palette": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -10609,6 +11190,7 @@
           "public",
           "can",
           "issues",
+          "palettes",
           "createdAt",
           "updatedAt",
           "version"
@@ -10716,6 +11298,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DashboardIssue"
+            }
+          },
+          "palettes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChartPaletteDto"
             }
           },
           "createdAt": {
@@ -12701,6 +13289,54 @@
           }
         }
       },
+      "LabelColorDto": {
+        "required": [
+          "label",
+          "light",
+          "dark"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "light": {
+            "type": "string"
+          },
+          "dark": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LabelMatching": {
+        "required": [
+          "ignoreCase",
+          "ignoreWhitespace",
+          "ignoreBrackets",
+          "ignoreAccents"
+        ],
+        "type": "object",
+        "properties": {
+          "ignoreCase": {
+            "type": "boolean"
+          },
+          "ignoreWhitespace": {
+            "type": "boolean"
+          },
+          "ignoreBrackets": {
+            "type": "boolean"
+          },
+          "ignoreAccents": {
+            "type": "boolean"
+          }
+        }
+      },
       "LayoutOverride": {
         "required": [
           "columns",
@@ -13427,6 +14063,247 @@
           }
         }
       },
+      "PaletteAssign": {
+        "enum": [
+          "order",
+          "label"
+        ]
+      },
+      "PaletteColor": {
+        "required": [
+          "light",
+          "dark"
+        ],
+        "type": "object",
+        "properties": {
+          "light": {
+            "type": "string"
+          },
+          "dark": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PaletteDashboardDto": {
+        "required": [
+          "id",
+          "name",
+          "owner"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          }
+        }
+      },
+      "PaletteDefinition": {
+        "required": [
+          "colors",
+          "assign",
+          "distinct",
+          "whenOut",
+          "matching",
+          "overrides"
+        ],
+        "type": "object",
+        "properties": {
+          "colors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaletteColor"
+            }
+          },
+          "assign": {
+            "$ref": "#/components/schemas/PaletteAssign"
+          },
+          "distinct": {
+            "type": "boolean"
+          },
+          "whenOut": {
+            "$ref": "#/components/schemas/PaletteWhenOut"
+          },
+          "matching": {
+            "$ref": "#/components/schemas/LabelMatching"
+          },
+          "overrides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaletteOverride"
+            }
+          }
+        }
+      },
+      "PaletteDto": {
+        "required": [
+          "id",
+          "name",
+          "description",
+          "owner",
+          "isMine",
+          "canEdit",
+          "definition",
+          "hash",
+          "usedBy",
+          "dashboards",
+          "createdAt",
+          "updatedAt",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "owner": {
+            "type": "string"
+          },
+          "isMine": {
+            "type": "boolean"
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/PaletteDefinition"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "usedBy": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "dashboards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaletteDashboardDto"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PaletteOverride": {
+        "required": [
+          "label",
+          "color"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "color": {
+            "$ref": "#/components/schemas/PaletteColor"
+          }
+        }
+      },
+      "PaletteSummaryDto": {
+        "required": [
+          "id",
+          "name",
+          "description",
+          "owner",
+          "isMine",
+          "canEdit",
+          "colors",
+          "assign",
+          "overrides",
+          "usedBy",
+          "updatedAt",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "owner": {
+            "type": "string"
+          },
+          "isMine": {
+            "type": "boolean"
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "colors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaletteColor"
+            }
+          },
+          "assign": {
+            "$ref": "#/components/schemas/PaletteAssign"
+          },
+          "overrides": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "usedBy": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PaletteWhenOut": {
+        "enum": [
+          "repeat",
+          "neutral"
+        ]
+      },
       "PasswordPolicyDto": {
         "required": [
           "minimumLength",
@@ -13719,7 +14596,8 @@
         "required": [
           "name",
           "description",
-          "definition"
+          "definition",
+          "palettes"
         ],
         "type": "object",
         "properties": {
@@ -13734,6 +14612,47 @@
           },
           "definition": {
             "$ref": "#/components/schemas/DashboardDefinition"
+          },
+          "palettes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicPaletteDto"
+            }
+          }
+        }
+      },
+      "PublicPaletteDto": {
+        "required": [
+          "id",
+          "colors",
+          "assign",
+          "distinct",
+          "whenOut",
+          "matching"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "colors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaletteColor"
+            }
+          },
+          "assign": {
+            "$ref": "#/components/schemas/PaletteAssign"
+          },
+          "distinct": {
+            "type": "boolean"
+          },
+          "whenOut": {
+            "$ref": "#/components/schemas/PaletteWhenOut"
+          },
+          "matching": {
+            "$ref": "#/components/schemas/LabelMatching"
           }
         }
       },
@@ -15629,6 +16548,33 @@
           }
         }
       },
+      "UpdatePaletteRequest": {
+        "required": [
+          "name",
+          "description",
+          "definition",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "definition": {
+            "$ref": "#/components/schemas/PaletteDefinition"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "UpdateRelationRequest": {
         "required": [
           "relation",
@@ -16067,6 +17013,16 @@
               "string"
             ]
           },
+          "palette": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "colorBy": {
+            "$ref": "#/components/schemas/BarColorBy"
+          },
           "source": {
             "type": "string"
           },
@@ -16155,6 +17111,13 @@
               "string"
             ]
           },
+          "palette": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
           "source": {
             "type": "string"
           },
@@ -16214,6 +17177,13 @@
           },
           "legend": {
             "$ref": "#/components/schemas/LegendPosition"
+          },
+          "palette": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
           },
           "source": {
             "type": "string"
@@ -16380,6 +17350,15 @@
             "items": {
               "$ref": "#/components/schemas/DashboardIssue"
             }
+          },
+          "colors": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/LabelColorDto"
+            }
           }
         }
       },
@@ -16499,6 +17478,9 @@
     },
     {
       "name": "Dashboards"
+    },
+    {
+      "name": "Palettes"
     },
     {
       "name": "Public dashboards"

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using GalaxyData.Query.Binding;
@@ -13,6 +14,7 @@ using GalaxyData.Query.Types;
 using GalaxyData.Web.Browse;
 using GalaxyData.Web.Catalog;
 using GalaxyData.Web.Hosting;
+using GalaxyData.Web.Palettes;
 using GalaxyData.Web.Problems;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -28,10 +30,13 @@ public sealed record WidgetColumnDto(string Name, ColumnRole Role, int Index, st
 /// decimals as text, exact). <see cref="Truncated"/>: there are more than are shown (rows, or a series' categories);
 /// tables page instead (<see cref="Offset"/>, <see cref="Total"/> when counted). <see cref="Categories"/>: a series'
 /// bars' categories in their order; <see cref="Other"/>: the rest of a pie's total. When the rows were worked out,
-/// and whether they were kept from then for whoever asked first; warnings about the widget.
+/// and whether they were kept from then for whoever asked first; warnings about the widget. <see cref="Colors"/>
+/// (public dashboards' charts): the colours their palette's overrides give the labels in these rows, by the labels
+/// as they are here (signed in, the palette comes whole with the dashboard instead).
 /// </summary>
 public sealed record WidgetDataDto(IReadOnlyList<WidgetColumnDto> Columns, IReadOnlyList<IReadOnlyList<object?>> Rows, bool Truncated, long Offset, long? Total,
-                                   IReadOnlyList<object?>? Categories, object? Other, DateTime RefreshedAt, bool Cached, IReadOnlyList<DashboardIssue> Issues);
+                                   IReadOnlyList<object?>? Categories, object? Other, DateTime RefreshedAt, bool Cached, IReadOnlyList<DashboardIssue> Issues,
+                                   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<LabelColorDto>? Colors = null);
 
 /// <summary>A query's text and its parameters' values.</summary>
 public sealed record QueryTextDto(string Text, IReadOnlyList<QueryParameterDto> Parameters);

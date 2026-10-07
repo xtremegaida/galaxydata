@@ -14,8 +14,9 @@ import { barDefaults, lineDefaults, pieDefaults, tableDefaults } from './widget-
  * links; the filters that apply to it (those with a field: a filter being made reaches nothing yet); and of the
  * widgets it listens to on those sources that something is chosen in (`chosen`; all, when not said), what their
  * slices are of (their dimensions, nothing more). Cells are stacked, breakpoints kept and overrides left out, so
- * moving widgets or changing another's title or colours changes no slice. The editor's previews send it, and are
- * asked for again when it changes, and only then.
+ * moving widgets or changing another's title or colours changes no slice; palettes (the dashboard's, and the
+ * widget's) and what a bar chart is coloured by are left out too, as they are its colours, not its rows. The
+ * editor's previews send it, and are asked for again when it changes, and only then.
  */
 export function sliceOf(
   definition: Definition,
@@ -55,9 +56,9 @@ export function sliceOf(
     // Its title isn't its rows': renaming it asks for nothing.
     title: null,
     config: {
-      ...config,
+      ...uncolored(config),
       listens: { ...config.listens, widgets: config.listens.widgets.filter((x) => ids.has(x)) },
-    },
+    } as WidgetConfig,
   };
   const filters = definition.filters
     .filter((f) => f.field.column && reached.has(f.field.source) && !f.except.includes(id))
@@ -73,6 +74,14 @@ export function sliceOf(
   );
 }
 
+/** A config without what only colours it: its palette, and what a bar chart is coloured by. */
+function uncolored(config: DataConfig): DataConfig {
+  const rest: Record<string, unknown> = { ...config };
+  delete rest['palette'];
+  delete rest['colorBy'];
+  return rest as DataConfig;
+}
+
 function withWidgets(
   definition: Definition,
   widgets: Widget[],
@@ -80,8 +89,10 @@ function withWidgets(
   links: Definition['links'],
   filters: Definition['filters'],
 ): Definition {
+  const rest: Definition = { ...definition };
+  delete rest.palette;
   return {
-    ...definition,
+    ...rest,
     sources,
     links,
     filters,

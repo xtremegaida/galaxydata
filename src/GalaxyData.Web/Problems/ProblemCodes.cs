@@ -66,6 +66,9 @@ public static class ProblemCodes
    /// <summary>409: the owner has a dashboard of the name.</summary>
    public const string DashboardNameTaken = "dashboard-name-taken";
 
+   /// <summary>409: the owner has a palette of the name.</summary>
+   public const string PaletteNameTaken = "palette-name-taken";
+
    /// <summary>409: the dashboard was published again since it was read (its hash isn't the published one's).</summary>
    public const string DashboardChanged = "dashboard-changed";
 

@@ -94,6 +94,7 @@ public sealed partial class DefinitionRules(WidgetKinds kinds, DashboardSettings
       Layout(check, definition.Layout, "layout");
       Refresh(check, definition.Refresh, "refresh");
       if (definition.Public == null) { check.Error("public", "Say what a public dashboard's viewers may see"); }
+      check.Palette(definition.Palette, "palette");
       if (errors.Count > before) { return null; }
 
       DashboardDefinition canonical = Canonical(definition);
@@ -528,6 +529,12 @@ public sealed class DefinitionCheck(DashboardSettings settings, Dictionary<strin
    public void Limit(int limit, string path, int max)
    {
       if (limit < 1 || limit > max) { Error(path, $"Show 1 to {max:N0}"); }
+   }
+
+   /// <summary>A palette's id (none: the dashboard's, or the built-in colours). Whether it is there is said when the dashboard is shown, as palettes may be deleted after.</summary>
+   public void Palette(int? palette, string path)
+   {
+      if (palette is <= 0) { Error(path, "A palette's id is a positive number"); }
    }
 
    /// <summary>What every widget of a source's rows has: its source, conditions, and the widgets it listens to.</summary>

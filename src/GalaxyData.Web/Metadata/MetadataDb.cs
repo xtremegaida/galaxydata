@@ -2,9 +2,13 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Linq;
 using GalaxyData.Web.Hosting;
+using GalaxyData.Web.Palettes;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
@@ -52,6 +56,10 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
    public DbSet<DashboardShare> DashboardShares => Set<DashboardShare>();
 
    public DbSet<DashboardRevision> DashboardRevisions => Set<DashboardRevision>();
+
+   public DbSet<Palette> Palettes => Set<Palette>();
+
+   public DbSet<PaletteUse> PaletteUses => Set<PaletteUse>();
 
    public DbSet<UserChangeSet> ChangeSets => Set<UserChangeSet>();
 
@@ -190,6 +198,7 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
          dashboard.Property(d => d.PublicEnabledByName).HasMaxLength(64);
          dashboard.HasIndex(d => d.SharedWithEveryone);
          dashboard.HasMany(d => d.Shares).WithOne().HasForeignKey(s => s.DashboardId).OnDelete(DeleteBehavior.Cascade);
+         dashboard.HasMany(d => d.PaletteUses).WithOne().HasForeignKey(u => u.DashboardId).OnDelete(DeleteBehavior.Cascade);
          dashboard.Property(d => d.Version).IsConcurrencyToken();
       });
       modelBuilder.Entity<DashboardShare>(share =>
@@ -208,6 +217,23 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
          revision.HasOne<AppUser>().WithMany().HasForeignKey(r => r.PublishedById).OnDelete(DeleteBehavior.SetNull);
          revision.Property(r => r.PublishedByName).HasMaxLength(64);
          revision.Property(r => r.Note).HasMaxLength(200);
+      });
+      modelBuilder.Entity<Palette>(palette =>
+      {
+         palette.ToTable("Palettes");
+         palette.HasOne<AppUser>().WithMany().HasForeignKey(p => p.OwnerId).OnDelete(DeleteBehavior.SetNull);
+         palette.Property(p => p.OwnerName).HasMaxLength(64);
+         palette.Property(p => p.Name).HasMaxLength(NameLength).UseCollation("NOCASE");
+         palette.HasIndex(p => new { p.OwnerId, p.Name }).IsUnique();
+         palette.Property(p => p.Description).HasMaxLength(DescriptionLength);
+         palette.Property(p => p.Hash).HasMaxLength(64);
+         palette.Property(p => p.Version).IsConcurrencyToken();
+      });
+      modelBuilder.Entity<PaletteUse>(use =>
+      {
+         use.ToTable("PaletteUses");
+         use.HasKey(u => new { u.DashboardId, u.PaletteId });
+         use.HasIndex(u => u.PaletteId);
       });
       modelBuilder.Entity<UserChangeSet>(set =>
       {
@@ -254,14 +280,43 @@ public sealed class MetadataDb(DbContextOptions<MetadataDb> options) : DbContext
 
    public override int SaveChanges(bool acceptAllChangesOnSuccess)
    {
+      foreach (EntityEntry<Dashboard> entry in DashboardsToUse())
+      {
+         CollectionEntry<Dashboard, PaletteUse> uses = entry.Collection(d => d.PaletteUses);
+         if (entry.State != EntityState.Added && !uses.IsLoaded) { uses.Load(); }
+         Use(entry.Entity);
+      }
       NextVersions();
       return base.SaveChanges(acceptAllChangesOnSuccess);
    }
 
-   public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+   public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
    {
+      foreach (EntityEntry<Dashboard> entry in DashboardsToUse())
+      {
+         CollectionEntry<Dashboard, PaletteUse> uses = entry.Collection(d => d.PaletteUses);
+         if (entry.State != EntityState.Added && !uses.IsLoaded) { await uses.LoadAsync(cancellationToken); }
+         Use(entry.Entity);
+      }
       NextVersions();
-      return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+      return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+   }
+
+   /// <summary>Dashboards added, or whose working or published copy changed: their palettes' uses are written again.</summary>
+   private List<EntityEntry<Dashboard>> DashboardsToUse() =>
+   [
+      .. ChangeTracker.Entries<Dashboard>().Where(e => e.State == EntityState.Added
+         || (e.State == EntityState.Modified && (e.Property(d => d.WorkingJson).IsModified || e.Property(d => d.PublishedJson).IsModified))),
+   ];
+
+   private static void Use(Dashboard dashboard)
+   {
+      HashSet<int> named = [.. PaletteRefs.InJson(dashboard.WorkingJson), .. PaletteRefs.InJson(dashboard.PublishedJson)];
+      dashboard.PaletteUses.RemoveAll(u => !named.Contains(u.PaletteId));
+      foreach (int palette in named.Where(p => !dashboard.PaletteUses.Exists(u => u.PaletteId == p)))
+      {
+         dashboard.PaletteUses.Add(new PaletteUse { DashboardId = dashboard.Id, PaletteId = palette });
+      }
    }
 
    private void NextVersions()

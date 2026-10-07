@@ -2,6 +2,7 @@ import { NgComponentOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   Injector,
   computed,
@@ -334,6 +335,21 @@ export class WidgetFrame {
     () => isData(this.config()) && !!this.store.host()?.canViewQueries,
   );
 
+  /** The palette its chart is drawn with: its own, else the dashboard's (one that isn't there gives way); none, the theme's colours. */
+  private readonly palette = computed(() => {
+    const config = this.config();
+    if (!isChart(config)) {
+      return null;
+    }
+    const palettes = this.store.palettes();
+    const shared = this.store.definition().palette;
+    return (
+      (config.palette != null ? palettes.get(config.palette) : undefined) ??
+      (shared != null ? palettes.get(shared) : undefined) ??
+      null
+    );
+  });
+
   /** What reaches the widget: the same as JSON, nothing is asked again. */
   private readonly inputs = computed(() => this.store.inputsOf(this.widget().id), {
     equal: sameJson,
@@ -488,6 +504,16 @@ export class WidgetFrame {
 
   constructor() {
     effect(() => this.context.show(this.widget()));
+    effect(() => this.context.palette.set(this.palette()));
+    // On the editor's canvas, what a chart coloured goes to the store, which lists it in the chart's settings.
+    if (this.edit) {
+      effect(() => {
+        const id = this.widget().id;
+        const colors = this.context.colors();
+        untracked(() => this.store.setColors(id, colors));
+      });
+      inject(DestroyRef).onDestroy(() => this.store.setColors(this.widget().id, null));
+    }
     effect(() => this.context.editing.set(this.editing()));
     // On the canvas, slices are chosen only to try the dashboard out.
     effect(() => this.context.choosing.set(!this.edit || this.edit.interacting()));

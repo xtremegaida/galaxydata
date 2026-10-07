@@ -38,6 +38,7 @@ export function changesBetween(before: Definition | null, after: Definition): st
     ['layout', 'its layout'],
     ['refresh', 'when it refreshes'],
     ['public', 'what its public link shows'],
+    ['palette', "its charts' palette"],
   ];
   const others = parts
     .filter(([key]) => !sameJson(before[key], after[key]))

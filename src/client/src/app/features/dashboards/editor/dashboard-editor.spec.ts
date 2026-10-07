@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { dashboardOf, rowsOf, salesDefinition } from '../../../../testing/dashboards';
 import { FakeECharts, fakeEChartsProviders } from '../../../../testing/echarts';
-import { requestTo, settle } from '../../../../testing/http';
+import { eventually, requestTo, settle } from '../../../../testing/http';
 import { openPage, pageProviders, textOf, wordsOf } from '../../../../testing/pages';
 import { FakeResizeObserver } from '../../../../testing/resize';
 import { dashboardRoutes } from '../dashboards.routes';
@@ -94,6 +94,215 @@ describe('the dashboard editor', () => {
     expect(textOf(page.querySelector('gd-widget-panel .kind'))).toBe('Bar chart · by-status');
   });
 
+  it('draws its previews with the palettes it names, asking no rows again for them', async () => {
+    const { http, store, harness, page } = await open();
+    const slices = () =>
+      (
+        charts.chartIn(page.querySelector('[data-gd-cell="6,1,6,6"]')!)!.option.series as {
+          data: { itemStyle: { color: string } }[];
+        }[]
+      )[0].data.map((d) => d.itemStyle.color);
+    await eventually(harness, () => slices().length === 1);
+    const before = slices();
+    store.apply('Coloured', (d) => ({ ...d, palette: 5 }));
+    harness.detectChanges();
+    await settle();
+    (await requestTo(http, '/api/palettes/5')).flush({
+      id: 5,
+      name: 'Statuses',
+      description: null,
+      owner: 'ada',
+      isMine: true,
+      canEdit: true,
+      definition: {
+        colors: [{ light: '#121212', dark: null }],
+        assign: 'order',
+        distinct: true,
+        whenOut: 'repeat',
+        matching: {
+          ignoreCase: true,
+          ignoreWhitespace: false,
+          ignoreBrackets: false,
+          ignoreAccents: false,
+        },
+        overrides: [],
+      },
+      hash: 'h'.repeat(64),
+      usedBy: 1,
+      dashboards: [],
+      createdAt: '2026-03-01T08:00:00Z',
+      updatedAt: '2026-03-01T08:00:00Z',
+      version: 0,
+    });
+    await settle();
+    harness.detectChanges();
+    expect(await previews(http)).toEqual([]);
+    await eventually(harness, () => slices()[0] === '#121212');
+    expect(slices()).toEqual(['#121212']);
+    // One that isn't there: the colours as they were.
+    store.apply('Coloured', (d) => ({ ...d, palette: 6 }));
+    harness.detectChanges();
+    await settle();
+    (await requestTo(http, '/api/palettes/6')).flush(
+      { status: 404, code: 'not-found', title: 'Not found' },
+      { status: 404, statusText: 'Not found' },
+    );
+    await settle();
+    harness.detectChanges();
+    expect(await previews(http)).toEqual([]);
+    await eventually(harness, () => slices()[0] === before[0]);
+    expect(slices()).toEqual(before);
+  });
+
+  /** A palette as its own page reads it: Statuses, ada's, by order. */
+  function paletteDto(extra: Record<string, unknown> = {}) {
+    return {
+      id: 5,
+      name: 'Statuses',
+      description: null,
+      owner: 'ada',
+      isMine: true,
+      canEdit: true,
+      definition: {
+        colors: [
+          { light: '#121212', dark: null },
+          { light: '#343434', dark: null },
+        ],
+        assign: 'order',
+        distinct: true,
+        whenOut: 'repeat',
+        matching: {
+          ignoreCase: true,
+          ignoreWhitespace: false,
+          ignoreBrackets: false,
+          ignoreAccents: false,
+        },
+        overrides: [] as unknown[],
+      },
+      hash: 'h'.repeat(64),
+      usedBy: 2,
+      dashboards: [],
+      createdAt: '2026-03-01T08:00:00Z',
+      updatedAt: '2026-03-01T08:00:00Z',
+      version: 2,
+      ...extra,
+    };
+  }
+
+  /** The pie's slices' colours on the canvas. */
+  function pieColors(page: HTMLElement): string[] {
+    return (
+      charts.chartIn(page.querySelector('[data-gd-cell="6,1,6,6"]')!)!.option.series as {
+        data: { itemStyle: { color: string } }[];
+      }[]
+    )[0].data.map((d) => d.itemStyle.color);
+  }
+
+  /** Sets the chart's first label's colour (written) in the dialog, once `asked` has answered what it asks first. */
+  async function setFirstColor(
+    page: HTMLElement,
+    harness: { detectChanges(): void },
+    color: string,
+    asked: () => Promise<void> = async () => undefined,
+  ): Promise<Element> {
+    await eventually(harness, () => page.querySelector('gd-chart-colors li button') !== null);
+    page.querySelector<HTMLButtonElement>('gd-chart-colors li button')!.click();
+    await asked();
+    await eventually(harness, () =>
+      textOf(document.querySelector('gd-set-color-dialog')).includes('The colour of'),
+    );
+    const dialog = document.querySelector('gd-set-color-dialog')!;
+    const said = textOf(dialog);
+    const hex = dialog.querySelector<HTMLInputElement>('gd-color-field input[matinput]')!;
+    hex.value = color;
+    hex.dispatchEvent(new Event('input'));
+    harness.detectChanges();
+    button(dialog, 'Set colour').click();
+    return { textContent: said } as Element;
+  }
+
+  it("gives a chart's labels their colours from its settings, saved in its palette", async () => {
+    const { page, http, harness } = await open({ ...salesDefinition(), palette: 5 });
+    (await requestTo(http, '/api/palettes/5')).flush(paletteDto());
+    await eventually(harness, () => pieColors(page)[0] === '#121212');
+    page.querySelector<HTMLElement>('[data-gd-cell="6,1,6,6"] .cover')!.click();
+    await settle();
+    harness.detectChanges();
+    await eventually(harness, () => textOf(page.querySelector('gd-chart-colors')).includes('open'));
+    expect(textOf(page.querySelector('gd-chart-colors'))).toContain(
+      "The dashboard's palette, Statuses: colours set here are saved in it",
+    );
+    expect(wordsOf(page.querySelector('gd-chart-colors li'))).toBe('open, by order Set colour…');
+    // Read as it is now, then saved with the label's colour, at its version.
+    const dialog = await setFirstColor(page, harness, '#abcdef', async () =>
+      (await requestTo(http, '/api/palettes/5')).flush(paletteDto()),
+    );
+    expect(textOf(dialog)).toContain('Saved in Statuses, which 2 dashboards use.');
+    const saved = await requestTo(http, '/api/palettes/5', 'PUT');
+    expect(saved.request.body.version).toBe(2);
+    expect(saved.request.body.definition.overrides).toEqual([
+      { label: 'open', color: { light: '#abcdef', dark: null } },
+    ]);
+    saved.flush(
+      paletteDto({
+        version: 3,
+        hash: 'i'.repeat(64),
+        definition: {
+          ...paletteDto().definition,
+          overrides: saved.request.body.definition.overrides,
+        },
+      }),
+    );
+    // The chart follows, and says the colour is its label's own; the dashboard has no step to undo.
+    await eventually(harness, () => pieColors(page)[0] === '#abcdef');
+    expect(pieColors(page)).toEqual(['#abcdef']);
+    expect(wordsOf(page.querySelector('gd-chart-colors li'))).toBe('open, its own Set colour…');
+    expect(await previews(http)).toEqual([]);
+  });
+
+  it('makes a palette for a dashboard without one, as its charts were drawn', async () => {
+    const { page, http, harness, store } = await open();
+    page.querySelector<HTMLElement>('[data-gd-cell="6,1,6,6"] .cover')!.click();
+    await settle();
+    harness.detectChanges();
+    expect(textOf(page.querySelector('gd-chart-colors'))).toContain(
+      'No palette: the built-in colours. Setting a colour makes a palette for the dashboard.',
+    );
+    await setFirstColor(page, harness, '#abcdef');
+    const made = await requestTo(http, '/api/palettes', 'POST');
+    expect(made.request.body).toMatchObject({
+      name: 'Sales colours',
+      definition: {
+        assign: 'order',
+        distinct: false,
+        whenOut: 'neutral',
+        overrides: [{ label: 'open', color: { light: '#abcdef', dark: null } }],
+      },
+    });
+    made.flush(
+      paletteDto({ id: 7, name: 'Sales colours', definition: made.request.body.definition }),
+    );
+    await eventually(harness, () => store.draft().palette === 7);
+    expect(store.draft().palette).toBe(7);
+    expect(store.history.undoLabel()).toBe('Made a palette');
+    await eventually(harness, () => pieColors(page)[0] === '#abcdef');
+    expect(pieColors(page)).toEqual(['#abcdef']);
+  });
+
+  it('says when a palette it names is gone, in the Dashboard tab', async () => {
+    const { http, harness, store, page } = await open({ ...salesDefinition(), palette: 9 });
+    (await requestTo(http, '/api/palettes/9')).flush(
+      { status: 404, code: 'not-found', title: 'Not found' },
+      { status: 404, statusText: 'Not found' },
+    );
+    await eventually(harness, () => store.issues().some((i) => i.field === 'palette'));
+    const issue = store.issues().find((i) => i.field === 'palette')!;
+    expect(issue).toMatchObject({ severity: 'warning', place: { panel: 'refresh' } });
+    expect(issue.message).toContain("Its charts' palette is gone");
+    const tabs = [...page.querySelectorAll('[role=tab]')].map((t) => wordsOf(t));
+    expect(tabs).toContain('Dashboard');
+  });
+
   it('asks for a preview once edits of a widget pause, of that widget alone', async () => {
     const { http, store, harness } = await open();
     // Its title isn't in its slice: renaming it asks for nothing.
@@ -132,7 +341,7 @@ describe('the dashboard editor', () => {
 
   it("previews nothing of a widget still being made, and changes no other's preview", async () => {
     const { page, http, harness } = await open();
-    button(page.querySelector('.palette')!, 'Bar chart').click();
+    button(page.querySelector('.add-widgets')!, 'Bar chart').click();
     harness.detectChanges();
     // Nothing is chosen in it: the other widgets' slices don't hold it, so they aren't asked again.
     expect(await previews(http)).toEqual([]);
@@ -320,14 +529,14 @@ describe('the dashboard editor', () => {
     expect(router.url).toBe('/dashboards/1/edit');
   });
 
-  it('makes a new dashboard: a widget added from the palette, saved under its name, at its own address', async () => {
+  it('makes a new dashboard: a widget added, saved under its name, at its own address', async () => {
     const page = await openPage('/dashboards/new');
     page.harness.detectChanges();
     const store = page.harness.routeDebugElement!.injector.get(EditorStore);
     expect(textOf(page.page.querySelector('gd-editor-canvas'))).toContain(
       'A blank dashboard is a blank page',
     );
-    button(page.page.querySelector('.palette')!, 'Text').click();
+    button(page.page.querySelector('.add-widgets')!, 'Text').click();
     page.harness.detectChanges();
     expect(store.draft().widgets.map((w) => w.id)).toEqual(['text']);
     expect(store.draft().layout.items['text']).toEqual({ x: 0, y: 0, w: 12, h: 2 });

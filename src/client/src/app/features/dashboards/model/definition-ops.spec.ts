@@ -21,6 +21,7 @@ import {
   updateFilter,
   wouldCycle,
 } from './definition-ops';
+import { changesBetween } from './changes';
 import { sliceOf } from './slice';
 
 /** The sales dashboard, with a filter on each source, one of them not applying to the pie. */
@@ -211,6 +212,24 @@ describe("a widget's slice", () => {
     ).toHaveLength(3);
   });
 
+  it("doesn't change with its colours: the palettes, and what bars are coloured by", () => {
+    const definition = withFilters();
+    const before = sliceOf(definition, 'by-status');
+    const colored: Definition = {
+      ...definition,
+      palette: 3,
+      widgets: definition.widgets.map((w) =>
+        w.config.kind === 'bar'
+          ? { ...w, config: { ...w.config, palette: 4, colorBy: 'category' } }
+          : w,
+      ),
+    } as Definition;
+    const slice = sliceOf(colored, 'by-status');
+    expect(slice).toEqual(before);
+    expect('palette' in slice).toBe(false);
+    expect('palette' in slice.widgets[0].config).toBe(false);
+  });
+
   it('is the text widget alone for text', () => {
     expect(sliceOf(salesDefinition(), 'title').widgets.map((w) => w.id)).toEqual(['title']);
   });
@@ -247,5 +266,21 @@ describe('the history of edits', () => {
       undone++;
     }
     expect(undone).toBe(100);
+  });
+});
+
+describe('what publishing says changed', () => {
+  it("says when its charts' palette changed (a chart's own, with the chart)", () => {
+    const before = salesDefinition();
+    expect(changesBetween(before, { ...before, palette: 3 })).toEqual([
+      "Changed its charts' palette.",
+    ]);
+    const pie = before.widgets.map((w) =>
+      w.config.kind === 'pie' ? { ...w, config: { ...w.config, palette: 4 } } : w,
+    );
+    expect(changesBetween(before, { ...before, widgets: pie } as Definition)).toEqual([
+      'Changed Customers by city.',
+    ]);
+    expect(changesBetween(before, { ...before })).toEqual(['Nothing: it is as published.']);
   });
 });

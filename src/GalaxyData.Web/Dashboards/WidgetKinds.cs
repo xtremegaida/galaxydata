@@ -144,6 +144,7 @@ public sealed class PieKind : WidgetKind<PieConfig>
       {
          check.Error(path + ".other", "The rest adds up as one slice only for counts and sums");
       }
+      check.Palette(config.Palette, path + ".palette");
    }
 
    /// <summary>The largest slices, largest first (ties by the dimension); the total of every row's for "Other".</summary>
@@ -176,6 +177,11 @@ public sealed class BarKind : WidgetKind<BarConfig>
       check.Limit(config.Limit, path + ".limit", check.Settings.MaxChartRows);
       check.Label(config.XTitle, path + ".xTitle", required: false);
       check.Label(config.YTitle, path + ".yTitle", required: false);
+      check.Palette(config.Palette, path + ".palette");
+      if (config.ColorBy == BarColorBy.Category && (config.Series != null || config.Measures is { Count: > 1 }))
+      {
+         check.Error(path + ".colorBy", "Bars take their categories' colours with one measure and no series");
+      }
    }
 
    /// <summary>
@@ -235,6 +241,7 @@ public sealed class LineKind : WidgetKind<LineConfig>
       check.Limit(config.Limit, path + ".limit", check.Settings.MaxChartRows);
       check.Label(config.XTitle, path + ".xTitle", required: false);
       check.Label(config.YTitle, path + ".yTitle", required: false);
+      check.Palette(config.Palette, path + ".palette");
    }
 
    /// <summary>Points in the order of x (then the series).</summary>

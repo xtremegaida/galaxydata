@@ -483,6 +483,72 @@ namespace GalaxyData.Web.Metadata.Migrations
                     b.ToTable("OverlayNavigations", (string)null);
                 });
 
+            modelBuilder.Entity("GalaxyData.Web.Metadata.Palette", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DefinitionJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Hash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT")
+                        .UseCollation("NOCASE");
+
+                    b.Property<int?>("OwnerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OwnerName")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("Palettes", (string)null);
+                });
+
+            modelBuilder.Entity("GalaxyData.Web.Metadata.PaletteUse", b =>
+                {
+                    b.Property<int>("DashboardId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PaletteId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("DashboardId", "PaletteId");
+
+                    b.HasIndex("PaletteId");
+
+                    b.ToTable("PaletteUses", (string)null);
+                });
+
             modelBuilder.Entity("GalaxyData.Web.Metadata.PendingChange", b =>
                 {
                     b.Property<long>("Id")
@@ -882,6 +948,23 @@ namespace GalaxyData.Web.Metadata.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GalaxyData.Web.Metadata.Palette", b =>
+                {
+                    b.HasOne("GalaxyData.Web.Metadata.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("GalaxyData.Web.Metadata.PaletteUse", b =>
+                {
+                    b.HasOne("GalaxyData.Web.Metadata.Dashboard", null)
+                        .WithMany("PaletteUses")
+                        .HasForeignKey("DashboardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GalaxyData.Web.Metadata.PendingChange", b =>
                 {
                     b.HasOne("GalaxyData.Web.Metadata.UserChangeSet", null)
@@ -924,6 +1007,8 @@ namespace GalaxyData.Web.Metadata.Migrations
 
             modelBuilder.Entity("GalaxyData.Web.Metadata.Dashboard", b =>
                 {
+                    b.Navigation("PaletteUses");
+
                     b.Navigation("Shares");
                 });
 

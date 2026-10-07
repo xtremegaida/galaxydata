@@ -19,6 +19,7 @@ import { type Problem, ProblemCode, problemMessage, problemOf } from '../../../c
 import { Confirmer } from '../../../core/ui/confirmer';
 import { Message } from '../../../core/ui/message';
 import { changesBetween } from '../model/changes';
+import { palettesOf } from '../model/definition';
 
 export type DashboardDto = Schema<'DashboardDto'>;
 
@@ -72,6 +73,12 @@ export function refusalOf(problem: Problem, doing: string): string {
           <li>{{ change }}</li>
         }
       </ul>
+      @if (colored()) {
+        <p class="aside">
+          Its palettes' colours aren't part of a revision: changed in a palette, they show in every
+          dashboard using it at once.
+        </p>
+      }
       <mat-form-field class="note" subscriptSizing="dynamic">
         <mat-label>Note</mat-label>
         <input #note matInput maxlength="200" [value]="text()" (input)="text.set(note.value)" />
@@ -100,6 +107,11 @@ export function refusalOf(problem: Problem, doing: string): string {
     .changes {
       margin: 0 0 16px;
     }
+    .aside {
+      margin: 0 0 16px;
+      color: var(--mat-sys-on-surface-variant);
+      font: var(--mat-sys-body-small);
+    }
     .note {
       width: 100%;
     }
@@ -113,6 +125,12 @@ export class PublishDialog {
   protected readonly text = signal('');
   protected readonly busy = signal(false);
   protected readonly problem = signal<string | null>(null);
+  /** Whether it is drawn with palettes, which follow their own changes, not its revisions. */
+  protected readonly colored = computed(() => {
+    const working = this.data.dashboard.working;
+    return !!working && palettesOf(working).length > 0;
+  });
+
   protected readonly changes = computed(() =>
     changesBetween(
       this.data.dashboard.published,

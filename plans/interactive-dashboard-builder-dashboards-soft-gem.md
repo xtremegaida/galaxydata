@@ -374,7 +374,7 @@ Each milestone ends as the earlier ones did: a review (with probes), its finding
 - **Results:** 781 client tests, 376 server tests (and the engine's from D0), the smoke test's 16 steps; the initial bundle 727.64 kB (budget 750 kB); lint, formatting and the CSP check pass.
 
 **Known limitations**
-- Slice colors follow categories while a page is open, not across reloads.
+- Slice colors follow categories while a page is open, not across reloads (D9; palettes give labels lasting colours since D13: charts without one are as before, and colours by order are each chart's own).
 - Thin bars take precise clicks; the slice menu, the chart's table and the chips cover them.
 - The development server (`ng serve`) may load Angular twice after it discovers dependencies of lazy chunks (two `?v=` hashes; `NG0200`/`NG0203` in the console): the published build doesn't, and restarting doesn't always help. Check dashboards against `npm run build` or a publish.
 - The app spec's browse test (15 s) timed out once in a full run under load, and passed alone and in the run after.
@@ -410,3 +410,174 @@ Each milestone ends as the earlier ones did: a review (with probes), its finding
 - **Layout corner cases:** fast-check properties over the pure engine; overrides fall back to derivation when breakpoints change.
 - **Per-user request limits:** 4 in flight per page on the client; a batch data endpoint is the escape hatch if pages with many widgets feel slow.
 - **SQL Server's 2,100 parameters:** the engine already writes constants past the limit; the parser's depth (balanced ORs) and the query length are the real limits, guarded by the selection and value caps.
+
+---
+
+# Part 2 — Series palettes (D10–D13)
+
+## Context
+
+Chart colours today follow categories only while a page is open (D9's first known limitation): each chart widget keeps a `ColorMemory` (`charts/chart-options.ts`) handing out the eight `--gd-chart-*` colours in the order it first meets slices, series or measures, grey past the eighth. So "cancelled" is red in one chart and blue in the next, and changes after a reload. Users associate labels with colours, so we add **series palettes**: named sets of colours users create, which a dashboard picks as the default for its charts, with a per-chart override. A palette colours labels by their order, or by their label (a hash: the same label always gets the same colour), with per-label overrides and matching that can ignore case, whitespace, accents and text in brackets. A new palette starts from a built-in base, and overrides are added from the data.
+
+**Decisions confirmed with the user**
+- **A shared library:** anyone who reads data creates palettes; everyone signed in sees and uses every palette; only its owner and administrators change or delete it.
+- **Live references:** dashboards refer to palettes, so editing one recolours every dashboard using it, published copies included (the queries and layout stay as published).
+- **Dark mode:** each colour has a light value and an optional dark one (the light one otherwise); the bases come with both; the editor warns about low contrast on either surface.
+- **Bars by category:** a bar chart of one measure and no series gets a per-chart "Colour bars by category" (off by default), so a status's colour is the same in a bar chart as in a pie.
+
+**Out of scope:** per-chart overrides of single labels (overrides live in palettes, so they stay consistent), sequential and diverging palettes (magnitude and polarity), colours for tables' cells, colours from status meanings.
+
+---
+
+## 8. Palettes and matching
+
+A palette is a named, owned row holding one JSON definition, typed on both sides as the dashboard's is:
+
+```jsonc
+{
+  "colors": [ { "light": "#2a78d6", "dark": "#3987e5" }, { "light": "#eb6834", "dark": null } ],  // dark null: the light one
+  "assign": "label",           // "order": by first meeting in a chart; "label": by a hash of the label
+  "distinct": true,            // within a chart, what would share a colour with another takes the next one free
+  "whenOut": "repeat",         // past the last colour (order), or none free (distinct): "repeat" or "neutral" (grey)
+  "matching": { "ignoreCase": true, "ignoreWhitespace": false, "ignoreBrackets": false, "ignoreAccents": false },
+  "overrides": [ { "label": "cancelled", "color": { "light": "#e34948", "dark": "#e66767" } },
+                 { "label": null, "color": { "light": "#9a9ca3", "dark": null } } ]   // null: no value
+}
+```
+
+- **A new palette** colours by label, distinct, repeating when colours run out, ignoring case (its base gives the colours).
+- **Rules** (by JSON path, `definition.overrides[3].label`, as dashboards'): 1–32 colours, `#rrggbb` (lower case in the canonical form; no alpha, as fading a slice is opacity); at most 500 overrides; labels up to 200 characters; the JSON at most 64 KB (a dashboard's answer carries the palettes it names, §10.3); a label that normalises to nothing ("(EMEA)" with brackets ignored) is refused, and so is a second override matching what an earlier one matches (naming it). The canonical form and its SHA-256 hash as dashboards' (`DefinitionJson`'s options).
+- **A label's text** is what it is matched by: a value as the answer carries it (text as it is; int64 and decimals are text already; other numbers as ECMAScript's `Number::toString` writes them, which the server copies (`1e+21`, not .NET's `1E+21`); booleans `true` and `false`; dates and periods as ISO, so January's bucket is `2026-01-01`, and cyclic buckets as their numbers, Monday `1`), or a measure's label; no value (null) matches only the override for no value. Never the shown text ("Jan 2026", "Monday", "(no value)"), which depends on the locale; the editors show it beside the label.
+- **Normalisation** (`LabelMatching`, the same in C# and TypeScript): NFC; trimmed; brackets (text in `()`, `[]` and `{}` removed with them, nested, each closing only its own kind; one never closed, or a closing one never opened, kept as text); accents (NFD, combining marks removed, NFC again); case (each code point's simple lowercase: `Rune.ToLowerInvariant` in C#, the first code point of each code point's `toLowerCase()` in TypeScript, so `İ` and a final sigma agree); whitespace (removed altogether, so "Cape Town" matches "CapeTown"); trimmed again. Whitespace and trimming use one explicit class of characters on both sides (JavaScript's `\s` has U+FEFF and not U+0085; .NET's `char.IsWhiteSpace` the reverse). One fixture of cases (`tests/fixtures/palette-labels.json`: text, options, expected; and values with their label texts) is read by both test suites (the test project copies `*.json` fixtures too).
+
+## 9. Assigning colours (client, `charts/series-colors.ts`, pure)
+
+- **What is coloured:** pie slices (the dimension's values; "Other" is always grey and takes no colour); bars' and lines' series values when there is a series, else their measures by label; a bar chart's categories when it has `colorBy: "category"` (each bar its own `itemStyle.color`, merged with the selection's look; the legend is already hidden for one series, and the axis names them).
+- **Gather, then assign:** `coloredEntities(config, data)` lists what a chart colours, in the order the builders meet them today (`keyText([v])` for slices, `'measure:' + label`, `'series:' + keyText([v])`, and a new `'category:' + keyText([v])`), each with its label text and shown text. `ChartContext.colors` becomes an interface (`color(entity, theme)`): `ColorMemory` stays as the one without a palette (so its tests hold), and a palette's assignment is the other. The chart widget works the assignment out in a `computed` of the config, the rows, the palette, the scheme and the answer's `colors`, needing neither the chart's instance nor the selection, so the table view and a chart that couldn't load get the same colours. A property test: every entity a builder asks for is listed.
+- **Steps:** (1) overrides, by normalised text (embedded: the answer's `colors` instead, §10.4); they never move and take no slot. (2) The rest: **order**: slots by first meeting; **label**: a jump consistent hash (Lamping and Veach; `BigInt`) of the FNV-1a 64 of the normalised text's UTF-8, over the number of colours, so adding a colour at the end moves only the labels the new one takes (reordering or removing colours moves others: the palette editor says so). (3) **Distinct**: what would take a colour already taken in this chart (by an override, or by what came before: in order of meeting for order, of normalised text for label) takes the next colour not taken, in the palette's order. (4) None free, or past the last colour: `whenOut` (`repeat` cycles; `neutral` is grey).
+- **Kept while shown:** what a widget has coloured keeps its colour while it is shown (one memory per widget, started again when its palette, its palette's hash, `colorBy` or the coloured field changes), so a filter that leaves some out doesn't paint the others anew (the rule `ColorMemory` was written for); label colours and overrides also agree across charts, dashboards and reloads, but for what distinct moved.
+- **Dark:** `dark ?? light` under a dark scheme.
+- **No palette** (neither the chart nor the dashboard names one, or the one named is gone): exactly today's colours (the theme's eight by order, grey after).
+
+## 10. Server
+
+### 10.1 Model (migration `Palettes`)
+- **`Palettes`** (`IVersioned`): `Id`; `OwnerId?` (FK Users, `SET NULL`) and `OwnerName`; `Name` (200, `NOCASE`, unique per owner); `Description`; `DefinitionJson`, `Hash`; `CreatedAt`, `UpdatedAt`, `Version`.
+- **`PaletteUses`** (`PaletteId`, `DashboardId`): the palettes either copy of a dashboard names, so a palette can say how many dashboards use it. Kept by `MetadataDb.SaveChanges` beside `NextVersions()`, for dashboards added or whose `WorkingJson` or `PublishedJson` changed (create, save, publish, discard, restore and copy all go through it); the dashboard's key cascades; the palette's is an index only (a definition may name a palette that isn't there, which a foreign key would turn into a failed save), and deleting a palette deletes its uses. Ids aren't reused (SQLite's `AUTOINCREMENT`), so a dangling reference never finds a new palette.
+- **The dashboard's definition:** `DashboardDefinition.Palette: int?` (the charts' default; null: the built-in colours); `PieConfig`, `BarConfig` and `LineConfig` gain `Palette: int?` (null: the dashboard's); `BarConfig` gains `ColorBy: measure | category` (category only with one measure and no series). **Optional and left out when unset** (`JsonIgnore` when writing null or the default, optional in OpenAPI, so the client's types make them optional and its edits remove the key rather than set null): a definition saved before is written back byte for byte, with the same hash, so no dashboard gains "unpublished changes" (a test). The schema stays 1. Only the structure is checked on save (a positive id); a palette that isn't there is an **issue** when shown (`palette-missing`, a warning at `definition.palette` or the widget's `config.palette`: the default colours are used), worked out in `DashboardViews` (which has the database), never a refusal, as the catalog's are. Viewers' charts fall back without a word.
+
+### 10.2 Endpoints (`Features/Palettes/PaletteEndpoints.cs`, `/api/palettes`, `CanRead`)
+
+| Endpoint | What |
+|---|---|
+| `GET /` | every palette, as a summary (no overrides): id, name, description, owner, `isMine`, `canEdit`, colours (for swatches), assign, overrides' count, `usedBy` (a count: others' private dashboards aren't named), updated at |
+| `GET /{id}` | the palette with its definition, `usedBy`, the dashboards using it that the caller may see (by name), and its version |
+| `POST /` | `{name, description, definition}`; 409 `palette-name-taken` |
+| `PUT /{id}` | `{name, description, definition, version}`: 409 `concurrency-conflict`, `palette-name-taken`; saving nothing new changes nothing |
+| `DELETE /{id}?version=` | its owner or an administrator; dashboards using it fall back to the default colours (their editors say so) |
+| `GET /api/dashboards/{id}/palettes` | the palettes the copy the caller sees names, whole (the page reads them again when it refreshes) |
+
+- Its owner changes it; administrators change and delete others' too (and orphans'), written to the admin audit (`palette.updated`, `palette.deleted`, target `palette:{id}`, no labels in the details). A copy is a `POST` of another's content. Names are unique per owner, so pickers say whose a palette is.
+- Problem code `palette-name-taken` (`ProblemCodes`, the client's `ProblemCode`, `server.md`'s table).
+
+### 10.3 Dashboards' answers
+- `DashboardDto.Palettes`: the palettes the copies in the answer name, whole (everyone signed in may see every palette), so the page draws at once; `palette-missing` among its issues (§10.1).
+- The data endpoints ignore palettes and `colorBy` (the planner never reads them; inline definitions are checked for structure only), and the client's `sliceOf` leaves them out, so choosing colours never asks for rows again.
+
+### 10.4 Public
+- `PublicDashboardDto.Palettes`: the palettes named, by id, **with no overrides, name, description or owner** (colours, assign, distinct, whenOut, matching).
+- **Public widget data answers gain `colors`:** `[{label, light, dark}]`, keyed by **the label's text as it is in that answer** (never the override's, which with brackets or case ignored could say more: "Acme (codename Falcon)" matching "Acme"): its dimension and series values and the widget's measures' labels, never "Other", not for tables. Worked out in `PublicDashboardEndpoints` after `WidgetRunner.DataAsync` (so after the cache, whose key is the query alone, and the raw tables' keys left out) by `PaletteMatcher`: the normalisation, and each palette's overrides as a dictionary kept by its hash, the hash read with a cheap query each time. So cached answers stay shared, and an edit shows at the next read.
+- **The ETag** of `GET /api/public/dashboards/{token}`: a SHA-256 of the published hash, the dashboard's name and description (whose changes 304s keep today, a bug fixed here), and the named palettes' `id:hash` in order (`id:-` for one gone).
+- **The embed reads its dashboard again when it refreshes** (by hand or on its timer; a 304 when nothing changed), so its palettes and its answers' `colors` don't drift apart.
+- Tests: D4's check over every public answer gains a palette holding labels the dashboard doesn't show, its name and its owner; a 304 becomes a 200 after a palette's change and a dashboard's rename.
+
+### 10.5 Settings (`GalaxyData:Palettes`, checked at startup)
+`MaxColors` (32), `MaxOverrides` (500), `MaxDefinitionLength` (64 KB).
+
+**Built in D10**
+- **`Palettes/`:** `PaletteDefinition` (colours, assign, distinct, whenOut, matching, overrides); `LabelText` (`Of`: a value's text as answers carry it, numbers as ECMAScript writes them; `Normalize`: NFC, brackets as a stack, accents, case by code point (İ to i, which .NET's invariant casing keeps), white space removed or each run one space, trimmed); `PaletteRules` (by path; colours lower-cased); `PaletteStore` (palettes by id, kept by `id:hash`; `StoredPalette.Colors` gives the overrides of labels given, by those labels); `PaletteRefs`.
+- **Model** (migration `Palettes`): `Palettes`, `PaletteUses` (kept by `MetadataDb.SaveChanges` for dashboards added or whose copies changed; no foreign key to the palette).
+- **Definitions:** `palette` on the definition and on pie, bar and line configs, `colorBy` on bars, left out when unset (a definition written before is written the same); rules (positive ids; `colorBy: category` with one measure and no series).
+- **Endpoints:** `/api/palettes` (owners change theirs; administrators others' too, audited, without renaming them), `GET /api/dashboards/{id}/palettes`; `DashboardDto.palettes` and `palette-missing` warnings; public palettes without overrides or names, answers' `colors` by their own labels, and the tag of the published hash, name, description and palettes.
+- **Found:** the tag of a public dashboard didn't change with its name or description, so 304s kept old names (now part of it).
+- **Results:** 388 server tests (labels from the shared fixture, rules, the API by role, uses through every way a copy changes, a dangling palette, old definitions byte for byte, public colours and tags); the OpenAPI document only gains; 784 client tests, unchanged.
+
+## 11. Client
+
+### 11.1 Drawing
+- `charts/series-colors.ts` (§9: `normalizeLabel`, `labelText`, `coloredEntities`, the assignment); `ChartContext.colors` an interface; builders read colours from it; bars' `colorBy`.
+- **Palettes reach widgets through the store:** `DashboardStore.palettes` (id → palette); the frame works out a widget's palette (its own, else the dashboard's, else none; one that isn't there falls through) into `WidgetContext.palette`. The page fills the store from `DashboardDto.palettes` (and `GET /api/dashboards/{id}/palettes` when it refreshes), the embed from its DTO (`PublicHost` is unchanged; nothing in the view asks for `/api/palettes`, which the embed's spec with an `AuthStore` that throws keeps so), the editor from a `PaletteLibrary` (a root cache of `/api/palettes` summaries and the palettes read whole, updated when one is saved, so every chart using it recolours at once).
+- **Slices:** `sliceOf` leaves out the dashboard's palette and the widget's palette and `colorBy` (its comment says so; a property test: a palette's edits never change a slice).
+- **Swatches in the chart's table** (the table view's rows): the colour of each slice, series or bar, so the table says what the colours mean (and the smoke test reads them).
+
+**Built in D11**
+- **`charts/series-colors.ts`:** `normalizeLabel` and `labelText` (the shared fixture's cases, as the server); `fnv1a64`, `jumpHash`; `coloredEntities` (what a chart's options paint, in their order); `PaletteMemory` (overrides first, taking no slot; by order or label; distinct, a label matched the same sharing its colour; kept while shown, moved ones too); `ColorMemory` (moved here, as it was); `WidgetColors` (one per chart widget, started again when its palette's basis, `colorBy` or the coloured fields change); `AssignedColors`; `cellEntity`; `chartPalette`, `publicPalette`.
+- **Drawing:** `ChartContext.colors` is an interface; bars by category paint each item; the chart widget works its colours out in a `computed` (no chart or selection needed), and its table shows swatches (`RowsTable`'s `swatch`: cells of slices, series and categories, headers of measures; `aria-hidden`).
+- **Palettes to widgets:** `DashboardStore.palettes`, `WidgetContext.palette` (the chart's own, else the dashboard's, falling through what isn't there); the page from its answer and `…/palettes` as it refreshes (when it names any); the embed from its answer, reading itself again as it refreshes; the editor from `PaletteLibrary` (root: palettes read whole by id, summaries, `put` and `removed`). `sliceOf` leaves palettes and `colorBy` out; `palettesOf(definition)`.
+- **Results:** 803 client tests (fixture parity, hashes' properties, distinct and kept-while-shown properties, sources of colours, embedded overrides, what builders paint, bars by category, no palette as ever, swatches, the page's palettes read again on refresh, the embed's from its answers and no `/api/palettes`, the editor's previews with no rows asked again); lint, the CSP check; the initial bundle unchanged (727.64 kB).
+
+### 11.2 Palette pages (`features/dashboards/palettes/`, lazy)
+- **Routes** (before `:id` in `dashboards.routes.ts`): `dashboards/palettes`, `…/new` (`?copy=<id>`), `…/:id` (`unsavedChangesGuard`); the dashboards list links to them. The editor's add-widget panel, called "a palette" until now (`.palette` in `dashboard-editor.ts`, its spec, `client.md`), is renamed "Add widgets", so "palette" means one thing.
+- **List:** name, owner, swatches, by order or by label, how many overrides, used by how many; New, Copy, Delete (asking, with how many dashboards use it).
+- **Editor** (its own `EntityCatalog`, as the dashboard editor provides its own):
+  - name and description; a **base** when new (`palettes/bases.ts`): GalaxyData's eight with their dark steps (one constant, which `chart-theme.ts`'s fallbacks use too, with a test that `styles.scss` says the same), Okabe–Ito without its black and with its yellow darkened (as its own fails the lightness band on light surfaces), and Blank; each passes the checks below in a test;
+  - **colours**: a swatch, a hex field, the native colour input, an optional dark one; moved up and down (buttons, so the keyboard too), removed; moving or removing one says that labels coloured by label will change;
+  - by order or by label; distinct; when colours run out; **matching**;
+  - **overrides**: label (the shown text beside it where it differs: "Monday" by `1`), a colour of the palette's or its own, dark; two matching the same labels flagged as typed, the server's refusals placed by path;
+  - **labels from data**: an entity (`EntitySearch`) and a field (`FieldPicker`) give their most common values through the inline `POST /api/dashboards/filter-values` (a slice of `blankDefinition()` with that source and one visible values filter on the field: no new endpoint; 100 at most, searchable), each added with the colour it gets now, to change; periods' and measures' labels come from the dashboard editor instead (§11.3);
+  - a **preview**: the overrides' labels and those found, as swatches in light and dark, each saying where its colour comes from;
+  - **checks** (`charts/color-checks.ts`, pure, the WCAG helpers moved there from `charts.spec.ts`): each colour's contrast against both surfaces a chart sits on (`--mat-sys-surface` and `--mat-sys-surface-container-low`, the frame's) and against the neutral grey; OKLab ΔE of pairs under Machado's protan and deutan simulations and normal vision (neighbours for order; every pair for label, as any two may meet); as warnings naming the colours, tested against the dataviz validator's figures for today's palette;
+  - "Used by N dashboards: changes show in them at once" by Save; Ctrl+S saves at the version (409: read it again, or save as a copy).
+
+**Built in D12**
+- **Pages** (`palettes/`): `PaletteList` (found by name or owner; swatches, by label or order, overrides, uses; Copy, and Delete after asking with how many use it); `PaletteEditor` (`new`, `?copy=`, `:id`; a base when new; colours with the browser's picker or `#rrggbb` (`ColorField`), another for dark, moved and removed, saying when that recolours labels; how labels get them; matching, with a label to try; overrides, flagged as typed when another matches the same or nothing is left, with the palette's colours to pick; `DataLabels`; a preview, light and dark, with where each colour comes from; checks; Ctrl+S; refusals placed by path; 409 read again or saved as a copy; read-only, with Copy it, for others'; the unsaved-changes guard). The dashboards list links to them; the editor's add-widget panel is "Add widgets" (`.add-widgets`).
+- **Checks** (`charts/color-checks.ts`): WCAG contrast against both chart surfaces each scheme (`#faf9fd`, `#f4f3f6`; `#121316`, `#1a1b1f`), OKLCH chroma under 0.1 (reads as grey, as "Other"), and pairs' OKLab ΔE as seen (< 15) and with protan or deutan (< 6): neighbours by order, every pair by label; within 0.1 of the dataviz validator's figures for the application's eight and for Okabe–Ito.
+- **Bases** (`palettes/bases.ts`): GalaxyData (`galaxyColors`, now one constant for `chart-theme.ts`'s fallbacks, held to `styles.scss` by `scripts/chart-colors.test.mjs`), Okabe–Ito (six: no black or yellow; darker orange, sky blue and reddish purple for dark), Blank. Both pass every check by order in both schemes but light-mode contrast.
+- **Found:** the widget frame's surface (`#f4f3f6`) puts the application's orange under 3:1 too (2.90): four of its eight are, not three (the comment in `styles.scss` says so now). The classic categorical palettes fail the method's checks (ColorBrewer Set2 and Dark2; Okabe–Ito's yellow and black), so they aren't bases.
+- **Results:** 810 client tests (two of the browse tests timed out once in the full run under load, and passed alone, as D9's limitation says); lint, formatting, the CSP check; the palette editor a 36.7 kB chunk of its own; the initial bundle 728.08 kB.
+
+### 11.3 The dashboard editor
+- **The dashboard's palette:** the Refresh tab becomes **Dashboard** (refresh, and the charts' palette); `tabs`, `placeOf` and `IssuePlace` take `definition.palette` there. Per chart, in `ChartDisplay`: its palette (the dashboard's, or another, with owners), and for bars **Colour bars by category**.
+- **The chart's colours:** the frames report what their charts coloured to the store (`setColors(id, entries)`, as `setIssues`, equal by JSON, cleared when the frame goes): each entity's shown text, label text, colours and where they come from (override, label, order, moved by distinct, grey, no palette). The chart's settings list them (what the preview shows now, under the filters and slices of the moment), each with **Set colour…**: a dialog of the palette's colours or another, which adds or changes the override and saves the palette (its own version, not a step of the dashboard's undo; a 409 reads it again and asks again; it says how many dashboards use the palette). A chart with no palette offers to make one from the GalaxyData base and use it; a palette the user can't change offers a copy.
+- **Issues:** `palette-missing` from the server and from `PaletteLibrary` (a 404), with Go to.
+- **Publishing:** `changesBetween` adds `['palette', 'its colours']` (widgets' changes are caught already); the publish dialog says once that palettes' edits show without publishing.
+
+**Built in D13**
+- **Choosing palettes:** `PalettePicker` (every palette by name, with swatches and whose it is; listed again as it opens; one gone said so; a link to the palettes' pages). The Refresh tab is **Dashboard** (its refresh, and its charts' palette; `definition.palette` refusals go there); `ChartDisplay` has Colours (its palette, none being the dashboard's; for bars, Colour bars by their categories, with one measure and no series, else off and said why; `BarSettings` drops `colorBy` when a series or measure comes).
+- **A chart's colours** (`ChartColors`, in the widget's settings): what its preview colours (`WidgetContext.colors`, set by the chart, to `DashboardStore.colors` by the editor's frames, gone with them), each with where its colour comes from and **Set colour…** (`SetColorDialog`: the palette's colours, or one written or picked, and another for dark, which follows a new colour till chosen); kept in the palette at its version (read again first; a 409 reads it again and asks again; `withOverride` replaces what matches the label); a chart with no palette makes one for the dashboard (its colours as they were: by order, not apart, grey after; named free of the user's), another's palette is copied as theirs (for the chart, or the dashboard, as it was named). Not steps of the dashboard's history but for naming the new palette. Colours carry their pair (`EntityColor.pair`), so the dialog starts from the colour light and dark, as `#rrggbb` (`hexOf`).
+- **Issues:** a palette named that is gone (`PaletteLibrary` reads it as none) is the editor's own warning, with Go to; the server's palette issues give way to it. The publish dialog says when palettes aren't part of the revision.
+- **Smoke test** (step 16): a palette made from the application's colours with its own for `open` and `Johannesburg`; chosen as the dashboard's charts', bars by category; published, the bar chart's and pie's tables' swatches are those colours; public, each chart's rows carry only their own labels' colours. All 17 steps pass.
+- **Found in the browser and the smoke test:** a label added to a palette took the first colour's dark step, so a colour chosen for it was another on dark backgrounds (it is the same now till one is chosen; the dialog's too); an empty new label said nothing was left of it to match (it asks for the label now), and the server's refusal stayed on screen after the label was changed (refusals go with the next change); the dialog started from the colour as the page read it, `rgb(…)`, which its field refused; the chart's colours squeezed Set colour… out of the panel; "1 rows"; new dashboards' and palettes' titles said "New … · New …".
+- **Results:** 815 client tests; 388 server tests; the smoke test's 17 steps; lint, formatting, the CSP check; the initial bundle 728.08 kB, the dashboard editor 81.7 kB and the palette editor 34.5 kB chunks. D6's test of View query, which waited a set number of turns for the code editor and the navigation, failed once in a full run under load: it waits for them now.
+
+**Known limitations (palettes)**
+- A page open while a palette changes follows it when it refreshes, or is reloaded.
+- By label with distinct, labels that would share a colour are moved apart by the set of labels a chart shows: two charts showing different labels may give such a label different colours (overrides settle it). By order, each chart has its own colours.
+- Labels of periods and measures are found from a chart's colours in the dashboard editor, not among the data's labels on a palette's page.
+- Eight colours by label always warn in the checks: any two may meet, and no eight colours are all far apart (the dataviz method's own finding).
+
+## 12. Milestones
+
+| # | Scope | Exit criteria |
+|---|---|---|
+| D10 | Server: palettes (model, migration, rules, canonical hash, endpoints, audit, uses); the definition's optional references and `colorBy`; `palette-missing`; `DashboardDto.Palettes` and `…/palettes`; public palettes, `colors` and the ETag; `PaletteMatcher` and label texts (§8, §10) | Rules by path; normalisation and label texts from the shared fixture; owners, administrators and readers; name and version conflicts; uses through create, save, publish, discard, restore, copy and delete, and references to palettes that aren't there; a definition saved before written back byte for byte; public answers' `colors` keyed by their own labels, holding no override, name or owner they don't show; 304s turning to 200s after a palette's change and a rename; the OpenAPI snapshot (the new fields optional) and `npm run api`; `PolicyTests` and the role matrix (`/api/palettes` for every reader; nothing new anonymous). The client compiles unchanged |
+| D11 | Client: `series-colors.ts`, `ChartContext.colors`, builders, `colorBy`; palettes through the store and `WidgetContext` on the page, the embed (reading its DTO again on refresh) and the editor's previews; `PaletteLibrary`; `sliceOf`; swatches in the chart's table (§9, §11.1) | Normalisation and label texts from the fixture (imported from `tests/fixtures`, checked first); FNV-1a and jump hash vectors, and a colour added moving about 1/n of labels (fast-check); distinct independent of rows' order, and kept while shown through a filter (fast-check); overrides first and taking no slot; `whenOut`; dark; no palette as today (the existing colour tests unchanged); every entity a builder asks for listed; the embed from `colors` and no `/api/palettes` request; a palette's edit asking for no rows |
+| D12 | Client: the palette pages: list, editor, bases, checks, labels from data; the add-widget panel renamed (§11.2) | Editing through harnesses; bases pass the checks; the checks against the validator's figures; labels found and added with their colours; duplicates flagged, refusals placed; Ctrl+S and 409s; the unsaved-changes guard |
+| D13 | Client: the Dashboard tab, the charts' palette and Colour bars by category, the chart's colours with Set colour…, issues, `changesBetween`; the smoke test; docs (§11.3) | A chart's labels and Set colour… saving the palette and recolouring the others using it; a chart without a palette making one; a palette the user can't change; the smoke test's palette step; `server.md` (palettes, endpoints, problem code, audit, public colours and the ETag), `client.md` (the pages, the editor, colours by label), the README's description; D9's colour limitation replaced by what is left |
+
+**Files mostly touched.** Server: `Dashboards/Definition.cs`, `DefinitionRules.cs`, `PublicDashboards.cs`; `Features/Dashboards/DashboardEndpoints.cs` (`DashboardViews`), `PublicDashboardEndpoints.cs`; new `Palettes/` (definition, rules, `LabelMatching`, `PaletteMatcher`) and `Features/Palettes/PaletteEndpoints.cs`; `Metadata/Entities.cs`, `MetadataDb.cs`, a migration; `Hosting/GalaxyDataOptions.cs`, `WebApp.cs`; `Problems/ProblemCodes.cs`. Client (`features/dashboards/`): `charts/chart-options.ts`, `chart-theme.ts`, new `series-colors.ts`, `color-checks.ts`; `widgets/chart-widget.ts`; `view/widget-frame.ts`; `model/widget-context.ts`, `slice.ts`, `changes.ts`, `widget-defaults.ts`; `state/dashboard-store.ts`; `dashboard-page.ts`, `embed/embed-page.ts`; `editor/kinds/kind-settings.ts`, `editor/panels/layout-panels.ts`, `editor/dashboard-editor.ts`, `editor-store.ts`; new `palettes/`; `dashboards.routes.ts`, `list/dashboard-list.ts`. Tests: `tests/fixtures/palette-labels.json` (and the test project's copy rule), `tests/e2e/smoke.spec.ts`.
+
+## 13. Verification
+- **Server:** `dotnet test tests/GalaxyData.Web.Tests` (new `Palettes/PaletteApiTests`, `PaletteRulesTests`; `DashboardApiTests`, `DefinitionRulesTests`, `PublicDashboardApiTests` extended). After API changes: `GDQ_ACCEPT_SNAPSHOTS=1` for the OpenAPI snapshot (`tests/GalaxyData.Web.Tests/Hosting/Snapshots`), then `npm run api` in `src/client`.
+- **Client:** `npm test`, `npm run lint`, `npm run build` (budgets: the palette pages are a lazy chunk, and the initial bundle shouldn't grow; the CSP check).
+- **End to end** (`npm run e2e`, a step after 15): a palette made from the GalaxyData base, by label, with an override for `open`; chosen as the dashboard's palette, the bar chart coloured by category; the pie's and the bar chart's table swatches give `open` the override's colour; the chart's colours in the editor say "override"; published and reloaded, the same; framed, the embed's data answers carry only the labels they show; the console says nothing all along.
+- **By hand:** light and dark; a palette with more labels than colours, by order (repeat and grey) and by label (distinct); a palette edited while a dashboard using it is open (it follows on refresh); a palette deleted while in use.
+
+## 14. Risks
+- **Label mode collides** (eight colours, six slices: most pies would share one): `distinct` on by default, overrides, and the checks' all-pairs warning.
+- **C# and TypeScript normalising differently:** one shared fixture, with accents, `İ`, sigma, brackets nested, mismatched and unbalanced, whitespace of several kinds (U+00A0, U+0085, U+FEFF), and numbers' texts.
+- **A palette's edit changes published dashboards** without publishing: chosen with the user; the palette editor says how many dashboards use it, and the publish dialog that palettes follow.
+- **Leaks:** public views get no override, palette name or owner; answers only the colours of the labels they show, by their own text.
+- **Hashes of saved dashboards:** the new fields are left out when unset, tested byte for byte, so nothing reads as changed.
+- **Cycling repeats colours** (the dataviz method says never cycle): `whenOut: neutral` is there, the bases have at most eight colours, and pies keep their limit and "Other".
+- **Pages open while a palette changes:** they follow when they refresh, or when reloaded; `client.md` says so.

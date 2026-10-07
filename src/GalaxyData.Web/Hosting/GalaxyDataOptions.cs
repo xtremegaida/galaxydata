@@ -58,6 +58,10 @@ public sealed class GalaxyDataOptions
    /// <summary>Dashboards: their sizes, revisions, refreshing, caching, and public ones.</summary>
    [ValidateObjectMembers]
    public DashboardSettings Dashboards { get; set; } = new();
+
+   /// <summary>Palettes of charts' colours: their sizes.</summary>
+   [ValidateObjectMembers]
+   public PaletteSettings Palettes { get; set; } = new();
 }
 
 /// <summary><c>*</c>, or sites written as browsers write origins (<c>https://example.com</c>, <c>https://*.example.com</c>), apart by spaces.</summary>
@@ -153,6 +157,20 @@ public sealed class DashboardSettings
    /// <summary>The queries a public dashboard may have running at once, for all its viewers (rows kept don't count).</summary>
    [Range(1, 1000)]
    public int PublicQueriesPerDashboard { get; set; } = 4;
+}
+
+/// <summary>How large palettes may be. A dashboard's answer carries the palettes it names, so they are kept small.</summary>
+public sealed class PaletteSettings
+{
+   [Range(1, 256)]
+   public int MaxColors { get; set; } = 32;
+
+   [Range(0, 10_000)]
+   public int MaxOverrides { get; set; } = 500;
+
+   /// <summary>The longest a palette's definition may be, as JSON (characters).</summary>
+   [Range(1024, 4 * 1024 * 1024)]
+   public int MaxDefinitionLength { get; set; } = 64 * 1024;
 }
 
 public sealed class SecuritySettings

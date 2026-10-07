@@ -10,8 +10,10 @@ using GalaxyData.Web.Auth;
 using GalaxyData.Web.Catalog;
 using GalaxyData.Web.Dashboards;
 using GalaxyData.Web.Features.Audit;
+using GalaxyData.Web.Features.Palettes;
 using GalaxyData.Web.Hosting;
 using GalaxyData.Web.Metadata;
+using GalaxyData.Web.Palettes;
 using GalaxyData.Web.Problems;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -72,14 +74,14 @@ public sealed record DashboardPermissionsDto(bool Edit, bool Publish, bool Share
 
 /// <summary>
 /// A dashboard: the working copy (its owner's; for administrators, a deleted owner's), the published copy, who sees
-/// it and its public link (for its owner and administrators), what the user may do, and what doesn't fit the catalog
-/// in the copy they see (the working one if they may edit it).
+/// it and its public link (for its owner and administrators), what the user may do, what doesn't fit the catalog
+/// in the copy they see (the working one if they may edit it), and the palettes its copies name.
 /// </summary>
 public sealed record DashboardDto(int Id, string Name, string? Description, string Owner, bool IsMine,
                                   DashboardDefinition? Working, string? WorkingHash,
                                   DashboardDefinition? Published, string? PublishedHash, int? PublishedNumber, DateTime? PublishedAt, string? PublishedBy,
                                   bool HasUnpublishedChanges, DashboardSharingDto? Sharing, DashboardPublicDto? Public, DashboardPermissionsDto Can,
-                                  IReadOnlyList<DashboardIssue> Issues, DateTime CreatedAt, DateTime UpdatedAt, int Version);
+                                  IReadOnlyList<DashboardIssue> Issues, IReadOnlyList<ChartPaletteDto> Palettes, DateTime CreatedAt, DateTime UpdatedAt, int Version);
 
 public sealed record DashboardRevisionSummaryDto(int Number, DateTime PublishedAt, string PublishedBy, string? Note, bool IsPublished);
 
@@ -107,6 +109,8 @@ public static class DashboardEndpoints
       dashboards.MapPost("/", CreateAsync).WithName("CreateDashboard").ProducesValidationProblem().ProducesProblem(StatusCodes.Status409Conflict);
       dashboards.MapGet("/people", PeopleAsync).WithName("FindPeople").WithSummary("Users to share dashboards with, found by name");
       dashboards.MapGet("/{id:int}", GetAsync).WithName("GetDashboard").ProducesProblem(StatusCodes.Status404NotFound);
+      dashboards.MapGet("/{id:int}/palettes", PalettesAsync).WithName("GetDashboardPalettes").WithSummary("The palettes the copies the user sees name, as they are now")
+         .ProducesProblem(StatusCodes.Status404NotFound);
       dashboards.MapPut("/{id:int}", UpdateAsync).WithName("UpdateDashboard").WithSummary("Saves the working copy")
          .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
       dashboards.MapDelete("/{id:int}", DeleteAsync).WithName("DeleteDashboard")
@@ -174,6 +178,14 @@ public static class DashboardEndpoints
    private static async Task<Results<Ok<DashboardDto>, ProblemHttpResult>> GetAsync(int id, ClaimsPrincipal me, MetadataDb db, DashboardViews views,
       CancellationToken cancellationToken) =>
       await FindAsync(db, me, id, cancellationToken) is { } row ? TypedResults.Ok(await views.DtoAsync(db, row, me, cancellationToken)) : NoSuchDashboard(id);
+
+   private static async Task<Results<Ok<List<ChartPaletteDto>>, ProblemHttpResult>> PalettesAsync(int id, ClaimsPrincipal me, MetadataDb db,
+      CancellationToken cancellationToken)
+   {
+      if (await FindAsync(db, me, id, cancellationToken) is not { } row) { return NoSuchDashboard(id); }
+      (DashboardDefinition? working, DashboardDefinition? published) = DashboardViews.Copies(row, me);
+      return TypedResults.Ok(await DashboardViews.PalettesAsync(db, [working, published], cancellationToken));
+   }
 
    private static async Task<Results<Ok<DashboardDto>, ValidationProblem, ProblemHttpResult>> UpdateAsync(int id, UpdateDashboardRequest request, ClaimsPrincipal me,
       MetadataDb db, DefinitionRules rules, TimeProvider clock, DashboardViews views, CancellationToken cancellationToken)
@@ -447,7 +459,7 @@ public static class DashboardEndpoints
    /// The dashboards the user sees: theirs; those published and shared with them or with everyone; and for
    /// administrators those shared, public, or whose owner was deleted.
    /// </summary>
-   private static IQueryable<Dashboard> Visible(MetadataDb db, ClaimsPrincipal me)
+   internal static IQueryable<Dashboard> Visible(MetadataDb db, ClaimsPrincipal me)
    {
       int id = me.RequiredUserId();
       bool admin = IsAdmin(me);
@@ -623,17 +635,50 @@ public sealed class DashboardViews(CatalogService catalogs, WidgetKinds kinds, T
          RevokePublic: manages && row.PublicToken != null,
          Delete: manages,
          Copy: working || row.PublishedJson != null);
-      DashboardDefinition? workingCopy = working ? DefinitionJson.Read(row.WorkingJson) : null;
-      DashboardDefinition? published = row.PublishedJson == null ? null : DefinitionJson.Read(row.PublishedJson);
-      IReadOnlyList<DashboardIssue> issues = [];
+      (DashboardDefinition? workingCopy, DashboardDefinition? published) = Copies(row, me);
+      List<ChartPaletteDto> palettes = await PalettesAsync(db, [workingCopy, published], cancellationToken);
+      List<DashboardIssue> issues = [];
       if ((workingCopy ?? published) is { } shown)
       {
          CatalogState state = await catalogs.GetAsync(cancellationToken);
-         issues = DashboardChecks.Issues(shown, state.Catalog, kinds, DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime));
+         issues.AddRange(DashboardChecks.Issues(shown, state.Catalog, kinds, DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime)));
+         issues.AddRange(PaletteIssues(shown, [.. palettes.Select(p => p.Id)]));
       }
       return new DashboardDto(row.Id, row.Name, row.Description, row.OwnerName, mine,
          workingCopy, working ? row.WorkingHash : null,
          published, row.PublishedHash, row.PublishedNumber, row.PublishedAt, row.PublishedByName,
-         working && row.WorkingHash != row.PublishedHash, sharing, link, can, issues, row.CreatedAt, row.UpdatedAt, row.Version);
+         working && row.WorkingHash != row.PublishedHash, sharing, link, can, issues, palettes, row.CreatedAt, row.UpdatedAt, row.Version);
+   }
+
+   /// <summary>The copies the user sees: the working one if they may edit it, and the published one.</summary>
+   internal static (DashboardDefinition? Working, DashboardDefinition? Published) Copies(Dashboard row, ClaimsPrincipal me) =>
+      (DashboardEndpoints.SeesWorking(row, me) ? DefinitionJson.Read(row.WorkingJson) : null, row.PublishedJson == null ? null : DefinitionJson.Read(row.PublishedJson));
+
+   /// <summary>The palettes the copies name that are there (everyone signed in may see every palette).</summary>
+   internal static async Task<List<ChartPaletteDto>> PalettesAsync(MetadataDb db, IEnumerable<DashboardDefinition?> copies, CancellationToken cancellationToken)
+   {
+      SortedSet<int> ids = [];
+      foreach (DashboardDefinition? copy in copies) { ids.UnionWith(PaletteRefs.Of(copy)); }
+      if (ids.Count == 0) { return []; }
+      List<Palette> rows = await db.Palettes.AsNoTracking().Where(p => ids.Contains(p.Id)).OrderBy(p => p.Id).ToListAsync(cancellationToken);
+      return [.. rows.Select(p => new ChartPaletteDto(p.Id, p.Name, p.OwnerName, PaletteJson.Read(p.DefinitionJson), p.Hash))];
+   }
+
+   /// <summary>Palettes named that aren't there (deleted since): their charts are drawn with the next there is, or the built-in colours.</summary>
+   private static IEnumerable<DashboardIssue> PaletteIssues(DashboardDefinition shown, HashSet<int> found)
+   {
+      if (shown.Palette is { } palette && !found.Contains(palette))
+      {
+         yield return new DashboardIssue(IssueSeverity.Warning, $"Its palette (#{palette}) is gone: its charts are drawn with the built-in colours", null, "palette");
+      }
+      for (int i = 0; i < shown.Widgets.Count; i++)
+      {
+         if (PaletteRefs.Own(shown.Widgets[i].Config) is { } own && !found.Contains(own))
+         {
+            string instead = shown.Palette is { } shared && found.Contains(shared) ? "the dashboard's palette" : "the built-in colours";
+            yield return new DashboardIssue(IssueSeverity.Warning, $"Its palette (#{own}) is gone: it is drawn with {instead}", shown.Widgets[i].Id,
+               $"widgets[{i}].config.palette");
+         }
+      }
    }
 }

@@ -25,7 +25,8 @@ html {
 
   // Charts' colors, for series in this order (never cycled): each step chosen for its scheme's surface, adjacent
   // ones told apart with the common color-vision deficiencies (checked with the dataviz skill's validator against
-  // #faf9fd and #121316). Slots 3 to 5 are under 3:1 on light, so charts have labels and a table view.
+  // #faf9fd and #121316). Slots 3 to 5 are under 3:1 on light (and 2, on a widget's frame, #f4f3f6), so charts
+  // have labels and a table view.
   --gd-chart-1: light-dark(#2a78d6, #3987e5);
   --gd-chart-2: light-dark(#eb6834, #d95926);
   --gd-chart-3: light-dark(#1baf7a, #199e70);
