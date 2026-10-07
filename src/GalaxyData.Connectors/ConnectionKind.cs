@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using GalaxyData.Query.Catalog;
 
-namespace GalaxyData.Web.Connections;
+namespace GalaxyData.Connectors;
 
 public enum FieldType
 {
@@ -102,6 +104,9 @@ public abstract class ConnectionKind
    public abstract string Id { get; }
 
    public abstract string DisplayName { get; }
+
+   /// <summary>The icon sources of the kind are shown with: a Material Symbols name.</summary>
+   public virtual string Icon => "database";
 
    /// <summary>Whether the settings may be edited as a connection string.</summary>
    public virtual bool SupportsRaw => true;
@@ -214,6 +219,28 @@ public abstract class ConnectionKind
 
    /// <summary>The connection string, with pooling off where the provider pools.</summary>
    protected virtual string Unpooled(string connectionString) => connectionString;
+
+   /// <summary>
+   /// The engine's source for a connection of this kind, as its options set it: whether its foreign keys are trusted,
+   /// and what else the kind's options say (SQLite's checking of foreign keys as changes are written).
+   /// </summary>
+   public virtual SourceInfo Configure(SourceInfo source, IReadOnlyDictionary<string, string> options)
+   {
+      ArgumentNullException.ThrowIfNull(source);
+      ArgumentNullException.ThrowIfNull(options);
+      return source with { TrustForeignKeys = Flag(options, TrustForeignKeysOption) ?? false };
+   }
+
+   /// <summary>An option that is true or false; null when it isn't set, or is neither.</summary>
+   protected static bool? Flag(IReadOnlyDictionary<string, string> options, string name)
+   {
+      ArgumentNullException.ThrowIfNull(options);
+      return options.TryGetValue(name, out string? value) && bool.TryParse(value, out bool flag) ? flag : null;
+   }
+
+   /// <summary>A count of things, as people say it: <c>1 table</c>, <c>3 tables</c>.</summary>
+   protected static string Things(long count, string one, string many) =>
+      count == 1 ? $"1 {one}" : $"{count.ToString(CultureInfo.InvariantCulture)} {many}";
 
    /// <summary>Connects with <paramref name="connectionString"/> and runs a statement; what was found, or the failure thrown.</summary>
    public virtual async Task<string> ProbeAsync(string connectionString, CancellationToken cancellationToken)

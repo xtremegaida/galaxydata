@@ -7,9 +7,12 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using GalaxyData.Connectors;
+using GalaxyData.Connectors.BuiltIn;
 using GalaxyData.Query.Binding;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Dml;
+using GalaxyData.Query.DuckDb;
 using GalaxyData.Query.Execution;
 using GalaxyData.Query.Explain;
 
@@ -29,20 +32,20 @@ internal sealed class Settings
 }
 
 /// <summary>
-/// An engine over the command line's sources, with its parameters and a merge engine for queries that combine
-/// sources (and to keep the sheets of Excel folders in).
+/// An engine over the command line's sources, opened by the connectors, with its parameters and a merge engine for
+/// queries that combine sources (and to keep the sheets of Excel folders in).
 /// </summary>
 internal sealed class Session : IAsyncDisposable
 {
-   private readonly DuckDb.DuckDbMergeEngine merge;
-   private readonly Excel.ExcelSourceProvider excel;
+   private readonly DuckDbMergeEngine merge;
+   private readonly ConnectorSet connectors;
 
-   private Session(CliSources sources, QueryEngine engine, DuckDb.DuckDbMergeEngine merge, Excel.ExcelSourceProvider excel, QueryParameters parameters)
+   private Session(CliSources sources, QueryEngine engine, DuckDbMergeEngine merge, ConnectorSet connectors, QueryParameters parameters)
    {
       Sources = sources;
       Engine = engine;
       this.merge = merge;
-      this.excel = excel;
+      this.connectors = connectors;
       Parameters = parameters;
    }
 
@@ -66,31 +69,29 @@ internal sealed class Session : IAsyncDisposable
       CatalogOverlay overlay = overlayFile == null
          ? CatalogOverlay.Empty
          : CatalogOverlay.FromJson(await File.ReadAllTextAsync(overlayFile.FullName, cancellationToken));
-      List<SourceSpec> specs = sources.Select(SourceSpec.Parse).ToList();
-      DuckDb.DuckDbMergeEngine merge = new(new DuckDb.DuckDbMergeOptions { MemoryLimit = mergeMemory });
-      Excel.ExcelSourceProvider excel = new(merge);
+      DuckDbMergeEngine merge = new(new DuckDbMergeOptions { MemoryLimit = mergeMemory });
+      ConnectorSet connectors = BuiltInConnectors.Create(new ConnectorContext(merge));
       CliSources opened;
       try
       {
-         opened = await CliSources.OpenAsync(specs, excel, (writable ?? []).ToHashSet(StringComparer.Ordinal), cancellationToken);
+         List<SourceSpec> specs = sources.Select(s => SourceSpec.Parse(s, connectors)).ToList();
+         opened = await CliSources.OpenAsync(specs, connectors, (writable ?? []).ToHashSet(StringComparer.Ordinal), cancellationToken);
       }
       catch
       {
-         excel.Dispose();
+         connectors.Dispose();
          merge.Dispose();
          throw;
       }
       foreach (string warning in opened.Warnings) { await error.WriteLineAsync("gdq: warning: " + warning); }
-      QueryEngine engine = new(opened.BuildCatalog(overlay), opened,
-         [Sqlite.SqliteSourceProvider.Instance, DuckDb.DuckDbSourceProvider.Instance, PostgreSql.PostgreSqlSourceProvider.Instance,
-          SqlServer.SqlServerSourceProvider.Instance, excel], merge, new QueryEngineOptions { Timeout = timeout });
-      return new Session(opened, engine, merge, excel, values);
+      QueryEngine engine = new(opened.BuildCatalog(overlay), opened, connectors.Providers, merge, new QueryEngineOptions { Timeout = timeout });
+      return new Session(opened, engine, merge, connectors, values);
    }
 
    public async ValueTask DisposeAsync()
    {
       await Sources.DisposeAsync();
-      excel.Dispose();
+      connectors.Dispose();
       merge.Dispose();
    }
 }
@@ -98,11 +99,19 @@ internal sealed class Session : IAsyncDisposable
 /// <summary>The <c>gdq</c> command line: run, sql, explain, schema, repl, and changes and script to write data.</summary>
 internal static class GdqApp
 {
+   /// <summary>The kinds of source the connectors take, for the help: a merge engine nothing opens, and connectors on it.</summary>
+   private static string Kinds()
+   {
+      using DuckDbMergeEngine merge = new();
+      using ConnectorSet connectors = BuiltInConnectors.Create(new ConnectorContext(merge));
+      return SourceSpec.Describe(connectors);
+   }
+
    public static async Task<int> RunAsync(string[] args, TextReader input, TextWriter output, TextWriter error, CancellationToken cancellationToken)
    {
       Option<string[]> sources = new("--source", "-s")
       {
-         Description = "A source as alias=kind:target, e.g. shop=sqlite:shop.db. Kinds: sqlite, duckdb, postgres and sqlserver (a connection string), excel (a folder of .xlsx workbooks). A .sql target is run into a new in-memory database; files open read-only, unless written (--write).",
+         Description = $"A source as alias=kind:target, e.g. shop=sqlite:shop.db. Kinds: {Kinds()}. A .sql target is run into a new in-memory database; files open read-only, unless written (--write).",
          Required = true,
       };
       Option<FileInfo?> overlay = new("--overlay") { Description = "A catalog overlay (JSON): relations across sources, virtual entities, renames." };

@@ -27,7 +27,7 @@ public sealed class PostgreSqlSourceProvider : SourceProvider
 
    public override string ProviderKind => PostgreSqlSchemaIntrospector.ProviderKind;
 
-   public override SqlDialect Dialect => SqlDialect.PostgreSql;
+   public override SqlDialect Dialect => PostgreSqlDialect.Instance;
 
    public override ISchemaIntrospector Introspector { get; } = new PostgreSqlSchemaIntrospector();
 

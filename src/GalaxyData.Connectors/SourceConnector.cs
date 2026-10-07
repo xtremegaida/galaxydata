@@ -3,7 +3,7 @@ using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace GalaxyData.Web.Connections;
+namespace GalaxyData.Connectors;
 
 /// <summary>
 /// Opens connections to a source with one connection string, pooled as the provider pools them. Disposed when no

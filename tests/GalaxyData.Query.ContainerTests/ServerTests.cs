@@ -53,12 +53,13 @@ public sealed class ServerTests(Servers servers)
    }
 
    /// <summary>
-   /// Keys that are text are parameters, and SQL Server takes at most 2,100 in a statement: more are fetched in full.
-   /// Whole-number keys are written into the SQL, in batches.
+   /// Keys that are text are parameters, and SQL Server takes at most 2,100 in a statement (ClickHouse, 1,000 over
+   /// HTTP): more are fetched in full. Whole-number keys are written into the SQL, in batches.
    /// </summary>
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task BindJoinsKeepToTheServersParameterLimit(ServerKind server)
    {
       await using TestSources sources = await (await servers.KindsAsync(server)).SourcesAsync("k");
@@ -67,7 +68,7 @@ public sealed class ServerTests(Servers servers)
       FragmentStats text = await CountAsync(engine, "d.picks.join(k.codes, outer.code == inner.code, p: outer, c: inner).count()", 2500);
       FragmentStats whole = await CountAsync(sources.Engine(options: new QueryEngineOptions { BindJoins = BindJoinMode.Always, MaxBindBatch = 1000 }),
          "d.picks.join(k.codes, outer.n == inner.n, p: outer, c: inner).count()", 2500);
-      if (server == ServerKind.SqlServer)
+      if (server is ServerKind.SqlServer or ServerKind.ClickHouse)
       {
          text.Strategy.ShouldBe(FetchStrategy.Full);
       }
@@ -115,6 +116,7 @@ public sealed class ServerTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task AQueryThatRunsTooLongIsStopped(ServerKind server)
    {
       ServerDatabase kinds = await servers.KindsAsync(server);
@@ -129,6 +131,7 @@ public sealed class ServerTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task CancellingStopsTheStatementOnTheServer(ServerKind server)
    {
       ServerDatabase kinds = await servers.DatabaseAsync(server, "kinds", "-- cancelling");
@@ -143,9 +146,12 @@ public sealed class ServerTests(Servers servers)
       await Should.ThrowAsync<OperationCanceledException>(() => running);
       watch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(10));
 
-      string busy = server == ServerKind.Postgres
-         ? "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state = 'active' AND query LIKE '%numbers%' AND pid <> pg_backend_pid()"
-         : "SELECT count(*) FROM sys.dm_exec_requests r CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t WHERE r.database_id = DB_ID() AND t.text LIKE '%numbers%' AND r.session_id <> @@SPID";
+      string busy = server switch
+      {
+         ServerKind.Postgres => "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state = 'active' AND query LIKE '%numbers%' AND pid <> pg_backend_pid()",
+         ServerKind.SqlServer => "SELECT count(*) FROM sys.dm_exec_requests r CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t WHERE r.database_id = DB_ID() AND t.text LIKE '%numbers%' AND r.session_id <> @@SPID",
+         _ => "SELECT count() FROM system.processes WHERE current_database = currentDatabase() AND query LIKE '%numbers%' AND query NOT LIKE '%system.processes%'",
+      };
       await using DbConnection connection = kinds.Open();
       await connection.OpenAsync(TestContext.Current.CancellationToken);
       string? running2 = null;

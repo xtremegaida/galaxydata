@@ -23,6 +23,7 @@ public sealed class ValueTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task ReadsAValueOfEachType(ServerKind server)
    {
       await using TestSources sources = await (await servers.KindsAsync(server)).SourcesAsync("k");
@@ -33,6 +34,7 @@ public sealed class ValueTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task ReadsTheSameValuesThroughTheMergeEngine(ServerKind server)
    {
       await using TestSources sources = await (await servers.KindsAsync(server)).SourcesAsync("k");
@@ -45,6 +47,7 @@ public sealed class ValueTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task ParametersOfEachTypeFindTheirRow(ServerKind server)
    {
       await using TestSources sources = await (await servers.KindsAsync(server)).SourcesAsync("k");

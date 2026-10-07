@@ -1,6 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using GalaxyData.Connectors;
+using GalaxyData.Query.ClickHouse;
+using GalaxyData.Query.DuckDb;
+using GalaxyData.Query.Excel;
+using GalaxyData.Query.PostgreSql;
+using GalaxyData.Query.Sqlite;
+using GalaxyData.Query.SqlServer;
 using GalaxyData.Web.Connections;
 using GalaxyData.Web.Hosting;
 using GalaxyData.Web.Metadata;
@@ -99,9 +106,11 @@ public sealed class ConnectionInputTests
    [InlineData("sqlite", "Data Source=relative.db", "Database file: Give the full path")]
    [InlineData("sqlite", "Data Source=C:/elsewhere/a.db", null)]
    [InlineData("postgres", "Database=shop", "Host is needed")]
+   [InlineData("clickhouse", "Host=db;set_join_use_nulls=0", "set_join_use_nulls is the application's to set (from whether the connection is read-only)")]
+   [InlineData("clickhouse", "Host=db;UseSession=true", "UseSession is the application's to set (from whether the connection is read-only)")]
    public void WhatAConnectionStringMayNotHave(string kind, string connectionString, string? message)
    {
-      ConnectionKind found = new ConnectionKinds([new PostgreSqlKind(), new SqlServerKind(), new SqliteKind(), new DuckDbKind()]).Find(kind)!;
+      ConnectionKind found = new ConnectionKinds([new PostgreSqlKind(), new SqlServerKind(), new SqliteKind(), new DuckDbKind(), new ClickHouseKind()]).Find(kind)!;
       ConnectionResolution resolved = Resolve(found, Raw(connectionString.Replace("{root}", Root, StringComparison.Ordinal)));
       resolved.Errors.Keys.ShouldBe(["connectionString"]);
       if (message != null) { resolved.Errors["connectionString"].ShouldContain(message); }

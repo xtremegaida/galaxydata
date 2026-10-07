@@ -1,16 +1,22 @@
 using System;
 using System.Text;
+using GalaxyData.Query.Dml;
 using GalaxyData.Query.Functions;
+using GalaxyData.Query.Sql;
 using GalaxyData.Query.Types;
 
-namespace GalaxyData.Query.Sql;
+namespace GalaxyData.Query.PostgreSql;
 
 /// <summary>
 /// PostgreSQL. Unquoted names fold to lower case, so only lower-case names are written bare. Nulls sort largest
 /// by default and are placed explicitly. Parameters are written <c>@p0</c>, which Npgsql rewrites.
 /// </summary>
-internal sealed class PostgreSqlDialect : SqlDialect
+public sealed class PostgreSqlDialect : SqlDialect
 {
+   private PostgreSqlDialect() { }
+
+   public static PostgreSqlDialect Instance { get; } = new();
+
    public override string Name => "PostgreSQL";
 
    public override string ProviderKind => "postgres";
@@ -18,11 +24,11 @@ internal sealed class PostgreSqlDialect : SqlDialect
    public override int MaxParameters => 65535;
 
    /// <summary>PostgreSQL cuts names longer than 63 bytes short, so two long names could become one.</summary>
-   internal override int MaxNameLength => 63;
+   protected override int MaxNameLength => 63;
 
-   private protected override int NameLength(string name) => Encoding.UTF8.GetByteCount(name);
+   protected override int NameLength(string name) => Encoding.UTF8.GetByteCount(name);
 
-   private protected override bool IsBare(string name)
+   protected override bool IsBare(string name)
    {
       foreach (char c in name)
       {
@@ -31,7 +37,7 @@ internal sealed class PostgreSqlDialect : SqlDialect
       return base.IsBare(name);
    }
 
-   internal override string TypeName(ScalarType type) => type.Kind switch
+   protected override string TypeName(ScalarType type) => type.Kind switch
    {
       ScalarKind.Boolean => "boolean",
       ScalarKind.Int16 => "smallint",
@@ -51,14 +57,14 @@ internal sealed class PostgreSqlDialect : SqlDialect
       _ => "text",
    };
 
-   private protected override void WriteBinary(StringBuilder text, byte[] value) =>
+   protected override void WriteBinary(StringBuilder text, byte[] value) =>
       text.Append("CAST('\\x").Append(Convert.ToHexString(value)).Append("' AS bytea)");
 
    /// <summary>
    /// Text with line breaks is an escape string (<c>E'a\nb'</c>), which, as a literal, PostgreSQL takes as the type of
    /// what it meets (an enum, <c>jsonb</c>), as it does other text; text joined to characters would be <c>text</c>.
    /// </summary>
-   private protected override void WriteString(StringBuilder text, string value, ScalarType type)
+   protected override void WriteString(StringBuilder text, string value, ScalarType type)
    {
       if (value.AsSpan().IndexOfAny('\r', '\n') < 0)
       {
@@ -81,14 +87,14 @@ internal sealed class PostgreSqlDialect : SqlDialect
    }
 
    /// <summary>There is no <c>%</c> for doubles; the remainder is taken in numeric.</summary>
-   internal override SqlExpr Modulo(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
+   protected override SqlExpr Modulo(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       IsFloating(leftType) || IsFloating(rightType)
          ? Cast(Call("mod", Cast(left, ScalarType.Decimal()), Cast(right, ScalarType.Decimal())), ScalarType.Double)
          : new SqlBinary(SqlBinaryOp.Modulo, left, right);
 
    private static bool IsFloating(ScalarType type) => type.Kind is ScalarKind.Double or ScalarKind.Single;
 
-   internal override SqlExpr? Function(SqlCall c) => c.Id switch
+   protected override SqlExpr? Function(SqlCall c) => c.Id switch
    {
       FunctionId.Lower => Call("lower", c.Arg(0)),
       FunctionId.Upper => Call("upper", c.Arg(0)),
@@ -196,4 +202,14 @@ internal sealed class PostgreSqlDialect : SqlDialect
 
    /// <summary>The argument as a number: a boolean as 1 or 0, which only integer casts from.</summary>
    private SqlExpr Number(SqlCall c) => c.Type(0).Kind == ScalarKind.Boolean ? Cast(c.Arg(0), ScalarType.Int32) : c.Arg(0);
+
+   /// <summary>PostgreSQL's functions that read the server's files, reach other servers, or change its settings.</summary>
+   protected override ChangeScriptRules ChangeRules { get; } = new()
+   {
+      ForbiddenFunctions = ChangeScriptRules.Words(
+         "pg_read_file", "pg_read_binary_file", "pg_ls_dir", "pg_stat_file", "lo_import", "lo_export", "dblink", "dblink_exec",
+         "pg_terminate_backend", "pg_cancel_backend", "pg_reload_conf", "pg_rotate_logfile", "set_config"),
+   };
+
+   protected override ScriptSyntax ScriptSyntax { get; } = new() { DollarQuotes = true, EscapeStrings = true };
 }

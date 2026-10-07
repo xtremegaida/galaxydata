@@ -1,11 +1,13 @@
 using System;
 using System.Globalization;
 using System.Text;
+using GalaxyData.Query.Dml;
 using GalaxyData.Query.Functions;
 using GalaxyData.Query.Planning;
+using GalaxyData.Query.Sql;
 using GalaxyData.Query.Types;
 
-namespace GalaxyData.Query.Sql;
+namespace GalaxyData.Query.SqlServer;
 
 /// <summary>
 /// SQL Server. Conditions are not values: a bit is tested with <c>= 1</c> and a condition becomes a value through
@@ -13,31 +15,35 @@ namespace GalaxyData.Query.Sql;
 /// are Unicode (<c>N'...'</c>) unless the type is ansi. The parts of a date-time with an offset are those of its
 /// UTC time, as in the other databases, which work in UTC.
 /// </summary>
-internal sealed class SqlServerDialect : SqlDialect
+public sealed class SqlServerDialect : SqlDialect
 {
+   private SqlServerDialect() { }
+
+   public static SqlServerDialect Instance { get; } = new();
+
    public override string Name => "SQL Server";
 
    public override string ProviderKind => "sqlserver";
 
    public override int MaxParameters => 2100;
 
-   internal override int MaxNameLength => 128;
+   protected override int MaxNameLength => 128;
 
-   internal override bool HasBooleanValues => false;
+   protected override bool HasBooleanValues => false;
 
-   internal override PagingStyle Paging => PagingStyle.TopOrOffsetFetch;
+   protected override PagingStyle Paging => PagingStyle.TopOrOffsetFetch;
 
-   internal override string ConcatOperator => "+";
+   protected override string ConcatOperator => "+";
 
    public override string QuoteIdentifier(string name) => "[" + name.Replace("]", "]]", StringComparison.Ordinal) + "]";
 
    public override string ParameterName(string name) => "@" + name;
 
-   internal override string BooleanLiteral(bool value) => value ? "CAST(1 AS bit)" : "CAST(0 AS bit)";
+   protected override string BooleanLiteral(bool value) => value ? "CAST(1 AS bit)" : "CAST(0 AS bit)";
 
-   internal override string? NullOrdering(bool descending) => null;
+   protected override string? NullOrdering(bool descending) => null;
 
-   internal override string TypeName(ScalarType type) => type.Kind switch
+   protected override string TypeName(ScalarType type) => type.Kind switch
    {
       ScalarKind.Boolean => "bit",
       ScalarKind.Int16 => "smallint",
@@ -57,18 +63,18 @@ internal sealed class SqlServerDialect : SqlDialect
       _ => "nvarchar(max)",
    };
 
-   private protected override void WriteQuoted(StringBuilder text, string value, ScalarType type)
+   protected override void WriteQuoted(StringBuilder text, string value, ScalarType type)
    {
       if (!type.IsAnsi) { text.Append('N'); }
       base.WriteQuoted(text, value, type);
    }
 
-   private protected override string Concatenation => " + ";
+   protected override string Concatenation => " + ";
 
-   private protected override void WriteCharacter(StringBuilder text, char value, ScalarType type) =>
+   protected override void WriteCharacter(StringBuilder text, char value, ScalarType type) =>
       text.Append(type.IsAnsi ? "CHAR(" : "NCHAR(").Append(((int)value).ToString(CultureInfo.InvariantCulture)).Append(')');
 
-   private protected override void WriteTemporal(StringBuilder text, string keyword, string value)
+   protected override void WriteTemporal(StringBuilder text, string keyword, string value)
    {
       string type = keyword switch
       {
@@ -80,10 +86,10 @@ internal sealed class SqlServerDialect : SqlDialect
       text.Append("CAST('").Append(value).Append("' AS ").Append(type).Append(')');
    }
 
-   private protected override void WriteBinary(StringBuilder text, byte[] value) => text.Append("0x").Append(Convert.ToHexString(value));
+   protected override void WriteBinary(StringBuilder text, byte[] value) => text.Append("0x").Append(Convert.ToHexString(value));
 
    /// <summary>A date-time compared with or stored in a <c>datetime</c> column is one, for the same reason as in <see cref="Compare"/>.</summary>
-   internal override void WriteLiteral(StringBuilder text, object? value, ScalarType type, string? columnType = null)
+   protected override void WriteLiteral(StringBuilder text, object? value, ScalarType type, string? columnType = null)
    {
       if (value is DateTime dateTime && columnType is "datetime" or "smalldatetime")
       {
@@ -94,18 +100,18 @@ internal sealed class SqlServerDialect : SqlDialect
    }
 
    /// <summary>nvarchar(n) holds n UTF-16 units: a character outside the BMP takes two (varchar's bytes are no fewer, but in UTF-8 collations).</summary>
-   internal override int TextLength(string text) => text.Length;
+   protected override int TextLength(string text) => text.Length;
 
-   internal override ReturningStyle Returning => ReturningStyle.Output;
+   protected override ReturningStyle Returning => ReturningStyle.Output;
 
-   internal override bool AcceptsIdentityValues => false;
+   protected override bool AcceptsIdentityValues => false;
 
-   internal override SqlExpr? RowCountOfChange => Raw("@@ROWCOUNT");
+   protected override SqlExpr? RowCountOfChange => Raw("@@ROWCOUNT");
 
-   internal override SqlExpr? InsertedIdentity => Call("SCOPE_IDENTITY");
+   protected override SqlExpr? InsertedIdentity => Call("SCOPE_IDENTITY");
 
    /// <summary>The old large types (<c>text</c>, <c>ntext</c>, <c>image</c>) don't compare with <c>=</c>.</summary>
-   internal override bool ComparesOriginal(ScalarType type, string? nativeType) =>
+   protected override bool ComparesOriginal(ScalarType type, string? nativeType) =>
       base.ComparesOriginal(type, nativeType) && nativeType is not ("text" or "ntext" or "image");
 
    /// <summary>
@@ -113,7 +119,7 @@ internal sealed class SqlServerDialect : SqlDialect
    /// as a <c>datetime</c>: SQL Server compares it with a <c>datetime2</c> in its 1/300 seconds, which few equal.
    /// Parameters are sent as <c>datetime</c> already (see the provider), and columns are compared as they are.
    /// </summary>
-   internal override SqlExpr Compare(SqlBinaryOp op, SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType)
+   protected override SqlExpr Compare(SqlBinaryOp op, SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType)
    {
       if (IsDatetime(left) && rightType.Kind == ScalarKind.DateTime && right is not (SqlColumn or SqlParameterRef)) { right = new SqlCast(right, "datetime"); }
       else if (IsDatetime(right) && leftType.Kind == ScalarKind.DateTime && left is not (SqlColumn or SqlParameterRef)) { left = new SqlCast(left, "datetime"); }
@@ -123,10 +129,10 @@ internal sealed class SqlServerDialect : SqlDialect
    private static bool IsDatetime(SqlExpr expr) => expr is SqlColumn { NativeType: "datetime" };
 
    /// <summary>Counts are COUNT_BIG: COUNT gives an int, which overflows past 2^31 rows where the language's counts are 64-bit.</summary>
-   internal override string AggregateName(string name) => name == "count" ? "COUNT_BIG" : name.ToUpperInvariant();
+   protected override string AggregateName(string name) => name == "count" ? "COUNT_BIG" : name.ToUpperInvariant();
 
    /// <summary>SUM and AVG keep the type of whole numbers, which overflows and truncates; they get bigint and float.</summary>
-   internal override SqlExpr Aggregate(AggregateFunction function, SqlExpr? argument, ScalarType? argumentType)
+   protected override SqlExpr Aggregate(AggregateFunction function, SqlExpr? argument, ScalarType? argumentType)
    {
       if (argumentType is { IsInteger: true } && argument != null)
       {
@@ -137,12 +143,12 @@ internal sealed class SqlServerDialect : SqlDialect
    }
 
    /// <summary>There is no <c>%</c> for floats: x - y * (x / y truncated).</summary>
-   internal override SqlExpr Modulo(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
+   protected override SqlExpr Modulo(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       leftType.Kind is ScalarKind.Double or ScalarKind.Single || rightType.Kind is ScalarKind.Double or ScalarKind.Single
          ? Binary(SqlBinaryOp.Subtract, left, Binary(SqlBinaryOp.Multiply, right, Call("ROUND", Binary(SqlBinaryOp.Divide, left, right), Integer(0), Integer(1))))
          : new SqlBinary(SqlBinaryOp.Modulo, left, right);
 
-   internal override SqlExpr? Function(SqlCall c) => c.Id switch
+   protected override SqlExpr? Function(SqlCall c) => c.Id switch
    {
       FunctionId.Lower => Call("LOWER", c.Arg(0)),
       FunctionId.Upper => Call("UPPER", c.Arg(0)),
@@ -253,4 +259,20 @@ internal sealed class SqlServerDialect : SqlDialect
    /// <summary>A date-time with an offset moved to UTC, so its parts are the UTC time's; other values as they are.</summary>
    private static SqlExpr Utc(SqlCall c, int index) =>
       c.Type(index).Kind == ScalarKind.DateTimeOffset ? Call("SWITCHOFFSET", c.Arg(index), Text("+00:00")) : c.Arg(index);
+
+   /// <summary>
+   /// Statements needn't end with <c>;</c>, so the reserved words that start statements other than data changes, or
+   /// run code, are refused anywhere in one; and <c>SELECT ... INTO</c>, which makes a table.
+   /// </summary>
+   protected override ChangeScriptRules ChangeRules { get; } = new()
+   {
+      ForbiddenWords = ChangeScriptRules.Words(
+         "ALTER", "BACKUP", "BEGIN", "BREAK", "BULK", "CHECKPOINT", "CLOSE", "COMMIT", "CONTINUE", "CREATE", "DBCC", "DEALLOCATE",
+         "DECLARE", "DENY", "DISK", "DROP", "DUMP", "EXEC", "EXECUTE", "FETCH", "GOTO", "GRANT", "IF", "KILL", "LINENO", "LOAD", "OPEN",
+         "OPENDATASOURCE", "OPENQUERY", "OPENROWSET", "OPENXML", "PRINT", "RAISERROR", "READTEXT", "RECONFIGURE", "RESTORE", "RETURN",
+         "REVERT", "REVOKE", "ROLLBACK", "SAVE", "SETUSER", "SHUTDOWN", "TRUNCATE", "UPDATETEXT", "USE", "WAITFOR", "WHILE", "WRITETEXT"),
+      ForbidsSelectInto = true,
+   };
+
+   protected override ScriptSyntax ScriptSyntax { get; } = new() { BracketNames = true, BatchSeparator = true };
 }

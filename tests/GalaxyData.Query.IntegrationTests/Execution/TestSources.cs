@@ -97,11 +97,14 @@ internal sealed class TestSources : IConnectionFactory, IAsyncDisposable
       if (!providers.Contains(provider)) { providers.Add(provider); }
    }
 
+   /// <summary>The overlay engines and catalogs have when none is given: keys and relations a source doesn't keep (ClickHouse's).</summary>
+   public CatalogOverlay? Overlay { get; set; }
+
    /// <summary>An engine over the sources; queries that combine them run in <see cref="Merge"/>, or <paramref name="merge"/>, unless <paramref name="noMerge"/>.</summary>
    public QueryEngine Engine(CatalogOverlay? overlay = null, QueryEngineOptions? options = null, IMergeEngine? merge = null, bool noMerge = false) =>
       new(Catalog(overlay), this, excel == null ? providers : [.. providers, excel], noMerge ? null : merge ?? Merge, options);
 
-   public QueryCatalog Catalog(CatalogOverlay? overlay = null) => builder.WithOverlay(overlay ?? CatalogOverlay.Empty).Build();
+   public QueryCatalog Catalog(CatalogOverlay? overlay = null) => builder.WithOverlay(overlay ?? Overlay ?? CatalogOverlay.Empty).Build();
 
    /// <summary>Runs a script in a source's database, as it is now.</summary>
    public async Task RunAsync(string alias, string script) => await sources[alias].Keeper.ExecuteAsync(script);

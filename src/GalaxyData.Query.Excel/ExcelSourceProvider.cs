@@ -62,7 +62,7 @@ public sealed class ExcelSourceProvider : SourceProvider, IDisposable
 
    public override string ProviderKind => Kind;
 
-   public override SqlDialect Dialect => SqlDialect.DuckDb;
+   public override SqlDialect Dialect => DuckDbDialect.Instance;
 
    /// <summary>Reads the schema of the folder of a connection this provider opened.</summary>
    public override ISchemaIntrospector Introspector { get; }
@@ -141,7 +141,7 @@ public sealed class ExcelSourceProvider : SourceProvider, IDisposable
       DuckDBConnection connection = merge.Connect();
       try
       {
-         await connection.ExecuteAsync("USE " + SqlDialect.DuckDb.QuoteIdentifier(folder.Catalog), cancellationToken).ConfigureAwait(false);
+         await connection.ExecuteAsync("USE " + DuckDbDialect.Instance.QuoteIdentifier(folder.Catalog), cancellationToken).ConfigureAwait(false);
          return connection;
       }
       catch

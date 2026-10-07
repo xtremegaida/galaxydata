@@ -223,7 +223,7 @@ public sealed class ConnectionApiTests
          .ProblemAsync(409, ProblemCodes.AliasTaken);
       JsonElement problem = await (await admin.PostAsync("/api/connections", new { alias = "other", kind = "oracle", connection = new { } }))
          .ProblemAsync(400, ProblemCodes.InvalidRequest);
-      problem.GetProperty("errors").GetProperty("kind")[0].GetString().ShouldBe("There is no kind 'oracle': use postgres, sqlserver, sqlite, duckdb, excel");
+      problem.GetProperty("errors").GetProperty("kind")[0].GetString().ShouldBe("There is no kind 'oracle': use postgres, sqlserver, sqlite, duckdb, excel, clickhouse");
    }
 
    [Fact]

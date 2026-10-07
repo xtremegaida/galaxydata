@@ -703,5 +703,200 @@
         "max": null
       }
     ]
+  },
+  {
+    "id": "clickhouse",
+    "displayName": "ClickHouse",
+    "supportsRaw": true,
+    "alwaysReadOnly": true,
+    "rawExample": "Host=ch.example.com;Port=8443;Protocol=https;Database=analytics;Username=reader;Password=...",
+    "groups": [
+      {
+        "key": "connection",
+        "label": "Connection",
+        "collapsed": false
+      },
+      {
+        "key": "security",
+        "label": "Security",
+        "collapsed": false
+      },
+      {
+        "key": "advanced",
+        "label": "Advanced",
+        "collapsed": true
+      }
+    ],
+    "fields": [
+      {
+        "key": "Host",
+        "label": "Host",
+        "type": "text",
+        "required": true,
+        "default": null,
+        "placeholder": "ch.example.com",
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Port",
+        "label": "Port (HTTP)",
+        "type": "number",
+        "required": false,
+        "default": "8123",
+        "placeholder": null,
+        "help": "ClickHouse\u0027s HTTP port: 8123, or 8443 with HTTPS",
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": 1,
+        "max": 65535
+      },
+      {
+        "key": "Database",
+        "label": "Database",
+        "type": "text",
+        "required": false,
+        "default": null,
+        "placeholder": "default",
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Username",
+        "label": "User name",
+        "type": "text",
+        "required": false,
+        "default": null,
+        "placeholder": "default",
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Password",
+        "label": "Password",
+        "type": "password",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": null,
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Protocol",
+        "label": "Protocol",
+        "type": "select",
+        "required": false,
+        "default": "http",
+        "placeholder": null,
+        "help": null,
+        "group": "security",
+        "choices": [
+          {
+            "value": "http",
+            "label": "HTTP"
+          },
+          {
+            "value": "https",
+            "label": "HTTPS"
+          }
+        ],
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "SkipServerCertificateValidation",
+        "label": "Skip checking the server\u0027s certificate",
+        "type": "bool",
+        "required": false,
+        "default": "false",
+        "placeholder": null,
+        "help": "Accept a certificate no trusted authority signed (a server\u0027s own); the connection is still encrypted",
+        "group": "security",
+        "choices": null,
+        "visibleWhen": {
+          "field": "Protocol",
+          "values": [
+            "https"
+          ]
+        },
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Compression",
+        "label": "Compress what is sent",
+        "type": "bool",
+        "required": false,
+        "default": "true",
+        "placeholder": null,
+        "help": null,
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Timeout",
+        "label": "Request timeout (s)",
+        "type": "number",
+        "required": false,
+        "default": "120",
+        "placeholder": null,
+        "help": null,
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": 1,
+        "max": null
+      },
+      {
+        "key": "Path",
+        "label": "Path",
+        "type": "text",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": "The path of the server\u0027s HTTP interface, behind a proxy",
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "otherSettings",
+        "label": "Other settings",
+        "type": "keyValues",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": "Any other keyword ClickHouse.Driver takes, or a server setting prefixed set_ (set_max_threads=4)",
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      }
+    ],
+    "options": []
   }
 ]

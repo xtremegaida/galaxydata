@@ -47,6 +47,9 @@ internal sealed class SqlBuilder
    /// <summary>The columns of the queries around the subquery being written, innermost last: what correlated references see.</summary>
    private readonly List<IReadOnlyDictionary<PlanColumn, SqlExpr>> outer = [];
 
+   /// <summary>For each query of <see cref="outer"/>, whether the subquery in it gives values (a scalar subquery, IN) rather than whether rows exist.</summary>
+   private readonly List<bool> givesValues = [];
+
    /// <summary>For the merge engine's SQL: the columns read from each fragment's table.</summary>
    private readonly Dictionary<MergeTableNode, HashSet<PlanColumn>>? reads;
 
@@ -131,10 +134,14 @@ internal sealed class SqlBuilder
       return frame.Select;
    }
 
-   /// <summary>Writes a subquery with the current columns visible to its correlated references.</summary>
-   private T Nested<T>(IReadOnlyDictionary<PlanColumn, SqlExpr> columns, Func<T> build)
+   /// <summary>
+   /// Writes a subquery with the current columns visible to its correlated references; <paramref name="values"/> for
+   /// one that gives values (a scalar subquery, IN), not whether rows exist.
+   /// </summary>
+   private T Nested<T>(IReadOnlyDictionary<PlanColumn, SqlExpr> columns, Func<T> build, bool values = false)
    {
       outer.Add(columns);
+      givesValues.Add(values);
       try
       {
          return build();
@@ -142,6 +149,7 @@ internal sealed class SqlBuilder
       finally
       {
          outer.RemoveAt(outer.Count - 1);
+         givesValues.RemoveAt(givesValues.Count - 1);
       }
    }
 
@@ -335,6 +343,7 @@ internal sealed class SqlBuilder
    /// <summary>A semi join is <c>WHERE EXISTS (...)</c>, an anti join <c>WHERE NOT EXISTS (...)</c>, correlated on the condition.</summary>
    private Frame SemiJoin(JoinNode join, Frame left)
    {
+      if (join.Condition != null && dialect.MaxCorrelationDepth < 1) { throw TooCorrelated(); }
       SqlSelect select = Nested(left.Columns, () =>
       {
          HashSet<PlanColumn> rightOutput = [.. join.Right.Output];
@@ -554,7 +563,10 @@ internal sealed class SqlBuilder
             if (columns.TryGetValue(reference.Column, out SqlExpr? column)) { return column; }
             for (int i = outer.Count - 1; i >= 0; i--)
             {
-               if (outer[i].TryGetValue(reference.Column, out SqlExpr? correlated)) { return correlated; }
+               if (!outer[i].TryGetValue(reference.Column, out SqlExpr? correlated)) { continue; }
+               // The reference crosses the subqueries from the one in query i inwards.
+               if (outer.Count - i > dialect.MaxCorrelationDepth || !dialect.CorrelatesValueSubqueries && givesValues.Skip(i).Any(v => v)) { throw TooCorrelated(); }
+               return correlated;
             }
             throw new InvalidOperationException($"The column {reference.Column} is not available here");
          case PlanSubquery subquery:
@@ -585,6 +597,9 @@ internal sealed class SqlBuilder
       }
    }
 
+   private NotSupportedException TooCorrelated() =>
+      new($"{dialect.Name} can't run a subquery that reads columns of the query around it here");
+
    private SqlExpr Subquery(PlanSubquery subquery, IReadOnlyDictionary<PlanColumn, SqlExpr> columns)
    {
       switch (subquery.Kind)
@@ -602,11 +617,11 @@ internal sealed class SqlBuilder
             return new SqlExists(select, subquery.Negated);
          }
          case SubqueryKind.Scalar:
-            return new SqlScalarSubquery(Nested(columns, () => Finished(subquery.Plan, out _)));
+            return new SqlScalarSubquery(Nested(columns, () => Finished(subquery.Plan, out _), values: true));
          default:
          {
             SqlExpr operand = Value(subquery.Operand!, columns);
-            SqlSelect select = Nested(columns, () => Finished(subquery.Plan, out _));
+            SqlSelect select = Nested(columns, () => Finished(subquery.Plan, out _), values: true);
             SqlExpr test = new SqlInSubquery(operand, select);
             return subquery.Negated ? new SqlUnary(SqlUnaryOp.Not, test) : test;
          }

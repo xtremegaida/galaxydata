@@ -2,26 +2,28 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using GalaxyData.Query.Dml;
 using GalaxyData.Query.Functions;
 using GalaxyData.Query.Planning;
 using GalaxyData.Query.Types;
 
 namespace GalaxyData.Query.Sql;
 
-internal enum PagingStyle : byte
+/// <summary>How a dialect limits the rows a query gives.</summary>
+public enum PagingStyle : byte
 {
    /// <summary><c>LIMIT n OFFSET m</c>; an offset alone is written <c>OFFSET m</c>.</summary>
    LimitOffset,
 
    /// <summary><c>LIMIT n OFFSET m</c>; an offset alone needs <c>LIMIT -1</c>.</summary>
-   SqliteLimitOffset,
+   LimitOffsetNeedsLimit,
 
    /// <summary><c>TOP (n)</c>, or <c>OFFSET m ROWS FETCH NEXT n ROWS ONLY</c>, which needs an ORDER BY.</summary>
    TopOrOffsetFetch,
 }
 
 /// <summary>How a data change gives back the rows it wrote.</summary>
-internal enum ReturningStyle : byte
+public enum ReturningStyle : byte
 {
    /// <summary><c>INSERT ... VALUES (...) RETURNING a, b</c>.</summary>
    Returning,
@@ -32,21 +34,13 @@ internal enum ReturningStyle : byte
 
 /// <summary>
 /// How one database spells SQL: names, literals, parameters, paging, null ordering, and each language function.
-/// A function a dialect has no translation for can't run in that database. All dialects live in this assembly.
+/// A function a dialect has no translation for can't run in that database. Each dialect lives with its database's
+/// provider: the engine calls the <c>protected internal</c> members, and a dialect overrides them (as
+/// <c>protected</c>), building expressions of the public SQL nodes (<see cref="SqlExpr"/>) with the helpers here.
 /// </summary>
 public abstract class SqlDialect
 {
-   private protected SqlDialect() { }
-
-   public static SqlDialect Sqlite { get; } = new SqliteDialect();
-
-   public static SqlDialect DuckDb { get; } = new DuckDbDialect();
-
-   public static SqlDialect PostgreSql { get; } = new PostgreSqlDialect();
-
-   public static SqlDialect SqlServer { get; } = new SqlServerDialect();
-
-   public static IReadOnlyList<SqlDialect> All { get; } = [Sqlite, DuckDb, PostgreSql, SqlServer];
+   protected SqlDialect() { }
 
    /// <summary>The name for people: <c>SQLite</c>.</summary>
    public abstract string Name { get; }
@@ -58,24 +52,24 @@ public abstract class SqlDialect
    public abstract int MaxParameters { get; }
 
    /// <summary>Whether a condition is also a value; SQL Server needs CASE to select one and <c>= 1</c> to test a bit.</summary>
-   internal virtual bool HasBooleanValues => true;
+   protected internal virtual bool HasBooleanValues => true;
 
-   internal virtual PagingStyle Paging => PagingStyle.LimitOffset;
+   protected internal virtual PagingStyle Paging => PagingStyle.LimitOffset;
 
-   internal virtual string ConcatOperator => "||";
+   protected internal virtual string ConcatOperator => "||";
 
    /// <summary>
    /// Whether a value used in several places can be one parameter. DuckDB types a parameter from its first use, so
    /// a shared one can be wrong for the others (<c>left(name, $n)</c> makes it BIGINT, then <c>date + $n</c> fails).
    /// </summary>
-   internal virtual bool SharesParameters => true;
+   protected internal virtual bool SharesParameters => true;
 
    /// <summary>
    /// Whether <c>column = value</c> in this database finds the rows whose value, read as <paramref name="type"/>,
    /// equals the value, and no others that differ once read; text may still match more (collations that ignore case
    /// or trailing spaces). Fragments are only fetched by keys that compare exactly.
    /// </summary>
-   internal virtual bool ComparesExactly(ScalarType type) =>
+   protected internal virtual bool ComparesExactly(ScalarType type) =>
       type.Kind is not (ScalarKind.Unknown or ScalarKind.Json or ScalarKind.Binary or ScalarKind.Single or ScalarKind.Double);
 
    /// <summary>The name as written in SQL: bare when that is safe, quoted otherwise.</summary>
@@ -84,7 +78,7 @@ public abstract class SqlDialect
    public virtual string QuoteIdentifier(string name) => "\"" + name.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 
    /// <summary>A name that needs no quotes: letters, digits and underscores, not starting with a digit, and not a keyword.</summary>
-   private protected virtual bool IsBare(string name)
+   protected virtual bool IsBare(string name)
    {
       if (name.Length == 0 || char.IsAsciiDigit(name[0])) { return false; }
       foreach (char c in name)
@@ -101,18 +95,18 @@ public abstract class SqlDialect
    public virtual string ParameterName(string name) => name;
 
    /// <summary>The type to CAST to for a logical type.</summary>
-   internal abstract string TypeName(ScalarType type);
+   protected internal abstract string TypeName(ScalarType type);
 
-   internal virtual string BooleanLiteral(bool value) => value ? "TRUE" : "FALSE";
+   protected internal virtual string BooleanLiteral(bool value) => value ? "TRUE" : "FALSE";
 
    /// <summary>How to write ORDER BY null placement so nulls sort smallest; null when the default already does.</summary>
-   internal virtual string? NullOrdering(bool descending) => descending ? "NULLS LAST" : "NULLS FIRST";
+   protected internal virtual string? NullOrdering(bool descending) => descending ? "NULLS LAST" : "NULLS FIRST";
 
    /// <summary>
    /// Writes a constant; used for literals the SQL must contain, for display, and in scripts people may edit and run.
    /// <paramref name="columnType"/> is the declared type of the column the value is compared with or stored in, when known.
    /// </summary>
-   internal virtual void WriteLiteral(StringBuilder text, object? value, ScalarType type, string? columnType = null)
+   protected internal virtual void WriteLiteral(StringBuilder text, object? value, ScalarType type, string? columnType = null)
    {
       switch (value)
       {
@@ -169,7 +163,7 @@ public abstract class SqlDialect
    /// (<c>('a' || chr(10) || 'b')</c>), so a script's text has none in its values: an editor that changes a script's
    /// line breaks (to one kind, as Monaco does) changes no value.
    /// </summary>
-   private protected virtual void WriteString(StringBuilder text, string value, ScalarType type)
+   protected virtual void WriteString(StringBuilder text, string value, ScalarType type)
    {
       if (value.AsSpan().IndexOfAny('\r', '\n') < 0)
       {
@@ -199,35 +193,35 @@ public abstract class SqlDialect
       text.Append(')');
    }
 
-   private protected virtual void WriteQuoted(StringBuilder text, string value, ScalarType type) =>
+   protected virtual void WriteQuoted(StringBuilder text, string value, ScalarType type) =>
       text.Append('\'').Append(value.Replace("'", "''", StringComparison.Ordinal)).Append('\'');
 
    /// <summary>How texts are joined.</summary>
-   private protected virtual string Concatenation => " || ";
+   protected virtual string Concatenation => " || ";
 
    /// <summary>A character by its code, as text.</summary>
-   private protected virtual void WriteCharacter(StringBuilder text, char value, ScalarType type) =>
+   protected virtual void WriteCharacter(StringBuilder text, char value, ScalarType type) =>
       text.Append("chr(").Append(((int)value).ToString(CultureInfo.InvariantCulture)).Append(')');
 
-   private protected virtual void WriteTemporal(StringBuilder text, string keyword, string value) =>
+   protected virtual void WriteTemporal(StringBuilder text, string keyword, string value) =>
       text.Append(keyword).Append(" '").Append(value).Append('\'');
 
-   private protected virtual void WriteGuid(StringBuilder text, Guid value) => text.Append("CAST('").Append(value.ToString("D")).Append("' AS ").Append(TypeName(ScalarType.Guid)).Append(')');
+   protected virtual void WriteGuid(StringBuilder text, Guid value) => text.Append("CAST('").Append(value.ToString("D")).Append("' AS ").Append(TypeName(ScalarType.Guid)).Append(')');
 
-   private protected abstract void WriteBinary(StringBuilder text, byte[] value);
+   protected abstract void WriteBinary(StringBuilder text, byte[] value);
 
    /// <summary>Division; two whole numbers give a double in the language, not a truncated whole number.</summary>
-   internal virtual SqlExpr Divide(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
+   protected internal virtual SqlExpr Divide(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       leftType.IsInteger && rightType.IsInteger
          ? new SqlBinary(SqlBinaryOp.Divide, new SqlCast(left, TypeName(ScalarType.Double)), right)
          : new SqlBinary(SqlBinaryOp.Divide, left, right);
 
    /// <summary>The remainder, with the sign of the dividend.</summary>
-   internal virtual SqlExpr Modulo(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
+   protected internal virtual SqlExpr Modulo(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       new SqlBinary(SqlBinaryOp.Modulo, left, right);
 
    /// <summary>Text's length as the database counts it against a column's: in characters, or UTF-16 units (SQL Server).</summary>
-   internal virtual int TextLength(string text)
+   protected internal virtual int TextLength(string text)
    {
       int count = 0;
       foreach (Rune _ in text.EnumerateRunes()) { count++; }
@@ -235,10 +229,10 @@ public abstract class SqlDialect
    }
 
    /// <summary>The longest name the database takes, as <see cref="NameLength"/> counts: longer aliases are cut short.</summary>
-   internal virtual int MaxNameLength => int.MaxValue;
+   protected internal virtual int MaxNameLength => int.MaxValue;
 
    /// <summary>A name's length as the database limits it: in characters, or bytes.</summary>
-   private protected virtual int NameLength(string name) => name.Length;
+   protected virtual int NameLength(string name) => name.Length;
 
    /// <summary><paramref name="name"/>, cut short so that with <paramref name="suffix"/> it fits <see cref="MaxNameLength"/>.</summary>
    internal string FitName(string name, string suffix)
@@ -252,44 +246,44 @@ public abstract class SqlDialect
    }
 
    /// <summary>How a data change gives back the row it wrote.</summary>
-   internal virtual ReturningStyle Returning => ReturningStyle.Returning;
+   protected internal virtual ReturningStyle Returning => ReturningStyle.Returning;
 
    /// <summary>Whether an insert may give an identity column its value (SQL Server's take one only with IDENTITY_INSERT on).</summary>
-   internal virtual bool AcceptsIdentityValues => true;
+   protected internal virtual bool AcceptsIdentityValues => true;
 
    /// <summary>
    /// The count of rows the last statement changed, as a value, where the count the database reports for a statement
    /// isn't that (SQL Server adds the rows its triggers changed, and reports none with NOCOUNT on): changes select
    /// it after them. Null where the reported count is the statement's own.
    /// </summary>
-   internal virtual SqlExpr? RowCountOfChange => null;
+   protected internal virtual SqlExpr? RowCountOfChange => null;
 
    /// <summary>The identity value the last insert gave, as a value: to read an inserted row back where it can't be given back.</summary>
-   internal virtual SqlExpr? InsertedIdentity => null;
+   protected internal virtual SqlExpr? InsertedIdentity => null;
 
    /// <summary>
    /// Whether a change checks that a column still has the value it was read with, where it compares with
    /// <c>=</c>: the column's value must equal it when read and sent back, as it does for the types that compare exactly.
    /// </summary>
-   internal virtual bool ComparesOriginal(ScalarType type, string? nativeType) => ComparesExactly(type);
+   protected internal virtual bool ComparesOriginal(ScalarType type, string? nativeType) => ComparesExactly(type);
 
    /// <summary>
    /// The condition that a key column equals a value, to find the row a change is for: <c>column = value</c>, or, where
    /// the database may keep a key in another form than the value's, both in one form.
    /// </summary>
-   internal virtual SqlExpr KeyEquals(SqlColumn column, SqlExpr value, ScalarType type) => new SqlBinary(SqlBinaryOp.Equal, column, value);
+   protected internal virtual SqlExpr KeyEquals(SqlColumn column, SqlExpr value, ScalarType type) => new SqlBinary(SqlBinaryOp.Equal, column, value);
 
    /// <summary>A sort key; dialects adjust values whose storage doesn't sort the way the language does.</summary>
-   internal virtual SqlExpr SortKey(SqlExpr key, ScalarType type) => key;
+   protected internal virtual SqlExpr SortKey(SqlExpr key, ScalarType type) => key;
 
    /// <summary>A comparison; dialects adjust operands whose storage doesn't compare the way the language does.</summary>
-   internal virtual SqlExpr Compare(SqlBinaryOp op, SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
+   protected internal virtual SqlExpr Compare(SqlBinaryOp op, SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       new SqlBinary(op, left, right);
 
    /// <summary>
    /// An aggregate function. A sum is 0 when there are no values, as the language defines, where SQL gives null.
    /// </summary>
-   internal virtual SqlExpr Aggregate(AggregateFunction function, SqlExpr? argument, ScalarType? argumentType) => function switch
+   protected internal virtual SqlExpr Aggregate(AggregateFunction function, SqlExpr? argument, ScalarType? argumentType) => function switch
    {
       AggregateFunction.CountRows => new SqlAggregate(AggregateName("count"), null),
       AggregateFunction.Count => new SqlAggregate(AggregateName("count"), argument),
@@ -301,37 +295,76 @@ public abstract class SqlDialect
    };
 
    /// <summary>The spelling of a function name in this dialect.</summary>
-   internal virtual string AggregateName(string name) => name;
+   protected internal virtual string AggregateName(string name) => name;
 
    /// <summary>A call of a language function; null when this database can't run it.</summary>
-   internal abstract SqlExpr? Function(SqlCall call);
+   protected internal abstract SqlExpr? Function(SqlCall call);
+
+   /// <summary>
+   /// Whether the database runs in the application's process, with its rights, so no guard can keep a script to the
+   /// database: DuckDB reads any file or URL a statement names (a quoted path where a table goes reads the file).
+   /// </summary>
+   protected internal virtual bool RunsInTheApplication => false;
+
+   /// <summary>What edited scripts may hold beyond the standard data changes, and what keeps a statement from running.</summary>
+   protected internal virtual ChangeScriptRules ChangeRules => ChangeScriptRules.Standard;
+
+   /// <summary>How scripts are written, as far as finding where their statements end needs.</summary>
+   protected internal virtual ScriptSyntax ScriptSyntax => ScriptSyntax.Standard;
+
+   /// <summary>A set operation's keyword: <c>UNION</c> removes duplicates, <c>UNION ALL</c> keeps them, as do the others not.</summary>
+   protected internal virtual string SetOperator(SqlSetOperator op) => op switch
+   {
+      SqlSetOperator.Union => "UNION",
+      SqlSetOperator.UnionAll => "UNION ALL",
+      SqlSetOperator.Intersect => "INTERSECT",
+      _ => "EXCEPT",
+   };
+
+   /// <summary>
+   /// The clause after a LIKE pattern naming its escape character (<c> ESCAPE '\'</c>); null where the database takes
+   /// the character as its escape without one. <see cref="NotSupportedException"/> for one it can't take.
+   /// </summary>
+   protected internal virtual string? LikeEscape(char escape) => " ESCAPE '" + escape + "'";
+
+   /// <summary>
+   /// How many queries out a subquery may read columns of: 1 for the query it is in. Past it, the query isn't written
+   /// for the database (<see cref="NotSupportedException"/>), so the merge engine runs that part.
+   /// </summary>
+   protected internal virtual int MaxCorrelationDepth => int.MaxValue;
+
+   /// <summary>
+   /// Whether a subquery that gives values (a scalar subquery, IN) may read columns of the queries around it, as one
+   /// that tests whether rows exist may; where it may not, the merge engine runs that part.
+   /// </summary>
+   protected internal virtual bool CorrelatesValueSubqueries => true;
 
    public override string ToString() => Name;
 
    #region Helpers for translations
 
-   private protected static SqlExpr Call(string name, params SqlExpr[] arguments) => new SqlFunctionCall(name, arguments);
+   protected static SqlExpr Call(string name, params SqlExpr[] arguments) => new SqlFunctionCall(name, arguments);
 
-   private protected SqlExpr Cast(SqlExpr operand, ScalarType type) => new SqlCast(operand, TypeName(type));
+   protected SqlExpr Cast(SqlExpr operand, ScalarType type) => new SqlCast(operand, TypeName(type));
 
-   private protected static SqlExpr Template(string format, params SqlExpr[] arguments) => new SqlTemplate(format, arguments);
+   protected static SqlExpr Template(string format, params SqlExpr[] arguments) => new SqlTemplate(format, arguments);
 
-   private protected static SqlExpr Binary(SqlBinaryOp op, SqlExpr left, SqlExpr right) => new SqlBinary(op, left, right);
+   protected static SqlExpr Binary(SqlBinaryOp op, SqlExpr left, SqlExpr right) => new SqlBinary(op, left, right);
 
-   private protected static SqlExpr Text(string value) => new SqlLiteral(value, ScalarType.Text().AsNonNullable());
+   protected static SqlExpr Text(string value) => new SqlLiteral(value, ScalarType.Text().AsNonNullable());
 
-   private protected static SqlExpr Integer(long value) => new SqlLiteral(value, ScalarType.Int64.AsNonNullable());
+   protected static SqlExpr Integer(long value) => new SqlLiteral(value, ScalarType.Int64.AsNonNullable());
 
-   private protected static SqlExpr Raw(string text) => new SqlRaw(text);
+   protected static SqlExpr Raw(string text) => new SqlRaw(text);
 
-   private protected static SqlExpr Iif(SqlExpr condition, SqlExpr whenTrue, SqlExpr whenFalse) =>
+   protected static SqlExpr Iif(SqlExpr condition, SqlExpr whenTrue, SqlExpr whenFalse) =>
       new SqlCase([new SqlWhen(condition, whenTrue)], whenFalse);
 
-   private protected static SqlExpr Like(SqlExpr operand, SqlExpr pattern, bool caseInsensitive = false) =>
+   protected static SqlExpr Like(SqlExpr operand, SqlExpr pattern, bool caseInsensitive = false) =>
       new SqlLike(operand, pattern, caseInsensitive, '\\');
 
    /// <summary><c>'true'</c> or <c>'false'</c> for a condition, null for null.</summary>
-   private protected static SqlExpr BooleanText(SqlCall c, int index = 0) => c.Type(index).Nullable
+   protected static SqlExpr BooleanText(SqlCall c, int index = 0) => c.Type(index).Nullable
       ? new SqlCase([new SqlWhen(c.Condition(index), Text("true")), new SqlWhen(new SqlUnary(SqlUnaryOp.Not, c.Condition(index)), Text("false"))], null)
       : new SqlCase([new SqlWhen(c.Condition(index), Text("true"))], Text("false"));
 
@@ -339,23 +372,23 @@ public abstract class SqlDialect
    /// The arguments of concat(...), true/false values written as <c>true</c> and <c>false</c>, as toString writes
    /// them: databases write them as 1 and 0, t and f, or true and false.
    /// </summary>
-   private protected static SqlExpr[] ConcatArguments(SqlCall c)
+   protected static SqlExpr[] ConcatArguments(SqlCall c)
    {
       SqlExpr[] arguments = new SqlExpr[c.Count];
       for (int i = 0; i < arguments.Length; i++) { arguments[i] = c.Type(i).Kind == ScalarKind.Boolean ? BooleanText(c, i) : c.Arg(i); }
       return arguments;
    }
 
-   private protected static bool IsInteger(ScalarType type) => type.IsInteger;
+   protected static bool IsInteger(ScalarType type) => type.IsInteger;
 
    /// <summary>
    /// Argument <paramref name="index"/> as an int for functions that take one (a count of characters, days or digits):
    /// a 64-bit value, such as a computed column, is cast, since <c>date + bigint</c> and <c>left(text, bigint)</c> don't exist everywhere.
    /// </summary>
-   private protected SqlExpr Int(SqlCall c, int index) => c.Type(index).Kind == ScalarKind.Int64 ? Cast(c.Arg(index), ScalarType.Int32) : c.Arg(index);
+   protected SqlExpr Int(SqlCall c, int index) => c.Type(index).Kind == ScalarKind.Int64 ? Cast(c.Arg(index), ScalarType.Int32) : c.Arg(index);
 
    /// <summary>The text argument, then the rest as ints: substring(text, start[, length]).</summary>
-   private protected SqlExpr[] TextThenInts(SqlCall c)
+   protected SqlExpr[] TextThenInts(SqlCall c)
    {
       SqlExpr[] arguments = new SqlExpr[c.Count];
       arguments[0] = c.Arg(0);
@@ -363,19 +396,19 @@ public abstract class SqlDialect
       return arguments;
    }
 
-   private protected static bool IsFractional(ScalarType type) => type.Kind is ScalarKind.Decimal or ScalarKind.Single or ScalarKind.Double;
+   protected static bool IsFractional(ScalarType type) => type.Kind is ScalarKind.Decimal or ScalarKind.Single or ScalarKind.Double;
 
    #endregion
 }
 
 /// <summary>A function call being translated: its arguments as SQL, their logical types, and the result type.</summary>
-internal sealed class SqlCall
+public sealed class SqlCall
 {
    private readonly SqlBuilder builder;
    private readonly PlanFunction plan;
    private readonly IReadOnlyDictionary<PlanColumn, SqlExpr> columns;
 
-   public SqlCall(SqlBuilder builder, PlanFunction plan, IReadOnlyDictionary<PlanColumn, SqlExpr> columns)
+   internal SqlCall(SqlBuilder builder, PlanFunction plan, IReadOnlyDictionary<PlanColumn, SqlExpr> columns)
    {
       this.builder = builder;
       this.plan = plan;

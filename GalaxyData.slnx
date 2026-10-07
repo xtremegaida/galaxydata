@@ -1,8 +1,11 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/GalaxyData.Common/GalaxyData.Common.csproj" />
+    <Project Path="src/GalaxyData.Connectors/GalaxyData.Connectors.csproj" />
+    <Project Path="src/GalaxyData.Connectors.BuiltIn/GalaxyData.Connectors.BuiltIn.csproj" />
     <Project Path="src/GalaxyData.Query/GalaxyData.Query.csproj" />
     <Project Path="src/GalaxyData.Query.Cli/GalaxyData.Query.Cli.csproj" />
+    <Project Path="src/GalaxyData.Query.ClickHouse/GalaxyData.Query.ClickHouse.csproj" />
     <Project Path="src/GalaxyData.Query.DuckDb/GalaxyData.Query.DuckDb.csproj" />
     <Project Path="src/GalaxyData.Query.Excel/GalaxyData.Query.Excel.csproj" />
     <Project Path="src/GalaxyData.Query.PostgreSql/GalaxyData.Query.PostgreSql.csproj" />

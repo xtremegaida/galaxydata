@@ -11,7 +11,6 @@ import { AuthStore } from '../../core/auth/auth-store';
 import { followCatalog } from '../../core/catalog/catalog-changes';
 import { SchemaStatus } from '../../core/catalog/schema-status';
 import { Message } from '../../core/ui/message';
-import { sourceKindName } from './tree-nodes';
 
 type Catalog = Schema<'CatalogDto'>;
 type CatalogSource = Schema<'CatalogSourceDto'>;
@@ -82,7 +81,7 @@ function reading(source: CatalogSource): boolean {
                           <span class="display-name">{{ source.displayName }}</span>
                         }
                       </th>
-                      <td>{{ kindName(source.kind) }}</td>
+                      <td>{{ source.kindName ?? source.kind }}</td>
                       <td>
                         <gd-schema-status
                           [status]="source.status"
@@ -205,7 +204,6 @@ export class CatalogOverview {
   });
   protected readonly canAdmin = computed(() => this.auth.permissions().canAdmin);
   protected readonly message = problemMessage;
-  protected readonly kindName = sourceKindName;
 
   constructor() {
     pollWhile(this.catalog, (catalog) => catalog.sources.some(reading));

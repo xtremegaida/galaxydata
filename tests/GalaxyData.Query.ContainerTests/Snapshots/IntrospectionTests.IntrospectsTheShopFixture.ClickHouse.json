@@ -1,0 +1,304 @@
+{
+  "providerKind": "clickhouse",
+  "serverVersion": "(version)",
+  "defaultSchema": "(database)",
+  "tables": [
+    {
+      "schema": "(database)",
+      "name": "addresses",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "Int32",
+          "type": "int32"
+        },
+        {
+          "name": "customer_id",
+          "ordinal": 1,
+          "nativeType": "Int32",
+          "type": "int32"
+        },
+        {
+          "name": "line1",
+          "ordinal": 2,
+          "nativeType": "String",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "ordinal": 3,
+          "nativeType": "Nullable(String)",
+          "type": "string?"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "sorting key",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "foreignKeys": [],
+      "rowCountEstimate": 2
+    },
+    {
+      "schema": "(database)",
+      "name": "audit_log",
+      "columns": [
+        {
+          "name": "at",
+          "nativeType": "Nullable(DateTime64(6))",
+          "type": "datetime?"
+        },
+        {
+          "name": "message",
+          "ordinal": 1,
+          "nativeType": "Nullable(String)",
+          "type": "string?"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [],
+      "rowCountEstimate": 0
+    },
+    {
+      "schema": "(database)",
+      "name": "customers",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "Int32",
+          "type": "int32"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "nativeType": "String",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "ordinal": 2,
+          "nativeType": "Nullable(String)",
+          "type": "string?"
+        },
+        {
+          "name": "credit_limit",
+          "ordinal": 3,
+          "nativeType": "Nullable(Decimal(10, 2))",
+          "type": "decimal(10,2)?",
+          "comment": "In rand"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 4,
+          "nativeType": "Nullable(DateTime64(6))",
+          "type": "datetime?",
+          "defaultSql": "now64(6)"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "sorting key",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "foreignKeys": [],
+      "rowCountEstimate": 3,
+      "comment": "People and companies who order"
+    },
+    {
+      "schema": "(database)",
+      "name": "employees",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "Int32",
+          "type": "int32"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "nativeType": "String",
+          "type": "string"
+        },
+        {
+          "name": "manager_id",
+          "ordinal": 2,
+          "nativeType": "Nullable(Int32)",
+          "type": "int32?"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "sorting key",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "foreignKeys": [],
+      "rowCountEstimate": 3
+    },
+    {
+      "schema": "(database)",
+      "name": "open_orders",
+      "kind": "View",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "Int64",
+          "type": "int64"
+        },
+        {
+          "name": "customer_id",
+          "ordinal": 1,
+          "nativeType": "Int32",
+          "type": "int32"
+        },
+        {
+          "name": "total",
+          "ordinal": 2,
+          "nativeType": "Decimal(10, 2)",
+          "type": "decimal(10,2)"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    {
+      "schema": "(database)",
+      "name": "order_lines",
+      "columns": [
+        {
+          "name": "order_id",
+          "nativeType": "Int64",
+          "type": "int64"
+        },
+        {
+          "name": "line_no",
+          "ordinal": 1,
+          "nativeType": "Int32",
+          "type": "int32"
+        },
+        {
+          "name": "product_code",
+          "ordinal": 2,
+          "nativeType": "String",
+          "type": "string"
+        },
+        {
+          "name": "qty",
+          "ordinal": 3,
+          "nativeType": "Int32",
+          "type": "int32"
+        },
+        {
+          "name": "price",
+          "ordinal": 4,
+          "nativeType": "Decimal(10, 2)",
+          "type": "decimal(10,2)"
+        },
+        {
+          "name": "amount",
+          "ordinal": 5,
+          "nativeType": "Decimal(12, 2)",
+          "type": "decimal(12,2)",
+          "isComputed": true
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "sorting key",
+          "columns": [
+            "order_id",
+            "line_no"
+          ]
+        }
+      ],
+      "foreignKeys": [],
+      "rowCountEstimate": 4
+    },
+    {
+      "schema": "(database)",
+      "name": "orders",
+      "columns": [
+        {
+          "name": "id",
+          "nativeType": "Int64",
+          "type": "int64"
+        },
+        {
+          "name": "customer_id",
+          "ordinal": 1,
+          "nativeType": "Int32",
+          "type": "int32"
+        },
+        {
+          "name": "ship_address_id",
+          "ordinal": 2,
+          "nativeType": "Nullable(Int32)",
+          "type": "int32?"
+        },
+        {
+          "name": "bill_address_id",
+          "ordinal": 3,
+          "nativeType": "Nullable(Int32)",
+          "type": "int32?"
+        },
+        {
+          "name": "status",
+          "ordinal": 4,
+          "nativeType": "LowCardinality(String)",
+          "type": "string",
+          "defaultSql": "'open'"
+        },
+        {
+          "name": "total",
+          "ordinal": 5,
+          "nativeType": "Decimal(10, 2)",
+          "type": "decimal(10,2)"
+        },
+        {
+          "name": "order_date",
+          "ordinal": 6,
+          "nativeType": "Date",
+          "type": "date"
+        },
+        {
+          "name": "placed_at",
+          "ordinal": 7,
+          "nativeType": "Nullable(DateTime64(6, 'UTC'))",
+          "type": "datetimeoffset?"
+        },
+        {
+          "name": "tags",
+          "ordinal": 8,
+          "nativeType": "Array(String)",
+          "type": "unknown",
+          "readAs": "String"
+        }
+      ],
+      "uniqueKeys": [],
+      "indexes": [
+        {
+          "name": "sorting key",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "foreignKeys": [],
+      "rowCountEstimate": 4
+    }
+  ]
+}

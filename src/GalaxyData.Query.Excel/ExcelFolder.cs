@@ -60,7 +60,7 @@ internal sealed class ExcelFolder
    /// <summary>The catalog of the merge engine's database the sheets are loaded into.</summary>
    public string Catalog { get; }
 
-   private static string Quote(string name) => SqlDialect.DuckDb.QuoteIdentifier(name);
+   private static string Quote(string name) => DuckDbDialect.Instance.QuoteIdentifier(name);
 
    private string Name(string schema, string table) => $"{Quote(Catalog)}.{Quote(schema)}.{Quote(table)}";
 

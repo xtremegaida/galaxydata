@@ -7,11 +7,12 @@ namespace GalaxyData.Query.Dml;
 
 /// <summary>
 /// Keeps an edited script to statements that change data: <c>INSERT</c>, <c>UPDATE</c>, <c>DELETE</c> and
-/// <c>MERGE</c> (and SQLite's <c>REPLACE</c>), <c>WITH ...</c> forms of those included. In SQL Server, where statements
-/// needn't end with <c>;</c>, words that start other statements or run other code (<c>DROP</c>, <c>EXEC</c>,
-/// <c>DECLARE</c>, ...) and <c>SELECT ... INTO</c> are rejected anywhere in a statement. Functions that reach outside
-/// the database (DuckDB's <c>read_csv</c>, PostgreSQL's <c>pg_read_file</c>, SQLite's <c>load_extension</c>) are
-/// rejected too, by their names quoted or not. The guard is not a sandbox: what the functions a statement calls do is
+/// <c>MERGE</c> (and those the dialect adds, such as SQLite's <c>REPLACE</c>), <c>WITH ...</c> forms of those
+/// included. The dialect's <see cref="SqlDialect.ChangeRules"/> say what else keeps a statement from running: in SQL
+/// Server, where statements needn't end with <c>;</c>, words that start other statements or run other code
+/// (<c>DROP</c>, <c>EXEC</c>, <c>DECLARE</c>, ...) and <c>SELECT ... INTO</c>, anywhere in a statement; functions that
+/// reach outside the database (DuckDB's <c>read_csv</c>, PostgreSQL's <c>pg_read_file</c>, SQLite's
+/// <c>load_extension</c>), by their names quoted or not. The guard is not a sandbox: what the functions a statement calls do is
 /// up to the database, and the login's rights are what keep it safe. A database that runs in the application
 /// (<see cref="RunsInTheApplication"/>) has no login of its own. Transactions are the engine's in any case: a script
 /// can't begin, commit or roll one back, even with <c>allowAnyStatement</c>.
@@ -22,24 +23,6 @@ public static class DmlGuard
 
    private static readonly FrozenSet<string> Transactions = FrozenSet.ToFrozenSet(
       ["BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT", "RELEASE", "END", "ABORT", "START", "SAVE"], StringComparer.Ordinal);
-
-   /// <summary>SQL Server's reserved words that start statements other than data changes, or run code.</summary>
-   private static readonly FrozenSet<string> TSqlStatements = FrozenSet.ToFrozenSet(
-   [
-      "ALTER", "BACKUP", "BEGIN", "BREAK", "BULK", "CHECKPOINT", "CLOSE", "COMMIT", "CONTINUE", "CREATE", "DBCC", "DEALLOCATE",
-      "DECLARE", "DENY", "DISK", "DROP", "DUMP", "EXEC", "EXECUTE", "FETCH", "GOTO", "GRANT", "IF", "KILL", "LINENO", "LOAD", "OPEN",
-      "OPENDATASOURCE", "OPENQUERY", "OPENROWSET", "OPENXML", "PRINT", "RAISERROR", "READTEXT", "RECONFIGURE", "RESTORE", "RETURN",
-      "REVERT", "REVOKE", "ROLLBACK", "SAVE", "SETUSER", "SHUTDOWN", "TRUNCATE", "UPDATETEXT", "USE", "WAITFOR", "WHILE", "WRITETEXT",
-   ], StringComparer.OrdinalIgnoreCase);
-
-   private static readonly FrozenSet<string> PostgresFunctions = FrozenSet.ToFrozenSet(
-   [
-      "pg_read_file", "pg_read_binary_file", "pg_ls_dir", "pg_stat_file", "lo_import", "lo_export", "dblink", "dblink_exec",
-      "pg_terminate_backend", "pg_cancel_backend", "pg_reload_conf", "pg_rotate_logfile", "set_config",
-   ], StringComparer.OrdinalIgnoreCase);
-
-   private static readonly FrozenSet<string> DuckDbFunctions = FrozenSet.ToFrozenSet(
-      ["glob", "parquet_scan", "parquet_metadata", "parquet_schema", "sniff_csv", "csv_scan", "query", "query_table"], StringComparer.OrdinalIgnoreCase);
 
    /// <summary>
    /// What keeps the script's statements from running: statements that don't change data (unless
@@ -59,29 +42,42 @@ public static class DmlGuard
             continue;
          }
          if (allowAnyStatement) { continue; }
-         if (keyword == null || !(Changes.Contains(keyword) || IsSqliteReplace(keyword, dialect)))
+         if (keyword == null || !(Changes.Contains(keyword) || dialect.ChangeRules.MoreChanges.ContainsKey(keyword)))
          {
             problems.Add(Problem(statement, keyword == null
                ? "This isn't a statement that changes data (INSERT, UPDATE, DELETE or MERGE)"
                : $"{keyword} statements can't run here: only those that change data (INSERT, UPDATE, DELETE and MERGE)"));
             continue;
          }
-         if (Forbidden(statement, script.Text, dialect) is { } problem) { problems.Add(problem); }
+         if (Forbidden(statement, script.Text, dialect.ChangeRules) is { } problem) { problems.Add(problem); }
       }
       return problems;
    }
 
    /// <summary>
    /// Whether a script for the dialect runs with the application's own rights, which no guard can keep to the
-   /// database: DuckDB runs in the application's process, and reads any file or URL a statement names (a quoted path
-   /// where a table goes reads the file). Edited scripts for it should come from those trusted as the application is.
+   /// database (DuckDB runs in the application's process): see <see cref="SqlDialect.RunsInTheApplication"/>. Edited
+   /// scripts for it should come from those trusted as the application is.
    /// </summary>
-   public static bool RunsInTheApplication(SqlDialect dialect) => dialect == SqlDialect.DuckDb;
+   public static bool RunsInTheApplication(SqlDialect dialect)
+   {
+      ArgumentNullException.ThrowIfNull(dialect);
+      return dialect.RunsInTheApplication;
+   }
 
-   private static bool IsSqliteReplace(string keyword, SqlDialect dialect) => keyword == "REPLACE" && dialect == SqlDialect.Sqlite;
+   /// <summary>The kind of change a statement starting with <paramref name="keyword"/> makes in the dialect.</summary>
+   internal static DmlStatementKind KindOf(string? keyword, SqlDialect dialect) => keyword switch
+   {
+      "INSERT" => DmlStatementKind.Insert,
+      "UPDATE" => DmlStatementKind.Update,
+      "DELETE" => DmlStatementKind.Delete,
+      "MERGE" => DmlStatementKind.Merge,
+      not null when dialect.ChangeRules.MoreChanges.TryGetValue(keyword, out DmlStatementKind kind) => kind,
+      _ => DmlStatementKind.Other,
+   };
 
    /// <summary>A word or function in the statement that keeps it from running, if any.</summary>
-   private static ScriptProblem? Forbidden(ScriptStatement statement, string text, SqlDialect dialect)
+   private static ScriptProblem? Forbidden(ScriptStatement statement, string text, ChangeScriptRules rules)
    {
       IReadOnlyList<ScriptToken> tokens = statement.Tokens;
       for (int i = 0; i < tokens.Count; i++)
@@ -92,17 +88,12 @@ public static class DmlGuard
          if (token.Kind != ScriptTokenKind.Word && !quoted) { continue; }
          string word = quoted ? Unquoted(text[token.Start..token.End]) : text[token.Start..token.End];
          bool call = i + 1 < tokens.Count && tokens[i + 1].Kind == ScriptTokenKind.Symbol && text[tokens[i + 1].Start] == '(';
-         if (dialect == SqlDialect.SqlServer && !quoted)
+         if (!quoted && rules.ForbiddenWords.Contains(word)) { return Problem(token, $"{word.ToUpperInvariant()} can't be part of a statement that changes data"); }
+         if (!quoted && rules.ForbidsSelectInto && word.Equals("SELECT", StringComparison.OrdinalIgnoreCase) && SelectsInto(tokens, i, text) is { } into)
          {
-            if (TSqlStatements.Contains(word)) { return Problem(token, $"{word.ToUpperInvariant()} can't be part of a statement that changes data"); }
-            if (word.Equals("SELECT", StringComparison.OrdinalIgnoreCase) && SelectsInto(tokens, i, text) is { } into)
-            {
-               return Problem(into, "SELECT ... INTO makes a table: it can't be part of a statement that changes data");
-            }
+            return Problem(into, "SELECT ... INTO makes a table: it can't be part of a statement that changes data");
          }
-         else if (call && dialect == SqlDialect.PostgreSql && PostgresFunctions.Contains(word) ||
-                  call && dialect == SqlDialect.DuckDb && (word.StartsWith("read_", StringComparison.OrdinalIgnoreCase) || DuckDbFunctions.Contains(word)) ||
-                  call && dialect == SqlDialect.Sqlite && word.Equals("load_extension", StringComparison.OrdinalIgnoreCase))
+         if (call && rules.IsForbiddenFunction(word))
          {
             return Problem(token, $"{word}(...) reaches outside the database: it can't be part of a statement that changes data");
          }

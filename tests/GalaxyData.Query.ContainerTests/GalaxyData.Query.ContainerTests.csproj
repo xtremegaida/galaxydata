@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\GalaxyData.Query.Cli\GalaxyData.Query.Cli.csproj" />
+    <ProjectReference Include="..\..\src\GalaxyData.Query.ClickHouse\GalaxyData.Query.ClickHouse.csproj" />
     <ProjectReference Include="..\..\src\GalaxyData.Query.DuckDb\GalaxyData.Query.DuckDb.csproj" />
     <ProjectReference Include="..\..\src\GalaxyData.Query.Excel\GalaxyData.Query.Excel.csproj" />
     <ProjectReference Include="..\..\src\GalaxyData.Query.PostgreSql\GalaxyData.Query.PostgreSql.csproj" />

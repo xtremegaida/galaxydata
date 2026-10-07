@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using GalaxyData.Connectors;
 using GalaxyData.Query.Catalog;
-using GalaxyData.Query.Excel;
 using GalaxyData.Web.Metadata;
 
 namespace GalaxyData.Web.Connections;
@@ -28,40 +28,14 @@ public static class StoredConnections
       return Read(connection.OptionsJson);
    }
 
-   /// <summary>The engine's source for a database connection, whose schema's default schema is <paramref name="defaultSchema"/>.</summary>
-   public static SourceInfo Source(this SourceConnection connection, string defaultSchema)
+   /// <summary>
+   /// The engine's source for a database connection of <paramref name="kind"/>, whose schema's default schema is
+   /// <paramref name="defaultSchema"/>: read-only or not, and as its options set it.
+   /// </summary>
+   public static SourceInfo Source(this SourceConnection connection, ConnectionKind kind, string defaultSchema)
    {
       ArgumentNullException.ThrowIfNull(connection);
-      Dictionary<string, string> options = connection.Options();
-      return new SourceInfo(connection.Alias, connection.Kind, defaultSchema)
-      {
-         IsReadOnly = connection.IsReadOnly,
-         TrustForeignKeys = Flag(options, ConnectionKind.TrustForeignKeysOption) ?? false,
-         EnforceForeignKeys = Flag(options, SqliteKind.EnforceForeignKeysOption),
-      };
+      ArgumentNullException.ThrowIfNull(kind);
+      return kind.Configure(new SourceInfo(connection.Alias, connection.Kind, defaultSchema) { IsReadOnly = connection.IsReadOnly }, connection.Options());
    }
-
-   /// <summary>How a connection's folder of workbooks reads.</summary>
-   public static ExcelFolderOptions Folder(this SourceConnection connection)
-   {
-      ArgumentNullException.ThrowIfNull(connection);
-      return Folder(connection.Settings(), connection.Options());
-   }
-
-   /// <summary>How a folder of workbooks reads with these settings and options.</summary>
-   public static ExcelFolderOptions Folder(IReadOnlyDictionary<string, string> settings, Dictionary<string, string> options)
-   {
-      ArgumentNullException.ThrowIfNull(settings);
-      ArgumentNullException.ThrowIfNull(options);
-      return new ExcelFolderOptions
-      {
-         Path = settings[ExcelKind.Folder],
-         HeaderRow = Flag(options, ExcelKind.HeaderRowOption) ?? true,
-         AllText = Flag(options, ExcelKind.AllTextOption) ?? false,
-         IncludeHiddenSheets = Flag(options, ExcelKind.IncludeHiddenSheetsOption) ?? false,
-      };
-   }
-
-   private static bool? Flag(Dictionary<string, string> options, string name) =>
-      options.TryGetValue(name, out string? value) && bool.TryParse(value, out bool flag) ? flag : null;
 }

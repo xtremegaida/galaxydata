@@ -58,10 +58,11 @@ internal readonly record struct ScriptToken(ScriptTokenKind Kind, int Start, int
 
 /// <summary>
 /// Splits a script into statements at each <c>;</c> outside strings, quoted names and comments, as the dialect writes
-/// them: PostgreSQL's and DuckDB's <c>E'...'</c> strings and <c>$tag$...$tag$</c> quotes, SQL Server's and SQLite's
-/// <c>[names]</c>, SQLite's <c>`names`</c>, nested block comments (but SQLite's), and SQL Server's <c>GO</c> lines.
-/// A SQLite <c>CREATE TRIGGER</c> keeps the statements of its body. Procedural blocks of other databases
-/// (<c>BEGIN ... END</c> with statements inside) are split at their statements, and so don't run as written.
+/// them (its <see cref="SqlDialect.ScriptSyntax"/>): PostgreSQL's and DuckDB's <c>E'...'</c> strings and
+/// <c>$tag$...$tag$</c> quotes, SQL Server's and SQLite's <c>[names]</c>, SQLite's <c>`names`</c>, nested block
+/// comments (but SQLite's), and SQL Server's <c>GO</c> lines. A SQLite <c>CREATE TRIGGER</c> keeps the statements of
+/// its body. Procedural blocks of other databases (<c>BEGIN ... END</c> with statements inside) are split at their
+/// statements, and so don't run as written.
 /// </summary>
 public static class SqlScriptSplitter
 {
@@ -69,7 +70,8 @@ public static class SqlScriptSplitter
    {
       ArgumentNullException.ThrowIfNull(script);
       ArgumentNullException.ThrowIfNull(dialect);
-      Lexer lexer = new(script, dialect);
+      ScriptSyntax syntax = dialect.ScriptSyntax;
+      Lexer lexer = new(script, syntax);
       lexer.Run();
       List<ScriptStatement> statements = [];
       List<ScriptToken> current = [];
@@ -87,7 +89,7 @@ public static class SqlScriptSplitter
             depth = 0;
             continue;
          }
-         if (token.Kind == ScriptTokenKind.Word && dialect == SqlDialect.Sqlite)
+         if (token.Kind == ScriptTokenKind.Word && syntax.TriggerBodies)
          {
             string word = script[token.Start..token.End];
             if (current.Count > 0 && Is(script, current[0], "CREATE") && word.Equals("TRIGGER", StringComparison.OrdinalIgnoreCase)) { trigger = true; }
@@ -145,11 +147,8 @@ public static class SqlScriptSplitter
       return first;
    }
 
-   private sealed class Lexer(string script, SqlDialect dialect)
+   private sealed class Lexer(string script, ScriptSyntax syntax)
    {
-      private readonly bool sqlServer = dialect == SqlDialect.SqlServer;
-      private readonly bool sqlite = dialect == SqlDialect.Sqlite;
-      private readonly bool postgresLike = dialect == SqlDialect.PostgreSql || dialect == SqlDialect.DuckDb;
       private int i;
       private int line = 1;
 
@@ -197,17 +196,17 @@ public static class SqlScriptSplitter
                Quoted('\'', backslashes: false, "string");
                kind = ScriptTokenKind.Text;
             }
-            else if (c == '"' || (c == '`' && sqlite))
+            else if (c == '"' || (c == '`' && syntax.BacktickNames))
             {
                Quoted(c, backslashes: false, "quoted name");
                kind = ScriptTokenKind.QuotedName;
             }
-            else if (c == '[' && (sqlServer || sqlite))
+            else if (c == '[' && syntax.BracketNames)
             {
                Quoted(']', backslashes: false, "quoted name");
                kind = ScriptTokenKind.QuotedName;
             }
-            else if (c == '$' && postgresLike && DollarTag() is { } tag)
+            else if (c == '$' && syntax.DollarQuotes && DollarTag() is { } tag)
             {
                DollarQuoted(tag);
                kind = ScriptTokenKind.Text;
@@ -216,12 +215,12 @@ public static class SqlScriptSplitter
             {
                while (i < script.Length && IsWordPart(script[i])) { i++; }
                // E'...' has backslash escapes in PostgreSQL and DuckDB.
-               if (postgresLike && i == start + 1 && c is 'E' or 'e' && i < script.Length && script[i] == '\'')
+               if (syntax.EscapeStrings && i == start + 1 && c is 'E' or 'e' && i < script.Length && script[i] == '\'')
                {
                   Quoted('\'', backslashes: true, "string");
                   kind = ScriptTokenKind.Text;
                }
-               else if (sqlServer && !lineHasToken && i - start == 2 && script.AsSpan(start, 2).Equals("GO", StringComparison.OrdinalIgnoreCase) && GoLine(start))
+               else if (syntax.BatchSeparator && !lineHasToken && i - start == 2 && script.AsSpan(start, 2).Equals("GO", StringComparison.OrdinalIgnoreCase) && GoLine(start))
                {
                   continue;
                }
@@ -286,7 +285,7 @@ public static class SqlScriptSplitter
          int depth = 0;
          while (i < script.Length)
          {
-            if (script[i] == '/' && Next == '*' && (depth == 0 || !sqlite))
+            if (script[i] == '/' && Next == '*' && (depth == 0 || syntax.NestedComments))
             {
                depth++;
                i += 2;

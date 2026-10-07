@@ -175,13 +175,7 @@ internal sealed class SqlWriter
          case SqlCompound compound:
             Select(compound.Left);
             NewLine();
-            text.Append(compound.Operator switch
-            {
-               SqlSetOperator.Union => "UNION",
-               SqlSetOperator.UnionAll => "UNION ALL",
-               SqlSetOperator.Intersect => "INTERSECT",
-               _ => "EXCEPT",
-            });
+            text.Append(dialect.SetOperator(compound.Operator));
             NewLine();
             Select(compound.Right);
             break;
@@ -303,7 +297,7 @@ internal sealed class SqlWriter
                Expr(select.Offset);
             }
             break;
-         case PagingStyle.SqliteLimitOffset:
+         case PagingStyle.LimitOffsetNeedsLimit:
             text.Append("LIMIT ");
             if (select.Limit != null) { Expr(select.Limit); }
             else { text.Append("-1"); }
@@ -433,7 +427,7 @@ internal sealed class SqlWriter
             Operand(like.Operand);
             text.Append(like.CaseInsensitive ? " ILIKE " : " LIKE ");
             Operand(like.Pattern);
-            if (like.Escape != null) { text.Append(" ESCAPE '").Append(like.Escape.Value).Append('\''); }
+            if (like.Escape is { } escape) { text.Append(dialect.LikeEscape(escape)); }
             break;
          case SqlCase caseExpr:
             text.Append("CASE");

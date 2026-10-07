@@ -368,22 +368,13 @@ public sealed class QueryEngine
       if (problems.Count > 0) { throw new DmlScriptException(source, problems); }
       // Where the database's count of rows changed includes its triggers' (SQL Server), the statement's own is read after it.
       string? count = DmlPlanner.RowCountQuery(dialect);
-      List<DmlStatement> statements = script.Statements.Select((s, i) => new DmlStatement(KindOf(s.Keyword), count == null ? s.Text : s.Text + ";" + Environment.NewLine + count, [], s.Text, s.Text)
+      List<DmlStatement> statements = script.Statements.Select((s, i) => new DmlStatement(DmlGuard.KindOf(s.Keyword, dialect), count == null ? s.Text : s.Text + ";" + Environment.NewLine + count, [], s.Text, s.Text)
       {
          Description = $"statement {(i + 1).ToString(CultureInfo.InvariantCulture)} (line {s.Line.ToString(CultureInfo.InvariantCulture)})",
          Counting = count == null ? DmlRowCount.Affected : DmlRowCount.Selected,
       }).ToList();
       return new DmlScript(source, dialect, statements, isEdited: true);
    }
-
-   private static DmlStatementKind KindOf(string? keyword) => keyword switch
-   {
-      "INSERT" or "REPLACE" => DmlStatementKind.Insert,
-      "UPDATE" => DmlStatementKind.Update,
-      "DELETE" => DmlStatementKind.Delete,
-      "MERGE" => DmlStatementKind.Merge,
-      _ => DmlStatementKind.Other,
-   };
 
    /// <summary>Runs a plan's scripts as one change (see <see cref="CommitAsync(IEnumerable{DmlScript}, CancellationToken)"/>); a plan with issues can't run.</summary>
    public Task<DmlResult> CommitAsync(DmlPlan plan, CancellationToken cancellationToken = default)

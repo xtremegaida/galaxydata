@@ -59,6 +59,8 @@ describe('CatalogOverview', () => {
             hasSchema: true,
             entities: 4,
             problem: null,
+            kindName: 'SQL Server',
+            kindIcon: 'database',
           },
         ],
         diagnostics: [

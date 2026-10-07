@@ -4,8 +4,10 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using GalaxyData.Connectors;
 using GalaxyData.Query.DuckDb;
 using GalaxyData.Query.Execution;
+using GalaxyData.Query.Sqlite;
 using GalaxyData.Testing;
 using GalaxyData.Web.Catalog;
 using Microsoft.EntityFrameworkCore;
@@ -98,7 +100,7 @@ public sealed class CatalogQueryTests
       string path = Path.Combine(Path.GetTempPath(), $"gd-connector-{System.Guid.NewGuid():N}.db");
       try
       {
-         Web.Connections.SourceConnector connector = new Web.Connections.SqliteKind().Connector($"Data Source={path}");
+         SourceConnector connector = new SqliteKind().Connector($"Data Source={path}");
          await using (System.Data.Common.DbConnection opened = await connector.OpenAsync(Token)) { opened.State.ShouldBe(System.Data.ConnectionState.Open); }
          await connector.DisposeAsync();
          await Should.ThrowAsync<System.ObjectDisposedException>(async () => await connector.OpenAsync(Token));

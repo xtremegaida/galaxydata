@@ -29,7 +29,7 @@ public sealed class SqlServerSourceProvider : SourceProvider
 
    public override string ProviderKind => SqlServerSchemaIntrospector.ProviderKind;
 
-   public override SqlDialect Dialect => SqlDialect.SqlServer;
+   public override SqlDialect Dialect => SqlServerDialect.Instance;
 
    public override ISchemaIntrospector Introspector { get; } = new SqlServerSchemaIntrospector();
 

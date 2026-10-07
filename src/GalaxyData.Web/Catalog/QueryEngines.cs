@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using GalaxyData.Query.Catalog;
-using GalaxyData.Query.DuckDb;
 using GalaxyData.Query.Execution;
 using GalaxyData.Web.Hosting;
 using Microsoft.Extensions.Options;
@@ -12,7 +11,7 @@ namespace GalaxyData.Web.Catalog;
 /// The engine queries run on: one for each catalog built, connecting through its sources, with the application's
 /// merge engine and its query settings (<see cref="QuerySettings"/>).
 /// </summary>
-public sealed class QueryEngines(SourceConnections connections, SourceProviders providers, DuckDbMergeEngine merge, IOptions<GalaxyDataOptions> options,
+public sealed class QueryEngines(SourceConnections connections, SourceProviders providers, IMergeEngine merge, IOptions<GalaxyDataOptions> options,
                                  TimeProvider clock)
 {
    private readonly Lock gate = new();

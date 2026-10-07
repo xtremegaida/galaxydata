@@ -216,9 +216,16 @@ internal sealed class FederatedExecution
    private async Task<List<object>?> KeysAsync(IMergeSession session, QueryFragment fragment, BindJoinInfo bind, CancellationToken cancellationToken)
    {
       SqlDialect dialect = merge.Provider.Dialect;
-      string column = dialect.Identifier(bind.DriverColumn);
-      string sql = $"SELECT DISTINCT {column} FROM {dialect.Identifier(bind.Driver.Table!)} WHERE {column} IS NOT NULL LIMIT " +
-                   ((long)options.MaxBindKeys + 1).ToString(CultureInfo.InvariantCulture);
+      SqlColumn column = new(null, bind.DriverColumn);
+      SqlSelect select = new()
+      {
+         Distinct = true,
+         From = new SqlTable(null, bind.Driver.Table!, bind.Driver.Table!),
+         Where = new SqlIsNull(column, negated: true),
+         Limit = new SqlLiteral((long)options.MaxBindKeys + 1, ScalarType.Int64.AsNonNullable()),
+      };
+      select.Items.Add(new SqlSelectItem(column, null));
+      string sql = SqlWriter.Write(select, dialect);
       ScalarType type = fragment.Planned!.BindJoin!.Key.Type;
       HashSet<object> keys = [];
       await using (DbConnection connection = await session.OpenConnectionAsync(cancellationToken).ConfigureAwait(false))

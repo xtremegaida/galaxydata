@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using GalaxyData.Connectors;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Execution;
 using GalaxyData.Query.Introspection;
@@ -69,7 +70,7 @@ public sealed class CatalogState(long generation, string version, DateTime built
 /// are kept read between builds. Building it also makes its sources the ones queries connect to
 /// (<see cref="SourceConnections"/>).
 /// </summary>
-public sealed partial class CatalogService(IServiceScopeFactory scopes, ConnectionKinds kinds, ConnectionSecrets secrets, SourceConnections connections,
+public sealed partial class CatalogService(IServiceScopeFactory scopes, ConnectorSet connectors, ConnectionSecrets secrets, SourceConnections connections,
                                            TimeProvider clock, ILogger<CatalogService> logger)
 {
    /// <summary>The header every API answer carries, with the version of the catalog it was given with (or the latest built, when that is up to date).</summary>
@@ -167,35 +168,39 @@ public sealed partial class CatalogService(IServiceScopeFactory scopes, Connecti
          if (snapshot != null) { used[head.Id] = snapshot; }
          SourceSchema? schema = snapshot?.Schema;
          if (snapshot is { Schema: null }) { problem = "Its schema snapshot can't be read; read the schema again"; }
-         ConnectionKind? kind = kinds.Find(row.Kind);
+         Connector? connector = connectors.Find(row.Kind);
          SourceInfo? info = null;
-         if (kind == null)
+         if (connector == null)
          {
             problem = $"The application has no kind of connection '{row.Kind}'";
          }
-         else if (kind is ExcelKind)
+         else if (connector.Attached is { } attached)
          {
-            runtimes.Add(new SourceRuntime(row.Alias, kind, null));
-            // Its sheets load as its schema was read, until it is read again with the settings it has now.
+            runtimes.Add(new SourceRuntime(row.Alias, connector.Kind, null) { Attached = attached });
+            // It loads as its schema was read (a folder's sheets), until it is read again with the settings it has now.
             if (schema != null)
             {
-               info = connections.Folder(row.Alias, snapshot!.ReadWith is { } readWith ? StoredConnections.Folder(readWith.Settings, readWith.Options) : row.Folder());
+               info = snapshot!.ReadWith is { } readWith
+                  ? connections.Attach(row.Alias, attached, readWith.Settings, readWith.Options)
+                  : connections.Attach(row.Alias, attached, row.Settings(), row.Options());
             }
          }
          else
          {
-            runtimes.Add(Runtime(row, kind));
-            if (schema != null) { info = row.Source(schema.DefaultSchema); }
+            runtimes.Add(Runtime(row, connector.Kind));
+            if (schema != null) { info = row.Source(connector.Kind, schema.DefaultSchema); }
          }
          if (info != null)
          {
             builder.AddSource(info, schema!);
             inputs.Add((info, schema!));
          }
-         sources.Add(new CatalogSource(row.Id, row.Alias, row.Kind, row.DisplayName, row.SchemaStatus, row.SchemaRefreshedAt, kind?.AlwaysReadOnly == true || row.IsReadOnly)
+         sources.Add(new CatalogSource(row.Id, row.Alias, row.Kind, row.DisplayName, row.SchemaStatus, row.SchemaRefreshedAt, connector?.Kind.AlwaysReadOnly == true || row.IsReadOnly)
          {
             HasSchema = info != null,
             Problem = problem,
+            KindName = connector?.Kind.DisplayName,
+            KindIcon = connector?.Kind.Icon,
          });
          Append(version, row.Id, row.Alias, row.Kind, row.Version, row.SchemaStatus, row.SchemaRefreshedAt?.Ticks, hasHead ? head.Id : null,
             hasHead ? head.CheckedAt.Ticks : null);

@@ -21,7 +21,7 @@ public sealed class DuckDbSourceProvider : SourceProvider
 
    public override string ProviderKind => "duckdb";
 
-   public override SqlDialect Dialect => SqlDialect.DuckDb;
+   public override SqlDialect Dialect => DuckDbDialect.Instance;
 
    public override ISchemaIntrospector Introspector { get; } = new DuckDbSchemaIntrospector();
 

@@ -4,6 +4,7 @@ using System.IO;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
+using GalaxyData.Connectors;
 using GalaxyData.Web.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

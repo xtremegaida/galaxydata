@@ -106,6 +106,7 @@ internal sealed class FederationPlanner
    public const string MergeSite = "merge";
 
    private readonly Func<SourceInfo, SqlDialect?> dialects;
+   private readonly SqlDialect mergeDialect;
    private readonly Func<PlanNode, SourceInfo, bool>? runs;
    private readonly bool pushDown;
    private readonly List<PlannedFragment> fragments = [];
@@ -114,9 +115,10 @@ internal sealed class FederationPlanner
    private readonly Dictionary<MergeTableNode, PlannedFragment> tables = [];
    private int values;
 
-   private FederationPlanner(Func<SourceInfo, SqlDialect?> dialects, Func<PlanNode, SourceInfo, bool>? runs, bool pushDown)
+   private FederationPlanner(Func<SourceInfo, SqlDialect?> dialects, SqlDialect mergeDialect, Func<PlanNode, SourceInfo, bool>? runs, bool pushDown)
    {
       this.dialects = dialects;
+      this.mergeDialect = mergeDialect;
       this.runs = runs;
       this.pushDown = pushDown;
    }
@@ -133,7 +135,8 @@ internal sealed class FederationPlanner
                                     Func<PlanNode, SourceInfo, bool>? runs = null, bool bindJoins = true)
    {
       ArgumentNullException.ThrowIfNull(plan);
-      FederationPlanner planner = new(dialects, runs, pushDown);
+      ArgumentNullException.ThrowIfNull(mergeDialect);
+      FederationPlanner planner = new(dialects, mergeDialect, runs, pushDown);
       PlanNode root = planner.Cut(plan.Root);
       if (bindJoins && pushDown) { planner.BindJoins(root); }
       Dictionary<MergeTableNode, HashSet<PlanColumn>> reads = [];
@@ -302,7 +305,7 @@ internal sealed class FederationPlanner
    {
       if (Target(target, targetKey) is not (MergeTableNode table, PlanColumn key) || tables[table] is not { BindJoin: null } fragment) { return false; }
       // The target's source must find exactly the rows a key matches in the merge engine (or more).
-      if (!fragment.Dialect.ComparesExactly(key.Type) || !SqlDialect.DuckDb.ComparesExactly(driverKey.Type)) { return false; }
+      if (!fragment.Dialect.ComparesExactly(key.Type) || !mergeDialect.ComparesExactly(driverKey.Type)) { return false; }
       if (Driver(driver, driverKey) is not (MergeTableNode from, string column) || tables[from] is not { } source) { return false; }
       fragment.BindJoin = new PlannedBindJoin(source, column, key);
       return true;

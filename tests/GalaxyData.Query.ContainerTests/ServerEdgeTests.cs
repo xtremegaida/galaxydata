@@ -74,6 +74,15 @@ public sealed class ServerEdgeTests(Servers servers)
       INSERT INTO [dot.table] VALUES (1, N'dot');
       """;
 
+   /// <summary>
+   /// The probe in ClickHouse: nullable where the others are, sorted by id; offsets read as ClickHouse reads them with
+   /// best_effort. The shop's keys and relations are in the overlay the probe's sources are given.
+   /// </summary>
+   private static readonly string ClickHouseProbe = """
+      CREATE TABLE p (id Int32, s Nullable(String), t Nullable(String), n Nullable(Int32), m Nullable(Int32), f Nullable(Float64), dm Nullable(Decimal(10, 2)),
+         d Nullable(Date32), ts Nullable(DateTime64(6)), b Nullable(Bool), g Nullable(UUID), w Nullable(Int32), z Nullable(DateTime64(6, 'UTC'))) ENGINE = MergeTree ORDER BY id;
+      """ + "\n" + ProbeRows.Replace(") VALUES", ") SETTINGS date_time_input_format = 'best_effort' VALUES", StringComparison.Ordinal);
+
    private static readonly string SqliteProbe = """
       CREATE TABLE p (id INTEGER PRIMARY KEY, s VARCHAR(40), t VARCHAR(40), n INTEGER, m INTEGER, f REAL, dm DECIMAL(10,2), d DATE,
          ts DATETIME, b BOOLEAN, g UUID, w INTEGER, z DATETIMEOFFSET);
@@ -161,10 +170,20 @@ public sealed class ServerEdgeTests(Servers servers)
       CREATE TABLE picks AS SELECT i AS n FROM range(1001, 1005) AS t(i);
       """;
 
-   private Task<ServerDatabase> ProbeDatabaseAsync(ServerKind server) =>
-      servers.DatabaseAsync(server, "shop", server == ServerKind.Postgres ? PostgresProbe : SqlServerProbe);
+   private Task<ServerDatabase> ProbeDatabaseAsync(ServerKind server) => servers.DatabaseAsync(server, "shop", server switch
+   {
+      ServerKind.Postgres => PostgresProbe,
+      ServerKind.SqlServer => SqlServerProbe,
+      _ => ClickHouseProbe,
+   });
 
-   private async Task<TestSources> ProbeSourcesAsync(ServerKind server) => await (await ProbeDatabaseAsync(server)).SourcesAsync();
+   /// <summary>The probe's sources; ClickHouse's with the shop's keys and relations, which it doesn't keep, in the overlay.</summary>
+   private async Task<TestSources> ProbeSourcesAsync(ServerKind server)
+   {
+      TestSources sources = await (await ProbeDatabaseAsync(server)).SourcesAsync();
+      if (server == ServerKind.ClickHouse) { sources.Overlay = ClickHouseShop.Keyed(CatalogOverlay.Empty, "shop", "shop"); }
+      return sources;
+   }
 
    private static Task<TestSources> SqliteProbeAsync() =>
       new TestSources().AddSqliteAsync("shop", IntegrationTests.Fixtures.Sql("shop.sqlite.sql") + "\n" + SqliteProbe);
@@ -243,10 +262,10 @@ public sealed class ServerEdgeTests(Servers servers)
       (await ReadAsync(sources.Engine(options: NoPushDown))).ShouldBe(direct, query);
    }
 
-   private static TheoryData<ServerKind, string, string> Both(params (string Name, string Query)[] cases)
+   private static TheoryData<ServerKind, string, string> All(params (string Name, string Query)[] cases)
    {
       TheoryData<ServerKind, string, string> data = [];
-      foreach (ServerKind server in new[] { ServerKind.Postgres, ServerKind.SqlServer })
+      foreach (ServerKind server in new[] { ServerKind.Postgres, ServerKind.SqlServer, ServerKind.ClickHouse })
       {
          foreach ((string name, string query) in cases) { data.Add(server, name, query); }
       }
@@ -271,7 +290,7 @@ public sealed class ServerEdgeTests(Servers servers)
 
    #region 1. Functions, operators, booleans, grouping and paging against the SQLite reference
 
-   public static TheoryData<ServerKind, string, string> FunctionCases => Both(
+   public static TheoryData<ServerKind, string, string> FunctionCases => All(
       ("text-case-trim", "shop.p.select(id, lo: lower(s), up: upper(s), tr: trim(s), lt: ltrim(s), rt: rtrim(s)).orderBy(id)"),
       ("length-trailing-spaces", "shop.p.select(id, ls: length(s), lt: length(t)).orderBy(id)"),
       ("substring", "shop.p.select(id, a: substring(s, 2), b: substring(s, 2, 3), c: substring(s, 1, 0), e: substring(s, 0, 2)).orderBy(id)"),
@@ -378,6 +397,7 @@ public sealed class ServerEdgeTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task AddMonthsClampsToTheMonthEnd(ServerKind server)
    {
       await using TestSources sources = await ProbeSourcesAsync(server);
@@ -418,6 +438,7 @@ public sealed class ServerEdgeTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task DateBucketsAreTheFirstDaysOfTheirPeriods(ServerKind server)
    {
       await using TestSources sources = await ProbeSourcesAsync(server);
@@ -438,6 +459,7 @@ public sealed class ServerEdgeTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task AddMonthsOfAnOffsetDateTimeWorksInUtc(ServerKind server)
    {
       await using TestSources sources = await ProbeSourcesAsync(server);
@@ -454,6 +476,7 @@ public sealed class ServerEdgeTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task OffsetDateTimesSortAsInstants(ServerKind server)
    {
       await using TestSources sources = await ProbeSourcesAsync(server);
@@ -464,6 +487,7 @@ public sealed class ServerEdgeTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task GuidsAreNotSorted(ServerKind server)
    {
       await using TestSources sources = await ProbeSourcesAsync(server);
@@ -476,6 +500,7 @@ public sealed class ServerEdgeTests(Servers servers)
    [InlineData(null)]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task IntParameterAgainstABigintColumn(ServerKind? server)
    {
       await using TestSources sources = server is { } kind ? await (await servers.ShopAsync(kind)).SourcesAsync() : await TestSources.SqliteShopAsync();
@@ -489,6 +514,7 @@ public sealed class ServerEdgeTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task LikeIsCaseSensitiveInACaseSensitiveDatabase(ServerKind server)
    {
       await using TestSources sources = await ProbeSourcesAsync(server);
@@ -507,6 +533,7 @@ public sealed class ServerEdgeTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task DivisionByZeroFailsOnTheServers(ServerKind server)
    {
       await using TestSources sources = await ProbeSourcesAsync(server);
@@ -517,6 +544,7 @@ public sealed class ServerEdgeTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres, "0.83333333333333333333")]
    [InlineData(ServerKind.SqlServer, "0.8333333333")]
+   [InlineData(ServerKind.ClickHouse, "0.833333333333333333")]
    public async Task DecimalDivisionHasTheDatabasesDigits(ServerKind server, string third)
    {
       await using TestSources sources = await ProbeSourcesAsync(server);

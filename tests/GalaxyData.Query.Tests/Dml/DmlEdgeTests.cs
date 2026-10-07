@@ -5,6 +5,7 @@ using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Dml;
 using GalaxyData.Query.Introspection;
 using GalaxyData.Query.Sql;
+using GalaxyData.Query.Tests.Sql;
 using GalaxyData.Query.Types;
 using Shouldly;
 using Xunit;
@@ -42,7 +43,7 @@ public sealed class DmlEdgeTests
 
    private static (bool Ok, object? Value, string? Problem) Convert(string column, object? value)
    {
-      bool ok = DmlValues.TryConvert(Column(column), value, SqlDialect.PostgreSql, out object? converted, out string? problem);
+      bool ok = DmlValues.TryConvert(Column(column), value, TestDialects.PostgreSql, out object? converted, out string? problem);
       return (ok, converted, problem);
    }
 
@@ -82,7 +83,7 @@ public sealed class DmlEdgeTests
    private static DmlPlan Plan(QueryCatalog catalog, SqlDialect dialect, params RowChange[] changes) =>
       DmlPlanner.Plan(new ChangeSet(changes), _ => dialect);
 
-   private static SqlDialect DialectOf(string kind) => SqlDialect.All.Single(d => d.ProviderKind == kind);
+   private static SqlDialect DialectOf(string kind) => TestDialects.All.Single(d => d.ProviderKind == kind);
 
    private static string[] Split(string kind, string script)
    {
@@ -332,7 +333,7 @@ public sealed class DmlEdgeTests
    public void CantUpdateAKeylessTable()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new UpdateRow(ShopTable(catalog, "notes"), Row(("at", DateTime.Now)), Row(("text", "x"))));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new UpdateRow(ShopTable(catalog, "notes"), Row(("at", DateTime.Now)), Row(("text", "x"))));
       plan.Issues.ShouldContain(i => i.Message.Contains("has no primary key", StringComparison.Ordinal));
    }
 
@@ -346,7 +347,7 @@ public sealed class DmlEdgeTests
                          "they can be inserted, but not changed or deleted";
       DmlRules.WhyNoChanges(table).ShouldBe(Why);
       DmlRules.WhyNoInserts(table).ShouldBeNull();
-      DmlPlan plan = Plan(catalog, SqlDialect.SqlServer, new UpdateRow(table, Row(("id", "/1/")), Row(("name", "x"))), new DeleteRow(table, Row(("id", "/1/"))));
+      DmlPlan plan = Plan(catalog, TestDialects.SqlServer, new UpdateRow(table, Row(("id", "/1/")), Row(("name", "x"))), new DeleteRow(table, Row(("id", "/1/"))));
       plan.Issues.Select(i => i.Message).ShouldBe([Why, Why]);
    }
 
@@ -354,7 +355,7 @@ public sealed class DmlEdgeTests
    public void CanInsertIntoAKeylessTable()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new InsertRow(ShopTable(catalog, "notes"), Row(("text", "hi"))));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new InsertRow(ShopTable(catalog, "notes"), Row(("text", "hi"))));
       plan.Issues.ShouldBeEmpty();
    }
 
@@ -362,7 +363,7 @@ public sealed class DmlEdgeTests
    public void UpdateChangingNoColumnIsAnIssue()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new UpdateRow(ShopTable(catalog, "orders"), Row(("id", 1L)), Row()));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new UpdateRow(ShopTable(catalog, "orders"), Row(("id", 1L)), Row()));
       plan.Issues.ShouldContain(i => i.Message == "The update changes no column");
    }
 
@@ -370,7 +371,7 @@ public sealed class DmlEdgeTests
    public void UpdateOfKeyColumnIsAnIssue()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new UpdateRow(ShopTable(catalog, "orders"), Row(("id", 1L)), Row(("id", 2L))));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new UpdateRow(ShopTable(catalog, "orders"), Row(("id", 1L)), Row(("id", 2L))));
       plan.Issues.ShouldContain(i => i.Message.Contains("is part of the key, which can't change"));
    }
 
@@ -378,7 +379,7 @@ public sealed class DmlEdgeTests
    public void NullKeyValueIsAnIssue()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new UpdateRow(ShopTable(catalog, "order_lines"), Row(("order_id", 1L), ("line_no", null)), Row(("qty", 1))));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new UpdateRow(ShopTable(catalog, "order_lines"), Row(("order_id", 1L), ("line_no", null)), Row(("qty", 1))));
       plan.Issues.ShouldContain(i => i.Message.Contains("is null: no row has it"));
    }
 
@@ -386,7 +387,7 @@ public sealed class DmlEdgeTests
    public void MissingKeyColumnIsAnIssue()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new UpdateRow(ShopTable(catalog, "order_lines"), Row(("order_id", 1L)), Row(("qty", 1))));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new UpdateRow(ShopTable(catalog, "order_lines"), Row(("order_id", 1L)), Row(("qty", 1))));
       plan.Issues.ShouldContain(i => i.Message.Contains("The key needs a value for 'line_no'"));
    }
 
@@ -394,7 +395,7 @@ public sealed class DmlEdgeTests
    public void NonKeyColumnInKeyIsAnIssue()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new UpdateRow(ShopTable(catalog, "orders"), Row(("id", 1L), ("status", "open")), Row(("total", 1m))));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new UpdateRow(ShopTable(catalog, "orders"), Row(("id", 1L), ("status", "open")), Row(("total", 1m))));
       plan.Issues.ShouldContain(i => i.Message.Contains("isn't part of the key"));
    }
 
@@ -402,7 +403,7 @@ public sealed class DmlEdgeTests
    public void UnknownColumnIsAnIssue()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new InsertRow(ShopTable(catalog, "customers"), Row(("name", "x"), ("nmae", "y"))));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new InsertRow(ShopTable(catalog, "customers"), Row(("name", "x"), ("nmae", "y"))));
       plan.Issues.ShouldContain(i => i.Message.Contains("has no column 'nmae'"));
    }
 
@@ -410,7 +411,7 @@ public sealed class DmlEdgeTests
    public void MissingRequiredColumnIsAnIssue()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new InsertRow(ShopTable(catalog, "customers"), Row(("city", "Durban"))));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new InsertRow(ShopTable(catalog, "customers"), Row(("city", "Durban"))));
       plan.Issues.ShouldContain(i => i.Message.Contains("'name' needs a value"));
    }
 
@@ -418,7 +419,7 @@ public sealed class DmlEdgeTests
    public void IdentityNeedsNoValue()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new InsertRow(ShopTable(catalog, "customers"), Row(("name", "x"))));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new InsertRow(ShopTable(catalog, "customers"), Row(("name", "x"))));
       plan.Issues.ShouldBeEmpty();
    }
 
@@ -426,7 +427,7 @@ public sealed class DmlEdgeTests
    public void SqlServerIdentityTakesNoValue()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.SqlServer, new InsertRow(ShopTable(catalog, "customers"), Row(("id", 9), ("name", "x"))));
+      DmlPlan plan = Plan(catalog, TestDialects.SqlServer, new InsertRow(ShopTable(catalog, "customers"), Row(("id", 9), ("name", "x"))));
       plan.Issues.ShouldContain(i => i.Message.Contains("is an identity column"));
    }
 
@@ -446,7 +447,7 @@ public sealed class DmlEdgeTests
    {
       // customers has 'name'; asking for 'NAME' is a case-insensitive match, not ambiguous, so use two real columns.
       QueryCatalog catalog = Build(("shop", Source(Table("t", Col("Value", "int32?"), Col("value", "int32?")) with { PrimaryKey = Pk("Value") })));
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new InsertRow((TableEntity)catalog.Entity("shop.t"), Row(("vAlUe", 1))));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new InsertRow((TableEntity)catalog.Entity("shop.t"), Row(("vAlUe", 1))));
       plan.Issues.ShouldContain(i => i.Message.Contains("could be"));
    }
 
@@ -455,7 +456,7 @@ public sealed class DmlEdgeTests
    {
       // Not possible via a dictionary with the same key; give the exact name and a differently-cased alias that resolves to the same column.
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new InsertRow(ShopTable(catalog, "customers"), Row(("name", "x"), ("NAME", "y"))));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new InsertRow(ShopTable(catalog, "customers"), Row(("name", "x"), ("NAME", "y"))));
       plan.Issues.ShouldContain(i => i.Message.Contains("is given twice"));
    }
 
@@ -467,7 +468,7 @@ public sealed class DmlEdgeTests
    public void InsertsAreOrderedParentsFirst()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite,
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite,
          new InsertRow(ShopTable(catalog, "order_lines"), Row(("order_id", 1L), ("line_no", 1), ("qty", 1))),
          new InsertRow(ShopTable(catalog, "orders"), Row(("id", 1L), ("customer_id", 1), ("status", "open"), ("total", 1m))),
          new InsertRow(ShopTable(catalog, "customers"), Row(("name", "x"))));
@@ -479,7 +480,7 @@ public sealed class DmlEdgeTests
    public void DeletesAreOrderedChildrenFirst()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite,
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite,
          new DeleteRow(ShopTable(catalog, "customers"), Row(("id", 1))),
          new DeleteRow(ShopTable(catalog, "orders"), Row(("id", 1L))),
          new DeleteRow(ShopTable(catalog, "order_lines"), Row(("order_id", 1L), ("line_no", 1))));
@@ -492,7 +493,7 @@ public sealed class DmlEdgeTests
    public void InsertsThenUpdatesThenDeletes()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite,
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite,
          new DeleteRow(ShopTable(catalog, "order_lines"), Row(("order_id", 1L), ("line_no", 1))),
          new UpdateRow(ShopTable(catalog, "orders"), Row(("id", 1L)), Row(("total", 1m))),
          new InsertRow(ShopTable(catalog, "customers"), Row(("name", "x"))));
@@ -504,7 +505,7 @@ public sealed class DmlEdgeTests
    public void SelfReferenceKeepsOrderGiven()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite,
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite,
          new InsertRow(ShopTable(catalog, "employees"), Row(("id", 1L), ("name", "Ann"))),
          new InsertRow(ShopTable(catalog, "employees"), Row(("id", 2L), ("name", "Ben"), ("manager_id", 1L))));
       plan.Issues.ShouldBeEmpty();
@@ -524,7 +525,7 @@ public sealed class DmlEdgeTests
    {
       CatalogOverlay overlay = new() { Entities = [new OverlayEntitySettings("shop.notes") { Key = ["at"] }] };
       QueryCatalog catalog = ShopCatalog(overlay);
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new UpdateRow(ShopTable(catalog, "notes"), Row(("at", new DateTime(2026, 1, 1))), Row(("text", "x"))));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new UpdateRow(ShopTable(catalog, "notes"), Row(("at", new DateTime(2026, 1, 1))), Row(("text", "x"))));
       plan.Success.ShouldBeFalse("a declared key enables navigation, never editing");
    }
 
@@ -533,7 +534,7 @@ public sealed class DmlEdgeTests
    {
       CatalogOverlay overlay = new() { Entities = [new OverlayEntitySettings("shop.notes") { Key = ["at"] }] };
       QueryCatalog catalog = ShopCatalog(overlay);
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new DeleteRow(ShopTable(catalog, "notes"), Row(("at", new DateTime(2026, 1, 1)))));
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new DeleteRow(ShopTable(catalog, "notes"), Row(("at", new DateTime(2026, 1, 1)))));
       plan.Success.ShouldBeFalse("a declared key enables navigation, never editing");
    }
 
@@ -545,7 +546,7 @@ public sealed class DmlEdgeTests
    public void SqliteSkipsDecimalAndDateOriginals()
    {
       QueryCatalog catalog = Build(("shop", Source(Table("t", Col("id"), Col("price", "decimal(10,2)?"), Col("when", "date?"), Col("note", "string?")) with { PrimaryKey = Pk("id") })));
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new UpdateRow((TableEntity)catalog.Entity("shop.t"), Row(("id", 1L)), Row(("note", "x")))
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new UpdateRow((TableEntity)catalog.Entity("shop.t"), Row(("id", 1L)), Row(("note", "x")))
       {
          Original = Row(("price", 5m), ("when", new DateOnly(2026, 1, 1))),
       });
@@ -559,7 +560,7 @@ public sealed class DmlEdgeTests
    public void DuckDbComparesDecimalOriginals()
    {
       QueryCatalog catalog = Build(("shop", Source(Table("t", Col("id"), Col("price", "decimal(10,2)?"), Col("note", "string?")) with { PrimaryKey = Pk("id") })));
-      DmlPlan plan = Plan(catalog, SqlDialect.DuckDb, new UpdateRow((TableEntity)catalog.Entity("shop.t"), Row(("id", 1L)), Row(("note", "x"))) { Original = Row(("price", 5m)) });
+      DmlPlan plan = Plan(catalog, TestDialects.DuckDb, new UpdateRow((TableEntity)catalog.Entity("shop.t"), Row(("id", 1L)), Row(("note", "x"))) { Original = Row(("price", 5m)) });
       plan.Scripts.Single().Statements.Single().ToDisplayText().ShouldContain("price =");
    }
 
@@ -567,7 +568,7 @@ public sealed class DmlEdgeTests
    public void NullOriginalBecomesIsNull()
    {
       QueryCatalog catalog = ShopCatalog();
-      DmlPlan plan = Plan(catalog, SqlDialect.Sqlite, new UpdateRow(ShopTable(catalog, "customers"), Row(("id", 1)), Row(("name", "x"))) { Original = Row(("city", null)) });
+      DmlPlan plan = Plan(catalog, TestDialects.Sqlite, new UpdateRow(ShopTable(catalog, "customers"), Row(("id", 1)), Row(("name", "x"))) { Original = Row(("city", null)) });
       plan.Scripts.Single().Statements.Single().ToDisplayText().ShouldContain("city IS NULL");
    }
 
@@ -575,7 +576,7 @@ public sealed class DmlEdgeTests
    public void FloatOriginalsAreNeverCompared()
    {
       QueryCatalog catalog = Build(("shop", Source(Table("t", Col("id"), Col("ratio", "double?"), Col("note", "string?")) with { PrimaryKey = Pk("id") })));
-      DmlPlan plan = Plan(catalog, SqlDialect.DuckDb, new UpdateRow((TableEntity)catalog.Entity("shop.t"), Row(("id", 1L)), Row(("note", "x"))) { Original = Row(("ratio", 1.5)) });
+      DmlPlan plan = Plan(catalog, TestDialects.DuckDb, new UpdateRow((TableEntity)catalog.Entity("shop.t"), Row(("id", 1L)), Row(("note", "x"))) { Original = Row(("ratio", 1.5)) });
       plan.Scripts.Single().Statements.Single().ToDisplayText().ShouldNotContain("ratio =");
    }
 
@@ -649,43 +650,43 @@ public sealed class DmlEdgeTests
    [Fact]
    public void UnclosedStringIsReportedAtItsPosition()
    {
-      SplitScript script = SqlScriptSplitter.Split("UPDATE t SET a = 1;\nUPDATE t SET b = 'x;\n", SqlDialect.Sqlite);
+      SplitScript script = SqlScriptSplitter.Split("UPDATE t SET a = 1;\nUPDATE t SET b = 'x;\n", TestDialects.Sqlite);
       script.Problems.Single().ShouldBe(new ScriptProblem("This string isn't closed", 37, 4, 2));
    }
 
    [Fact]
    public void UnclosedBlockCommentIsReported() =>
-      SqlScriptSplitter.Split("UPDATE t SET a = 1 /* x", SqlDialect.SqlServer).Problems.Single().Message.ShouldBe("This comment isn't closed");
+      SqlScriptSplitter.Split("UPDATE t SET a = 1 /* x", TestDialects.SqlServer).Problems.Single().Message.ShouldBe("This comment isn't closed");
 
    [Fact]
    public void UnclosedDollarQuoteIsReported() =>
-      SqlScriptSplitter.Split("UPDATE t SET a = $q$ x", SqlDialect.PostgreSql).Problems.Single().Message.ShouldBe("This $q$ quote isn't closed");
+      SqlScriptSplitter.Split("UPDATE t SET a = $q$ x", TestDialects.PostgreSql).Problems.Single().Message.ShouldBe("This $q$ quote isn't closed");
 
    [Fact]
    public void GoWithACountIsAProblem()
    {
-      SplitScript twice = SqlScriptSplitter.Split("UPDATE a SET x = x + 1\nGO 2\n", SqlDialect.SqlServer);
+      SplitScript twice = SqlScriptSplitter.Split("UPDATE a SET x = x + 1\nGO 2\n", TestDialects.SqlServer);
       twice.Problems.Single().Message.ShouldBe("GO with a count would run its batch more than once");
    }
 
    [Fact]
    public void KeywordAfterCteIsFound()
    {
-      SplitScript script = SqlScriptSplitter.Split("WITH x AS (SELECT 1) DELETE FROM t WHERE id IN (SELECT a FROM x)", SqlDialect.PostgreSql);
+      SplitScript script = SqlScriptSplitter.Split("WITH x AS (SELECT 1) DELETE FROM t WHERE id IN (SELECT a FROM x)", TestDialects.PostgreSql);
       script.Statements.Single().Keyword.ShouldBe("DELETE");
    }
 
    [Fact]
    public void KeywordAfterCteWithColumnListIsFound()
    {
-      SplitScript script = SqlScriptSplitter.Split("WITH x (a, b) AS (SELECT 1, 2) INSERT INTO t SELECT * FROM x", SqlDialect.PostgreSql);
+      SplitScript script = SqlScriptSplitter.Split("WITH x (a, b) AS (SELECT 1, 2) INSERT INTO t SELECT * FROM x", TestDialects.PostgreSql);
       script.Statements.Single().Keyword.ShouldBe("INSERT");
    }
 
    [Fact]
    public void LineNumbersAreTracked()
    {
-      SplitScript script = SqlScriptSplitter.Split("UPDATE a SET x = 1;\n\nDELETE FROM b;\nUPDATE c SET y = 2", SqlDialect.Sqlite);
+      SplitScript script = SqlScriptSplitter.Split("UPDATE a SET x = 1;\n\nDELETE FROM b;\nUPDATE c SET y = 2", TestDialects.Sqlite);
       script.Statements.Select(s => s.Line).ShouldBe([1, 3, 4]);
    }
 

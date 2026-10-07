@@ -4,6 +4,7 @@
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.3" />
+    <PackageVersion Include="ClickHouse.Driver" Version="1.5.0" />
     <PackageVersion Include="System.CommandLine" Version="2.0.12" />
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.1.1" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.3" />

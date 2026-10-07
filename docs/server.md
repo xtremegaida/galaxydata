@@ -224,6 +224,7 @@ user with no password to change.
 ## Connections
 
 A connection is a source the application queries. Administrators manage connections under `/api/connections`.
+The kinds are those of the connectors the application comes with ([connectors.md](connectors.md)):
 
 | Kind | Source | Settings |
 |---|---|---|
@@ -232,6 +233,11 @@ A connection is a source the application queries. Administrators manage connecti
 | `sqlite` | a SQLite database file | `Data Source`, `Default Timeout`, ... |
 | `duckdb` | a DuckDB database file | `Data Source`, and DuckDB's settings (`threads`, `memory_limit`) |
 | `excel` | a folder of `.xlsx` workbooks | `Folder` |
+| `clickhouse` | ClickHouse 26.3 or later, over HTTP | ClickHouse.Driver's: `Host`, `Port`, `Database`, `Username`, `Password`, `Protocol`, ..., and server settings prefixed `set_` |
+
+A ClickHouse connection is its database (the connection's `Database`, or the login's default): its tables and views,
+with no keys or relations, which ClickHouse doesn't keep. Declare them in the overlay (a table's key, and relations)
+to follow links between its tables.
 
 **Settings.** A connection's settings are its provider's connection-string keywords and values, named as the
 provider names them.
@@ -251,13 +257,18 @@ provider names them.
 - is unique, ignoring case;
 - never changes.
 
-**Read-only.** Connections are read-only unless made otherwise, and folders of workbooks always are.
+**Read-only.** Connections are read-only unless made otherwise, and folders of workbooks and ClickHouse connections
+always are.
 
 - **Opening files.** The application opens SQLite and DuckDB files read-only or read-write itself (so `Mode` and
   `ACCESS_MODE` aren't settings), and never makes a missing file.
 - **PostgreSQL** sessions start read-only (`default_transaction_read_only`).
 - **SQL Server** has no such setting: give a read-only connection a login that can't write.
-- **Server-side files.** SQL Server's `AttachDbFilename` isn't a setting either.
+- **ClickHouse** statements run with `readonly=2`, and with the settings the language's meaning depends on (outer
+  joins give nulls, aggregates of no rows are null, times are UTC), which aren't settings of the connection. The
+  login must be allowed to change settings: one whose profile is `readonly=1` can't run queries.
+- **Server-side files.** SQL Server's `AttachDbFilename` isn't a setting either, nor ClickHouse's sessions
+  (`UseSession`, `SessionId`), which would make a source's statements wait for each other.
 
 **Files and folders.** Database files, folders of workbooks and PostgreSQL's certificate and key files must be in
 one of `Connections:AllowedFileRoots` (by default the data directory's `files` folder), given by their full

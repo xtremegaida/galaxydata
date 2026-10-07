@@ -24,7 +24,8 @@ namespace GalaxyData.Query.IntegrationTests.Docs;
 /// </summary>
 public sealed partial class LanguageDocTests
 {
-   [GeneratedRegex(@"^```(?<tag>[\w-]*)[ \t]*\r?\n(?<body>.*?)^```[ \t]*$", RegexOptions.Multiline | RegexOptions.Singleline)]
+   // The document's line breaks are CRLF where Git checks it out so: $ comes before \n only.
+   [GeneratedRegex(@"^```(?<tag>[\w-]*)[ \t]*\r?\n(?<body>.*?)^```[ \t]*\r?$", RegexOptions.Multiline | RegexOptions.Singleline)]
    private static partial Regex Blocks();
 
    private static string Document()

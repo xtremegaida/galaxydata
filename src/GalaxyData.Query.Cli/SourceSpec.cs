@@ -1,38 +1,40 @@
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using DuckDB.NET.Data;
+using GalaxyData.Connectors;
 using GalaxyData.Query.Catalog;
-using GalaxyData.Query.DuckDb;
-using GalaxyData.Query.Excel;
 using GalaxyData.Query.Execution;
-using GalaxyData.Query.Introspection;
 using GalaxyData.Query.Language;
-using GalaxyData.Query.PostgreSql;
-using GalaxyData.Query.Providers;
-using GalaxyData.Query.Sqlite;
-using GalaxyData.Query.SqlServer;
-using Microsoft.Data.SqlClient;
-using Microsoft.Data.Sqlite;
-using Npgsql;
 
 namespace GalaxyData.Query.Cli;
 
 /// <summary>
-/// A source given on the command line as <c>alias=kind:target</c>. The target is a database file (opened read-only, unless written),
-/// a <c>.sql</c> script (run into a fresh in-memory database), <c>:memory:</c>, or a connection string (anything with
-/// an <c>=</c> in it); for <c>postgres</c> and <c>sqlserver</c>, a connection string; for <c>excel</c>, a folder of workbooks.
+/// A source given on the command line as <c>alias=kind:target</c>, of a kind a connector takes on the command line.
+/// What the target is depends on the kind (<see cref="CommandLineTargets"/>): a database file (opened read-only,
+/// unless written), a <c>.sql</c> script (run into a fresh in-memory database), <c>:memory:</c>, or a connection
+/// string (anything with an <c>=</c> in it); a connection string; or a folder.
 /// </summary>
 internal sealed record SourceSpec(string Alias, string Kind, string Target)
 {
-   public static IReadOnlyList<string> Kinds { get; } = ["sqlite", "duckdb", "postgres", "sqlserver", "excel"];
+   /// <summary>The connectors the command line takes sources of, as it lists them: files, then connection strings, then folders.</summary>
+   public static IReadOnlyList<Connector> Kinds(ConnectorSet connectors) =>
+      connectors.All.Where(c => c.CommandLine != null).OrderBy(c => c.CommandLine!.Targets).ToList();
 
-   public static SourceSpec Parse(string text)
+   /// <summary>The kinds for <c>--source</c>'s help: <c>sqlite, duckdb, postgres and sqlserver (a connection string), excel (a folder of .xlsx workbooks)</c>.</summary>
+   public static string Describe(ConnectorSet connectors) =>
+      string.Join(", ", Kinds(connectors).GroupBy(c => c.CommandLine!.Target).Select(g =>
+      {
+         List<string> ids = g.Select(c => c.Id).ToList();
+         string listed = ids.Count == 1 ? ids[0] : string.Join(", ", ids.Take(ids.Count - 1)) + " and " + ids[^1];
+         return g.Key == null ? listed : $"{listed} ({g.Key})";
+      }));
+
+   public static SourceSpec Parse(string text, ConnectorSet connectors)
    {
+      ArgumentNullException.ThrowIfNull(text);
       int equals = text.IndexOf('=', StringComparison.Ordinal);
       int colon = equals < 0 ? -1 : text.IndexOf(':', equals + 1);
       if (equals <= 0 || colon < 0)
@@ -43,42 +45,36 @@ internal sealed record SourceSpec(string Alias, string Kind, string Target)
       string kind = text[(equals + 1)..colon].Trim().ToLowerInvariant();
       string target = text[(colon + 1)..].Trim();
       if (!QueryText.IsBareIdentifier(alias)) { throw new FormatException($"'{alias}' can't be a source alias; use letters, digits and underscores"); }
-      if (!((IList<string>)Kinds).Contains(kind)) { throw new FormatException($"'{kind}' is not a source kind; use {string.Join(", ", Kinds.Take(Kinds.Count - 1))} or {Kinds[^1]}"); }
+      IReadOnlyList<Connector> kinds = Kinds(connectors);
+      Connector connector = kinds.FirstOrDefault(c => c.Id == kind)
+         ?? throw new FormatException($"'{kind}' is not a source kind; use {string.Join(", ", kinds.Take(kinds.Count - 1).Select(c => c.Id))} or {kinds[^1].Id}");
       if (target.Length == 0) { throw new FormatException($"The source '{alias}' needs a target after '{kind}:'"); }
-      if (kind is "postgres" or "sqlserver" && !target.Contains('=', StringComparison.Ordinal))
+      if (connector.CommandLine!.Targets == CommandLineTargets.ConnectionString && !target.Contains('=', StringComparison.Ordinal))
       {
-         throw new FormatException($"The source '{alias}' needs a connection string after '{kind}:', e.g. " +
-            (kind == "postgres" ? "Host=localhost;Database=shop;Username=me" : "Server=localhost;Database=shop;Integrated Security=true"));
+         throw new FormatException($"The source '{alias}' needs a connection string after '{kind}:', e.g. {connector.CommandLine.Example}");
       }
       return new SourceSpec(alias, kind, target);
    }
-
-   public bool IsScript => Target.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) && !Target.Contains('=', StringComparison.Ordinal);
-
-   public bool IsMemory => Target == ":memory:";
 }
 
 /// <summary>
-/// The command line's sources, opened: each database keeps a first connection open, which in-memory databases need;
-/// folders of workbooks are registered with the Excel provider, which opens their connections itself. PostgreSQL
-/// connections come from a data source of the provider's making, which reads enums. Sources are read-only, and
-/// their files opened so, but those named writable.
+/// The command line's sources, opened by their connectors: each database keeps a first connection open, which
+/// in-memory databases need; sources a connector opens itself (folders of workbooks) are attached to it. Sources are
+/// read-only, and their files opened so, but those named writable.
 /// </summary>
-internal sealed class CliSources(ExcelSourceProvider excel, IReadOnlySet<string> writable) : IConnectionFactory, IAsyncDisposable
+internal sealed class CliSources(ConnectorSet connectors, IReadOnlySet<string> writable) : IConnectionFactory, IAsyncDisposable
 {
-   private readonly Dictionary<string, (DbConnection Keeper, Func<DbConnection> Open)> opened = new(StringComparer.Ordinal);
-   private readonly List<NpgsqlDataSource> dataSources = [];
-   private readonly HashSet<string> aliases = new(StringComparer.Ordinal);
+   private readonly Dictionary<string, OpenedSource> opened = new(StringComparer.Ordinal);
    private readonly CatalogBuilder builder = new();
 
    /// <summary>What the sources' schemas left out (workbooks that can't be read).</summary>
    public List<string> Warnings { get; } = [];
 
-   public static async Task<CliSources> OpenAsync(IReadOnlyList<SourceSpec> specs, ExcelSourceProvider excel, IReadOnlySet<string> writable,
+   public static async Task<CliSources> OpenAsync(IReadOnlyList<SourceSpec> specs, ConnectorSet connectors, IReadOnlySet<string> writable,
                                                   CancellationToken cancellationToken)
    {
       if (writable.FirstOrDefault(w => !specs.Any(s => s.Alias == w)) is { } unknown) { throw new FormatException($"'{unknown}' is no source, so it can't be written"); }
-      CliSources sources = new(excel, writable);
+      CliSources sources = new(connectors, writable);
       try
       {
          foreach (SourceSpec spec in specs) { await sources.AddAsync(spec, cancellationToken); }
@@ -95,105 +91,26 @@ internal sealed class CliSources(ExcelSourceProvider excel, IReadOnlySet<string>
 
    private async Task AddAsync(SourceSpec spec, CancellationToken cancellationToken)
    {
-      if (!aliases.Add(spec.Alias)) { throw new FormatException($"The source alias '{spec.Alias}' is given twice"); }
-      bool write = writable.Contains(spec.Alias);
-      if (spec.Kind == ExcelSourceProvider.Kind)
-      {
-         if (write) { throw new FormatException($"'{spec.Alias}' is a folder of workbooks, which can't be written"); }
-         await AddFolderAsync(spec, cancellationToken);
-         return;
-      }
-      (DbConnection keeper, Func<DbConnection> open, SourceProvider provider) = Connect(spec, write);
-      try
-      {
-         if (keeper.State != System.Data.ConnectionState.Open) { await keeper.OpenAsync(cancellationToken); }
-         if (spec.IsScript) { await keeper.ExecuteAsync(await File.ReadAllTextAsync(spec.Target, cancellationToken), cancellationToken); }
-         SourceSchema schema = await provider.Introspector.IntrospectAsync(keeper, IntrospectionOptions.Default, cancellationToken);
-         builder.AddSource(new SourceInfo(spec.Alias, provider.ProviderKind, schema.DefaultSchema) { IsReadOnly = !write }, schema);
-         opened.Add(spec.Alias, (keeper, open));
-      }
-      catch
-      {
-         await keeper.DisposeAsync();
-         throw;
-      }
+      if (opened.ContainsKey(spec.Alias)) { throw new FormatException($"The source alias '{spec.Alias}' is given twice"); }
+      Connector connector = connectors.Find(spec.Kind) ?? throw new FormatException($"'{spec.Kind}' is not a source kind");
+      OpenedSource source = await connector.OpenAsync(new CommandLineSource(spec.Alias, spec.Kind, spec.Target, writable.Contains(spec.Alias)), cancellationToken);
+      opened.Add(spec.Alias, source);
+      builder.AddSource(source.Info, source.Schema);
+      foreach (string warning in source.Warnings) { Warnings.Add($"{spec.Alias}: {warning}"); }
    }
-
-   private async Task AddFolderAsync(SourceSpec spec, CancellationToken cancellationToken)
-   {
-      if (!Directory.Exists(spec.Target)) { throw new DirectoryNotFoundException($"The folder of workbooks for '{spec.Alias}' doesn't exist: {spec.Target}"); }
-      excel.AddFolder(spec.Alias, new ExcelFolderOptions { Path = Path.GetFullPath(spec.Target) });
-      SourceSchema schema = await excel.IntrospectAsync(spec.Alias, IntrospectionOptions.Default, cancellationToken);
-      builder.AddSource(excel.Source(spec.Alias), schema);
-      foreach (string warning in schema.Warnings ?? []) { Warnings.Add($"{spec.Alias}: {warning}"); }
-   }
-
-   private static (DbConnection, Func<DbConnection>, SourceProvider) Sqlite(SourceSpec spec, bool write)
-   {
-      string connectionString = spec switch
-      {
-         { IsScript: true } or { IsMemory: true } => $"Data Source=gdq_{spec.Alias}_{Guid.NewGuid():N};Mode=Memory;Cache=Shared",
-         _ when spec.Target.Contains('=', StringComparison.Ordinal) => spec.Target,
-         _ => new SqliteConnectionStringBuilder { DataSource = ExistingFile(spec), Mode = write ? SqliteOpenMode.ReadWrite : SqliteOpenMode.ReadOnly }.ToString(),
-      };
-      return (new SqliteConnection(connectionString), () => new SqliteConnection(connectionString), SqliteSourceProvider.Instance);
-   }
-
-   private (DbConnection Keeper, Func<DbConnection> Open, SourceProvider Provider) Connect(SourceSpec spec, bool write)
-   {
-      try
-      {
-         return spec.Kind switch
-         {
-            "sqlite" => Sqlite(spec, write),
-            "postgres" => Postgres(spec),
-            "sqlserver" => (new SqlConnection(spec.Target), () => new SqlConnection(spec.Target), SqlServerSourceProvider.Instance),
-            _ => DuckDb(spec, write),
-         };
-      }
-      catch (ArgumentException e)
-      {
-         // The providers' connection string builders reject keywords they don't know, and values that don't parse.
-         throw new FormatException($"The connection string of '{spec.Alias}' isn't one {spec.Kind} takes: {e.Message}", e);
-      }
-   }
-
-   private (DbConnection, Func<DbConnection>, SourceProvider) Postgres(SourceSpec spec)
-   {
-      NpgsqlDataSource source = PostgreSqlSourceProvider.CreateDataSource(spec.Target);
-      dataSources.Add(source);
-      return (source.CreateConnection(), source.CreateConnection, PostgreSqlSourceProvider.Instance);
-   }
-
-   private static (DbConnection, Func<DbConnection>, SourceProvider) DuckDb(SourceSpec spec, bool write)
-   {
-      string connectionString = spec switch
-      {
-         { IsScript: true } or { IsMemory: true } => "Data Source=:memory:",
-         _ when spec.Target.Contains('=', StringComparison.Ordinal) => spec.Target,
-         _ => $"Data Source={ExistingFile(spec)}{(write ? string.Empty : ";ACCESS_MODE=READ_ONLY")}",
-      };
-      DuckDBConnection keeper = new(connectionString);
-      // Only in-memory databases can be duplicated; files are opened again, and DuckDB shares them within the process.
-      Func<DbConnection> open = spec.IsScript || spec.IsMemory ? keeper.Duplicate : () => new DuckDBConnection(connectionString);
-      return (keeper, open, DuckDbSourceProvider.Instance);
-   }
-
-   private static string ExistingFile(SourceSpec spec) =>
-      File.Exists(spec.Target) ? Path.GetFullPath(spec.Target) : throw new FileNotFoundException($"The {spec.Kind} database for '{spec.Alias}' doesn't exist: {spec.Target}");
 
    public async ValueTask<DbConnection> OpenAsync(SourceInfo source, CancellationToken cancellationToken)
    {
-      DbConnection connection = opened[source.Alias].Open();
+      ArgumentNullException.ThrowIfNull(source);
+      Func<DbConnection> open = opened[source.Alias].Open ?? throw new InvalidOperationException($"{source.Alias} is opened by its provider");
+      DbConnection connection = open();
       if (connection.State != System.Data.ConnectionState.Open) { await connection.OpenAsync(cancellationToken); }
       return connection;
    }
 
    public async ValueTask DisposeAsync()
    {
-      foreach ((DbConnection keeper, _) in opened.Values) { await keeper.DisposeAsync(); }
+      foreach (OpenedSource source in opened.Values) { await source.DisposeAsync(); }
       opened.Clear();
-      foreach (NpgsqlDataSource source in dataSources) { await source.DisposeAsync(); }
-      dataSources.Clear();
    }
 }

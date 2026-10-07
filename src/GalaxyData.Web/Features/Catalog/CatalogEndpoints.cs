@@ -25,9 +25,17 @@ namespace GalaxyData.Web.Features.Catalog;
 /// <summary>The catalog's version, its sources as they stand, and what building it found (a table its schema's name hides).</summary>
 public sealed record CatalogDto(string Version, IReadOnlyList<CatalogSourceDto> Sources, IReadOnlyList<CatalogDiagnosticDto> Diagnostics);
 
-/// <summary>A source: how reading its schema stands, and how many entities it has in the catalog.</summary>
+/// <summary>
+/// A source: how reading its schema stands, and how many entities it has in the catalog. Its kind is named and shown
+/// as the application's kind of connection says (<see cref="KindName"/>, <see cref="KindIcon"/>), when it has the kind.
+/// </summary>
 public sealed record CatalogSourceDto(string Alias, string Kind, string? DisplayName, SchemaStatus Status, DateTime? RefreshedAt, bool IsReadOnly, bool HasSchema,
-                                      int Entities, string? Problem);
+                                      int Entities, string? Problem)
+{
+   public string? KindName { get; init; }
+
+   public string? KindIcon { get; init; }
+}
 
 /// <summary>A problem building the catalog found; one with an item of the overlay names it (<see cref="Item"/>).</summary>
 public sealed record CatalogDiagnosticDto(string Code, DiagnosticSeverity Severity, string Message, string? Subject, OverlayItemDto? Item);
@@ -42,6 +50,12 @@ public sealed record TreeNodeDto(string Id, TreeNodeKind Kind, string Name, bool
    public string? Label { get; init; }
 
    public string? SourceKind { get; init; }
+
+   /// <summary>The source's kind's name for people (<c>PostgreSQL</c>), when the application has the kind.</summary>
+   public string? SourceKindName { get; init; }
+
+   /// <summary>The icon of the source's kind (a Material Symbols name), when the application has the kind.</summary>
+   public string? SourceIcon { get; init; }
 
    public SchemaStatus? Status { get; init; }
 
@@ -162,7 +176,7 @@ public static class CatalogEndpoints
          .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
       return TypedResults.Ok(new CatalogDto(state.Version,
          state.Sources.Select(s => new CatalogSourceDto(s.Alias, s.Kind, s.DisplayName, s.Status, s.RefreshedAt, s.IsReadOnly, s.HasSchema,
-            counts.GetValueOrDefault(s.Alias), s.Problem)).ToList(),
+            counts.GetValueOrDefault(s.Alias), s.Problem) { KindName = s.KindName, KindIcon = s.KindIcon }).ToList(),
          state.Catalog.Diagnostics.Select(d => new CatalogDiagnosticDto(d.Code, d.Severity, d.Message, d.Subject,
             d.Item is { } item ? new OverlayItemDto(item.Kind, state.Overlay.IdOf(item)) : null)).ToList()));
    }
@@ -234,7 +248,15 @@ public static class CatalogEndpoints
       TreeNodeDto dto = new(node.Id, node.Kind, node.Name, node.Children.Count > 0);
       if (node.Source is { } source)
       {
-         return dto with { Label = source.DisplayName, SourceKind = source.Kind, Status = source.Status, IsReadOnly = source.IsReadOnly };
+         return dto with
+         {
+            Label = source.DisplayName,
+            SourceKind = source.Kind,
+            SourceKindName = source.KindName,
+            SourceIcon = source.KindIcon,
+            Status = source.Status,
+            IsReadOnly = source.IsReadOnly,
+         };
       }
       if (node.Entity is { } entity)
       {

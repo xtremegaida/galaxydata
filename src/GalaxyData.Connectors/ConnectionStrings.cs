@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace GalaxyData.Web.Connections;
+namespace GalaxyData.Connectors;
 
 /// <summary>Connection strings as ADO.NET's builders write them, and secrets kept out of what is shown.</summary>
 public static class ConnectionStrings

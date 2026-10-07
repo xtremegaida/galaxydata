@@ -27,6 +27,12 @@ public sealed record CatalogSource(int ConnectionId, string Alias, string Kind, 
 
    /// <summary>Why its schema isn't in the catalog though one was read (its snapshot is damaged); null when nothing is wrong.</summary>
    public string? Problem { get; init; }
+
+   /// <summary>Its kind's name for people (<c>PostgreSQL</c>); null when the application has no such kind.</summary>
+   public string? KindName { get; init; }
+
+   /// <summary>The icon of its kind (a Material Symbols name); null when the application has no such kind.</summary>
+   public string? KindIcon { get; init; }
 }
 
 /// <summary>A node of the catalog's tree: a source, a schema or folder in it, or an entity. Its id is its path, as queries write it.</summary>

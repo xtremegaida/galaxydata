@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using GalaxyData.Connectors;
 using GalaxyData.Query.Language;
 using GalaxyData.Web.Auth;
 using GalaxyData.Web.Catalog;

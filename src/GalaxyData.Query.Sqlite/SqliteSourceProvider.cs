@@ -26,7 +26,7 @@ public sealed class SqliteSourceProvider : SourceProvider
 
    public override string ProviderKind => "sqlite";
 
-   public override SqlDialect Dialect => SqlDialect.Sqlite;
+   public override SqlDialect Dialect => SqliteDialect.Instance;
 
    public override ISchemaIntrospector Introspector { get; } = new SqliteSchemaIntrospector();
 

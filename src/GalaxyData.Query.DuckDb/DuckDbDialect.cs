@@ -1,15 +1,21 @@
 using System.Text;
+using GalaxyData.Query.Dml;
 using GalaxyData.Query.Functions;
+using GalaxyData.Query.Sql;
 using GalaxyData.Query.Types;
 
-namespace GalaxyData.Query.Sql;
+namespace GalaxyData.Query.DuckDb;
 
 /// <summary>
 /// DuckDB, which is also the merge engine, so every language function must translate here. It sorts nulls last
 /// in both directions unless told otherwise, and has native string predicates (<c>starts_with</c>, <c>contains</c>).
 /// </summary>
-internal sealed class DuckDbDialect : SqlDialect
+public sealed class DuckDbDialect : SqlDialect
 {
+   private DuckDbDialect() { }
+
+   public static DuckDbDialect Instance { get; } = new();
+
    public override string Name => "DuckDB";
 
    public override string ProviderKind => "duckdb";
@@ -18,9 +24,9 @@ internal sealed class DuckDbDialect : SqlDialect
 
    public override string Placeholder(string name) => "$" + name;
 
-   internal override bool SharesParameters => false;
+   protected override bool SharesParameters => false;
 
-   internal override string TypeName(ScalarType type) => type.Kind switch
+   protected override string TypeName(ScalarType type) => type.Kind switch
    {
       ScalarKind.Boolean => "BOOLEAN",
       ScalarKind.Int16 => "SMALLINT",
@@ -44,21 +50,21 @@ internal sealed class DuckDbDialect : SqlDialect
    /// A date-time compared with a date-time with an offset is taken as UTC: DuckDB compares TIMESTAMP with
    /// TIMESTAMPTZ, but not TIMESTAMP_NS (which DuckDB sources may have), without a cast.
    /// </summary>
-   internal override SqlExpr Compare(SqlBinaryOp op, SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType)
+   protected override SqlExpr Compare(SqlBinaryOp op, SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType)
    {
       if (leftType.Kind == ScalarKind.DateTime && rightType.Kind == ScalarKind.DateTimeOffset) { left = new SqlCast(left, TypeName(rightType)); }
       else if (leftType.Kind == ScalarKind.DateTimeOffset && rightType.Kind == ScalarKind.DateTime) { right = new SqlCast(right, TypeName(leftType)); }
       return new SqlBinary(op, left, right);
    }
 
-   private protected override void WriteBinary(StringBuilder text, byte[] value)
+   protected override void WriteBinary(StringBuilder text, byte[] value)
    {
       text.Append("CAST('");
       foreach (byte b in value) { text.Append("\\x").Append(b.ToString("X2", System.Globalization.CultureInfo.InvariantCulture)); }
       text.Append("' AS BLOB)");
    }
 
-   internal override SqlExpr? Function(SqlCall c) => c.Id switch
+   protected override SqlExpr? Function(SqlCall c) => c.Id switch
    {
       FunctionId.Lower => Call("lower", c.Arg(0)),
       FunctionId.Upper => Call("upper", c.Arg(0)),
@@ -132,4 +138,15 @@ internal sealed class DuckDbDialect : SqlDialect
    /// <summary>A whole number; fractions are truncated, as the language defines, where a plain CAST would round.</summary>
    private SqlExpr Whole(SqlCall c, ScalarType type) =>
       Cast(IsFractional(c.Type(0)) ? Call("trunc", c.Arg(0)) : c.Arg(0), type);
+
+   protected override bool RunsInTheApplication => true;
+
+   /// <summary>DuckDB's functions that read files and URLs, or run other SQL.</summary>
+   protected override ChangeScriptRules ChangeRules { get; } = new()
+   {
+      ForbiddenFunctions = ChangeScriptRules.Words("glob", "parquet_scan", "parquet_metadata", "parquet_schema", "sniff_csv", "csv_scan", "query", "query_table"),
+      ForbiddenFunctionPrefixes = ["read_"],
+   };
+
+   protected override ScriptSyntax ScriptSyntax { get; } = new() { DollarQuotes = true, EscapeStrings = true };
 }

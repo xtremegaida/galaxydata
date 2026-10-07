@@ -1395,6 +1395,8 @@ export interface components {
             /** Format: int32 */
             entities: number;
             problem: null | string;
+            kindName?: null | string;
+            kindIcon?: null | string;
         };
         ChangeCountsDto: {
             /** Format: int32 */
@@ -2793,6 +2795,8 @@ export interface components {
             hasChildren: boolean;
             label?: null | string;
             sourceKind?: null | string;
+            sourceKindName?: null | string;
+            sourceIcon?: null | string;
             status?: null | components["schemas"]["SchemaStatus"];
             isReadOnly?: null | boolean;
             /** Format: int64 */

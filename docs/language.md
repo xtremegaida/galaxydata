@@ -46,8 +46,8 @@ Read it from left to right:
   order's customer. `customer` is a *navigation*: it follows the foreign key `customer_id` to the customer's row.
 - `.orderBy(id)` sorts the rows.
 
-The same query runs against SQLite, DuckDB, PostgreSQL, SQL Server or a folder of Excel workbooks, and a query may
-combine several of them. The engine writes the SQL for each database; what can't run in a database runs in DuckDB,
+The same query runs against SQLite, DuckDB, PostgreSQL, SQL Server, ClickHouse or a folder of Excel workbooks, and a
+query may combine several of them. The engine writes the SQL for each database; what can't run in a database runs in DuckDB,
 the *merge engine*.
 
 ### 1.2 Running queries
@@ -62,8 +62,10 @@ gdq explain -s shop=sqlite:shop.db 'shop.orders.count()'
 
 (Single quotes keep a Unix shell from reading `$since` itself.)
 
-Kinds are `sqlite`, `duckdb`, `postgres`, `sqlserver` (a connection string) and `excel` (a folder of `.xlsx`
-workbooks). A `.sql` target is run into a new in-memory database. `gdq sql` prints the SQL each source runs,
+Kinds are `sqlite` and `duckdb` (a database file), `postgres`, `sqlserver` and `clickhouse` (a connection string),
+and `excel` (a folder of `.xlsx` workbooks): those of the connectors `gdq` comes with ([connectors.md](connectors.md)).
+A `.sql` target is run into a new in-memory database. ClickHouse sources and folders of workbooks are read-only.
+`gdq sql` prints the SQL each source runs,
 `gdq explain` the plan, the result columns with their lineage and links, and the SQL; `gdq schema` lists the
 catalog; `gdq repl` runs queries interactively. `--overlay file.json` adds an overlay (section 2.8), `-p name=value`
 a parameter (section 4.2), `--timeout seconds` a time limit.
@@ -129,8 +131,9 @@ Every entity has a name of the form `alias.schema.table`. The alias is the name 
 (`shop`, `wh`); it must be a plain name. The schema and table are the database's own names.
 
 The tables of a source's default schema can also be named without the schema: `shop.orders` is `shop.main.orders`
-(SQLite's and DuckDB's default schema is `main`; PostgreSQL's is usually `public`, SQL Server's `dbo`). Tables in
-other schemas need the schema: `wh.crm.contacts`.
+(SQLite's and DuckDB's default schema is `main`; PostgreSQL's is usually `public`, SQL Server's `dbo`; ClickHouse's
+schemas are its databases, and the default is the connection's). Tables in other schemas need the schema:
+`wh.crm.contacts`.
 
 ```gdq
 shop.main.orders.where(total > 50).select(id)
@@ -1841,26 +1844,31 @@ Gamma Inc, whose city is null, is not in the result.
 These differ between databases, and the language doesn't say which result is right:
 
 - **Text comparison** (`==`, `<`, sorting, `like`, `contains`, `distinct` and grouping of text, `min` and `max` of
-  text) follows the database's collation. SQLite and DuckDB compare case-sensitively, and so do PostgreSQL databases
-  with the usual collations; SQL Server databases usually ignore case, and queries that run there do too. Use
+  text) follows the database's collation. SQLite, DuckDB and ClickHouse compare case-sensitively, and so do
+  PostgreSQL databases with the usual collations; SQL Server databases usually ignore case, and queries that run
+  there do too. Use
   `ilike` and `icontains` to ignore case everywhere. What runs in the merge engine compares as DuckDB does. For
   example, `shop.customers.where(name > 'b')` gives no rows in SQLite, where upper-case letters come before
   lower-case ones.
 - **Decimal division and averages** have each database's digits: the language gives them no fixed precision
-  (PostgreSQL gives 20 places, SQL Server 6 to 10, SQLite and DuckDB a double's).
+  (PostgreSQL gives 20 places, SQL Server 6 to 10, ClickHouse 18, SQLite and DuckDB a double's; ClickHouse's
+  average of decimals is a double).
 - **`toString` of date-times, times, date-times with offsets and doubles** is each database's text. SQLite gives
-  `placed_at` as it holds it (`2026-01-05 10:30:00+02:00`), DuckDB in UTC (`2026-01-05 08:30:00+00`).
+  `placed_at` as it holds it (`2026-01-05 10:30:00+02:00`), DuckDB in UTC (`2026-01-05 08:30:00+00`), ClickHouse in
+  UTC without an offset (`2026-01-05 08:30:00`).
 - **Division by zero**: SQLite gives null; DuckDB gives infinity for doubles (a decimal result that is infinite fails
-  as a value that doesn't convert); PostgreSQL and SQL Server fail the query.
+  as a value that doesn't convert), as ClickHouse does for whole numbers too (its `/` always gives a double);
+  PostgreSQL and SQL Server fail the query, and so does ClickHouse's `%`.
 - **Text that doesn't convert** in `toInt`, `toLong`, `toDouble`, `toDecimal` and `toBool`: SQLite gives a number
-  (`toInt('x')` is 0) or null (`toBool('maybe')`), DuckDB fails the query.
+  (`toInt('x')` is 0) or null (`toBool('maybe')`), DuckDB and ClickHouse fail the query.
 - **`char(n)` padding**: PostgreSQL's text functions ignore the padding of `char(n)` columns, which the values read
   keep; text compares with a `char(n)` column without its padding on PostgreSQL and SQL Server.
 - **Characters outside the Basic Multilingual Plane** (such as emoji) count as two in SQL Server's `length()`
   without an `_SC` collation, as one elsewhere.
 - **Date-times with an offset** are read as instants in UTC; SQL Server's and SQLite's own offsets are not kept.
   SQLite groups offset date-times, and takes their `min` and `max`, by their text.
-- `tinyint + tinyint` overflows past 255 in SQL Server (the language's `int16` would not).
+- `tinyint + tinyint` overflows past 255 in SQL Server (the language's `int16` would not); ClickHouse's whole
+  numbers wrap around when they overflow, where the others fail.
 - The merge engine keeps date-times to the microsecond.
 
 ```gdq
@@ -1943,7 +1951,8 @@ Changing rows is not part of the query language. The library plans and writes ch
   anything; what can't be done is in the plan's `Issues`.
 - `QueryEngine.CommitAsync(plan)` runs them in a transaction on each connection, and gives a `DmlResult`.
 
-Only tables (not views or virtual entities) in sources that are writable can be changed. Updates and deletes need the
+Only tables (not views or virtual entities) in sources that are writable can be changed; ClickHouse sources never
+are (ClickHouse has no transactions, and changes rows later, as mutations). Updates and deletes need the
 table's own primary key (a key the overlay declares serves navigation only), and change a row only when the
 `Original` values given still hold. Each statement must change exactly one row, or nothing is written.
 
@@ -2072,7 +2081,8 @@ m := l.concat(l); n := m.concat(m); n.count()
 database; it also bounds how long changes take to write before they commit (they are then rolled back). `gdq
 --timeout seconds` sets it. **MaxFetchedRows** caps the rows one query fetches from its sources into the merge
 engine; a query that runs whole in one database fetches none. **CommandTimeout** is passed to each database command;
-SQLite takes it as how long to wait for a locked database, and DuckDB doesn't use it.
+SQLite takes it as how long to wait for a locked database, ClickHouse as the statement's `max_execution_time`, and
+DuckDB doesn't use it.
 
 Other options of `QueryEngineOptions`: `LargeFetchRows` (1,000,000; GDQ3101), `MaxParallelFetches` (4 fetches at a
 time), `MaxBindKeys` (10,000) and `MaxBindBatch` (2,000) for fetching a source's rows by the keys of another,

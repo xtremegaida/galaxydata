@@ -4,8 +4,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using GalaxyData.Connectors;
+using GalaxyData.Connectors.BuiltIn;
 using GalaxyData.Query.DuckDb;
-using GalaxyData.Query.Excel;
 using GalaxyData.Query.Execution;
 using GalaxyData.Query.Types;
 using GalaxyData.Web.Auth;
@@ -89,16 +90,13 @@ public static partial class WebApp
       services.AddGalaxyDataRateLimits();
       services.AddOptions<HttpsRedirectionOptions>().Configure<IOptions<GalaxyDataOptions>>((o, settings) => o.HttpsPort ??= settings.Value.Security.HttpsPort);
       services.AddOptions<ForwardedHeadersOptions>().Configure<IOptions<GalaxyDataOptions>>((o, settings) => Proxies(o, settings.Value.Proxy));
-      services.AddSingleton<ConnectionKind, PostgreSqlKind>();
-      services.AddSingleton<ConnectionKind, SqlServerKind>();
-      services.AddSingleton<ConnectionKind, SqliteKind>();
-      services.AddSingleton<ConnectionKind, DuckDbKind>();
-      services.AddSingleton<ConnectionKind, ExcelKind>();
-      services.AddSingleton<ConnectionKinds>();
+      // The connectors: each kind of source, its connection and its provider. Made after the merge engine, which some
+      // keep their sources' tables in, so they are disposed before it.
+      services.AddSingleton(sp => BuiltInConnectors.Create(new ConnectorContext(sp.GetRequiredService<IMergeEngine>())));
+      services.AddSingleton(sp => sp.GetRequiredService<ConnectorSet>().Kinds);
       services.AddSingleton<FileRoots>();
       services.AddSingleton<ConnectionSecrets>();
       services.AddSingleton<ConnectionTester>();
-      services.AddSingleton(sp => new ExcelSourceProvider(sp.GetRequiredService<DuckDbMergeEngine>()));
       services.AddSingleton<SourceProviders>();
       services.AddSingleton<SourceConnections>();
       services.AddSingleton<CatalogService>();

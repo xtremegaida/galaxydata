@@ -9,7 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\GalaxyData.Query\GalaxyData.Query.csproj" />
+    <ProjectReference Include="..\GalaxyData.Connectors\GalaxyData.Connectors.csproj" />
   </ItemGroup>
 
 </Project>

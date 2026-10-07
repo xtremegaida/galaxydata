@@ -20,16 +20,21 @@ public sealed class IntrospectionTests(Servers servers)
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task IntrospectsTheShopFixture(ServerKind server)
    {
-      SourceSchema schema = await IntrospectAsync(await servers.ShopAsync(server));
+      ServerDatabase shop = await servers.ShopAsync(server);
+      SourceSchema schema = await IntrospectAsync(shop);
       schema.ServerVersion.ShouldNotBeNullOrEmpty();
-      Golden.Match(IntrospectionJson.Serialize(schema with { ServerVersion = "(version)" }, indented: true), "json", server.ToString());
+      // ClickHouse's schemas are its databases: the test's own has a name of its own each time.
+      string json = IntrospectionJson.Serialize(schema with { ServerVersion = "(version)" }, indented: true).Replace(shop.Name, "(database)", System.StringComparison.Ordinal);
+      Golden.Match(json, "json", server.ToString());
    }
 
    [Theory]
    [InlineData(ServerKind.Postgres)]
    [InlineData(ServerKind.SqlServer)]
+   [InlineData(ServerKind.ClickHouse)]
    public async Task IntrospectsAColumnOfEachType(ServerKind server)
    {
       SourceSchema schema = await IntrospectAsync(await servers.KindsAsync(server));

@@ -6,6 +6,7 @@ using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Dml;
 using GalaxyData.Query.Introspection;
 using GalaxyData.Query.Sql;
+using GalaxyData.Query.Tests.Sql;
 using GalaxyData.Testing;
 using Shouldly;
 using Xunit;
@@ -16,7 +17,7 @@ namespace GalaxyData.Query.Tests.Dml;
 /// <summary>Golden reports: the statements each dialect gets for a set of changes, and the issues of changes that can't be made.</summary>
 public sealed class DmlReportTests
 {
-   public static TheoryData<string> Dialects => [.. SqlDialect.All.Select(d => d.ProviderKind)];
+   public static TheoryData<string> Dialects => [.. TestDialects.Writable.Select(d => d.ProviderKind)];
 
    private static readonly Guid Contact = new("2f1c0000-0000-4000-8000-000000000001");
 
@@ -77,7 +78,7 @@ public sealed class DmlReportTests
    [MemberData(nameof(Dialects))]
    public void Statements(string providerKind)
    {
-      SqlDialect dialect = SqlDialect.All.Single(d => d.ProviderKind == providerKind);
+      SqlDialect dialect = TestDialects.Writable.Single(d => d.ProviderKind == providerKind);
       DmlPlan plan = DmlPlanner.Plan(Changes(Catalog()), _ => dialect);
       plan.Issues.ShouldBeEmpty();
       plan.Scripts.Count.ShouldBe(1);
@@ -97,7 +98,7 @@ public sealed class DmlReportTests
 
    /// <summary>The plan as a person reads and edits it: every script, its values written in.</summary>
    [Fact]
-   public void ScriptAsShown() => Golden.Match(DmlPlanner.Plan(Changes(Catalog()), _ => SqlDialect.SqlServer).ToDisplayText());
+   public void ScriptAsShown() => Golden.Match(DmlPlanner.Plan(Changes(Catalog()), _ => TestDialects.SqlServer).ToDisplayText());
 
    [Fact]
    public void Issues()
@@ -134,7 +135,7 @@ public sealed class DmlReportTests
          new DeleteRow(TableOf(catalog, "notes"), Row(("at", DateTime.MinValue))),
       ];
       StringBuilder text = new();
-      foreach (SqlDialect dialect in new[] { SqlDialect.Sqlite, SqlDialect.SqlServer })
+      foreach (SqlDialect dialect in new[] { TestDialects.Sqlite, TestDialects.SqlServer })
       {
          text.Append("## ").AppendLine(dialect.Name);
          DmlPlan plan = DmlPlanner.Plan(new ChangeSet(changes), s => s.ProviderKind == "mysql" ? null : dialect);
@@ -157,7 +158,7 @@ public sealed class DmlReportTests
       [
          new InsertRow(TableOf(catalog, "customers"), Row(("name", "Delta Ltd"))),
          new InsertRow(TableOf(catalog, "customers"), Row(("city", "Durban"))),
-      ]), _ => SqlDialect.Sqlite);
+      ]), _ => TestDialects.Sqlite);
       plan.Success.ShouldBeFalse();
       plan.Issues.Single().ChangeIndex.ShouldBe(1);
       plan.Scripts.Single().Statements.Single().ChangeIndex.ShouldBe(0);

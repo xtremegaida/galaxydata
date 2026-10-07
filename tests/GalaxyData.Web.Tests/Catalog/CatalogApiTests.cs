@@ -65,6 +65,10 @@ public sealed class CatalogApiTests
       JsonElement far = roots[0];
       far.GetProperty("status").GetString().ShouldBe("failed");
       far.GetProperty("sourceKind").GetString().ShouldBe("postgres");
+      // The kind's name and icon are the connector's: the client knows no kind.
+      far.GetProperty("sourceKindName").GetString().ShouldBe("PostgreSQL");
+      far.GetProperty("sourceIcon").GetString().ShouldBe("database");
+      roots[3].GetProperty("sourceIcon").GetString().ShouldBe("table_view");
       far.GetProperty("hasChildren").GetBoolean().ShouldBeFalse();
       roots[1].GetProperty("isReadOnly").GetBoolean().ShouldBeFalse();
       roots[3].GetProperty("isReadOnly").GetBoolean().ShouldBeTrue("folders of workbooks always are");
@@ -92,6 +96,8 @@ public sealed class CatalogApiTests
       JsonElement catalog = await (await admin.GetAsync("/api/catalog")).JsonAsync(HttpStatusCode.OK);
       catalog.GetProperty("sources").EnumerateArray().Select(s => $"{s.GetProperty("alias").GetString()} {s.GetProperty("status").GetString()} {s.GetProperty("entities").GetInt32()}")
          .ShouldBe(["shop ready 7", "wh ready 3", "xl ready 2", "far failed 0"]);
+      catalog.GetProperty("sources").EnumerateArray().Select(s => $"{s.GetProperty("kindName").GetString()} {s.GetProperty("kindIcon").GetString()}")
+         .ShouldBe(["SQLite database", "DuckDB database", "Excel folder table_view", "PostgreSQL database"]);
       catalog.GetProperty("diagnostics").EnumerateArray().Select(d => d.GetProperty("subject").GetString()).ShouldContain("wh.main.sales");
    }
 

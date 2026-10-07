@@ -5,6 +5,9 @@ using System.Net;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using ClickHouse.Driver.ADO;
+using GalaxyData.Query.ClickHouse;
+using GalaxyData.Query.Providers;
 using GalaxyData.Testing;
 using GalaxyData.Web.Tests.Catalog;
 using Microsoft.Data.SqlClient;
@@ -15,9 +18,9 @@ using Xunit;
 namespace GalaxyData.Web.Tests.Connections;
 
 /// <summary>
-/// Connections to the servers the container tests use (<c>servers.sh up</c>, or <c>GDQ_TEST_POSTGRES</c> and
-/// <c>GDQ_TEST_SQLSERVER</c>): tried with the right password and a wrong one, which isn't repeated. Skipped when
-/// the server can't be reached, unless it was named.
+/// Connections to the servers the container tests use (<c>servers.sh up</c>, or <c>GDQ_TEST_POSTGRES</c>,
+/// <c>GDQ_TEST_SQLSERVER</c> and <c>GDQ_TEST_CLICKHOUSE</c>): tried with the right password and a wrong one, which
+/// isn't repeated. Skipped when the server can't be reached, unless it was named.
 /// </summary>
 public sealed class ServerConnectionTests
 {
@@ -68,6 +71,67 @@ public sealed class ServerConnectionTests
       tried.GetProperty("ok").GetBoolean().ShouldBeFalse();
       tried.GetProperty("message").GetString()!.ShouldNotContain("a-wrong-password-9");
       admin.Responses.Where(r => r.Contains(password, StringComparison.Ordinal)).ShouldBeEmpty();
+   }
+
+   /// <summary>
+   /// A ClickHouse connection tried (with a wrong password too, which isn't repeated) and its database read into the
+   /// catalog: tables with no keys, and always read-only, though it was made read-write.
+   /// </summary>
+   [Fact]
+   public async Task AClickHouseConnectionIsTriedAndItsDatabaseRead()
+   {
+      string server = TestServers.ClickHouse;
+      string database = "gd_web_" + Guid.NewGuid().ToString("N")[..10];
+      await using ClickHouseDataSource admin = ClickHouseSourceProvider.CreateDataSource(server);
+      try
+      {
+         await using DbConnection probe = await admin.OpenConnectionAsync(Token);
+         await probe.ExecuteAsync("SELECT 1", Token);
+      }
+      catch (DbException e)
+      {
+         if (TestServers.Named("GDQ_TEST_CLICKHOUSE") != null) { Assert.Fail($"clickhouse can't be reached: {e.Message}"); }
+         Assert.Skip($"clickhouse isn't running ({e.Message}); start the servers with tests/GalaxyData.Query.ContainerTests/servers.sh up");
+      }
+      await using (DbConnection connection = await admin.OpenConnectionAsync(Token))
+      {
+         await connection.ExecuteAsync($"CREATE DATABASE {database}", Token);
+         await connection.ExecuteAsync($"CREATE TABLE {database}.customers (id Int32, name String) ENGINE = MergeTree ORDER BY id", Token);
+         await connection.ExecuteAsync($"CREATE TABLE {database}.orders (id Int64, customer_id Int32, total Nullable(Decimal(10, 2))) ENGINE = MergeTree ORDER BY id", Token);
+      }
+      try
+      {
+         string password = new DbConnectionStringBuilder { ConnectionString = server }["password"].ToString()!;
+         string connectionString = $"{server};Database={database}";
+         await using WebAppFactory factory = new();
+         TestApi api = await TestApi.SignedInAsync(factory);
+         int id = await TestSources.AddAsync(api, "ch", "clickhouse", new { mode = "raw", connectionString, isReadOnly = false });
+         JsonElement tried = await (await api.PostAsync($"/api/connections/{id}/test")).JsonAsync(HttpStatusCode.OK);
+         tried.GetProperty("ok").GetBoolean().ShouldBeTrue(tried.GetRawText());
+         tried.GetProperty("message").GetString()!.ShouldStartWith("Connected to ClickHouse ");
+         tried.GetProperty("message").GetString()!.ShouldEndWith($", database {database}");
+
+         string wrong = connectionString.Replace(password, "a-wrong-password-9", StringComparison.Ordinal);
+         tried = await (await api.PostAsync("/api/connections/test", new { kind = "clickhouse", connection = new { mode = "raw", connectionString = wrong } })).JsonAsync(HttpStatusCode.OK);
+         tried.GetProperty("ok").GetBoolean().ShouldBeFalse();
+         tried.GetProperty("message").GetString()!.ShouldNotContain("a-wrong-password-9");
+
+         await TestSources.SettledAsync(api, id, "ready");
+         JsonElement nodes = (await (await api.GetAsync("/api/catalog/tree/children")).JsonAsync(HttpStatusCode.OK)).GetProperty("nodes");
+         JsonElement source = nodes.EnumerateArray().Single(n => n.GetProperty("id").GetString() == "ch");
+         (source.GetProperty("isReadOnly").GetBoolean(), source.GetProperty("sourceKindName").GetString()).ShouldBe((true, "ClickHouse"));
+         nodes = (await (await api.GetAsync("/api/catalog/tree/children?parent=ch")).JsonAsync(HttpStatusCode.OK)).GetProperty("nodes");
+         nodes.EnumerateArray().Select(n => $"{n.GetProperty("kind").GetString()} {n.GetProperty("id").GetString()}").ShouldBe(["table ch.customers", "table ch.orders"]);
+         JsonElement orders = await (await api.GetAsync("/api/catalog/entity?name=ch.orders")).JsonAsync(HttpStatusCode.OK);
+         orders.GetProperty("navigations").GetArrayLength().ShouldBe(0, "ClickHouse has no foreign keys: relations are the overlay's");
+         orders.GetProperty("capabilities").GetProperty("canUpdate").GetBoolean().ShouldBeFalse();
+         api.Responses.Where(r => r.Contains(password, StringComparison.Ordinal)).ShouldBeEmpty();
+      }
+      finally
+      {
+         await using DbConnection connection = await admin.OpenConnectionAsync(Token);
+         await connection.ExecuteAsync($"DROP DATABASE IF EXISTS {database} SYNC", Token);
+      }
    }
 
    private static async Task ExecuteAsync(string kind, string connectionString, string sql)

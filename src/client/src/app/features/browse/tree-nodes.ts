@@ -23,7 +23,7 @@ export function kindOf(node: TreeNode): string {
 export function iconOf(node: TreeNode): string {
   switch (node.kind) {
     case 'source':
-      return node.sourceKind === 'excel' ? 'table_view' : 'database';
+      return node.sourceIcon ?? 'database';
     case 'schema':
       return 'folder';
     case 'folder':
@@ -35,19 +35,6 @@ export function iconOf(node: TreeNode): string {
     case 'virtual':
       return 'dataset';
   }
-}
-
-const sourceKinds: Readonly<Record<string, string>> = {
-  postgres: 'PostgreSQL',
-  sqlserver: 'SQL Server',
-  sqlite: 'SQLite',
-  duckdb: 'DuckDB',
-  excel: 'Excel folder',
-};
-
-/** The name of a kind of connection (as the server's kinds name them), or its id when it is one the client doesn't know. */
-export function sourceKindName(kind: string): string {
-  return sourceKinds[kind] ?? kind;
 }
 
 /** A row count as it is read at a glance (950, 12K, 1.2M): the databases' estimates, which needn't be exact. */

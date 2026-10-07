@@ -1,31 +1,38 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using GalaxyData.Query.Dml;
 using GalaxyData.Query.Functions;
+using GalaxyData.Query.Sql;
 using GalaxyData.Query.Types;
 
-namespace GalaxyData.Query.Sql;
+namespace GalaxyData.Query.Sqlite;
 
 /// <summary>
 /// SQLite. Values are dynamically typed: booleans are 0/1, dates and times are ISO text, guids are upper-case
 /// text (as Microsoft.Data.Sqlite binds them). Nulls already sort smallest. LIKE ignores ASCII case, so the
 /// case-sensitive text tests use GLOB.
 /// </summary>
-internal sealed class SqliteDialect : SqlDialect
+public sealed class SqliteDialect : SqlDialect
 {
+   private SqliteDialect() { }
+
+   public static SqliteDialect Instance { get; } = new();
+
    public override string Name => "SQLite";
 
    public override string ProviderKind => "sqlite";
 
    public override int MaxParameters => 32766;
 
-   internal override PagingStyle Paging => PagingStyle.SqliteLimitOffset;
+   protected override PagingStyle Paging => PagingStyle.LimitOffsetNeedsLimit;
 
-   internal override string BooleanLiteral(bool value) => value ? "1" : "0";
+   protected override string BooleanLiteral(bool value) => value ? "1" : "0";
 
-   internal override string? NullOrdering(bool descending) => null;
+   protected override string? NullOrdering(bool descending) => null;
 
-   internal override string TypeName(ScalarType type) => type.Kind switch
+   protected override string TypeName(ScalarType type) => type.Kind switch
    {
       ScalarKind.Boolean or ScalarKind.Int16 or ScalarKind.Int32 or ScalarKind.Int64 => "INTEGER",
       ScalarKind.Decimal => "NUMERIC",
@@ -34,30 +41,30 @@ internal sealed class SqliteDialect : SqlDialect
       _ => "TEXT",
    };
 
-   private protected override void WriteTemporal(StringBuilder text, string keyword, string value) => text.Append('\'').Append(value).Append('\'');
+   protected override void WriteTemporal(StringBuilder text, string keyword, string value) => text.Append('\'').Append(value).Append('\'');
 
-   private protected override void WriteCharacter(StringBuilder text, char value, ScalarType type) =>
+   protected override void WriteCharacter(StringBuilder text, char value, ScalarType type) =>
       text.Append("char(").Append(((int)value).ToString(CultureInfo.InvariantCulture)).Append(')');
 
-   private protected override void WriteGuid(StringBuilder text, Guid value) => text.Append('\'').Append(value.ToString("D").ToUpperInvariant()).Append('\'');
+   protected override void WriteGuid(StringBuilder text, Guid value) => text.Append('\'').Append(value.ToString("D").ToUpperInvariant()).Append('\'');
 
-   private protected override void WriteBinary(StringBuilder text, byte[] value) => text.Append("X'").Append(Convert.ToHexString(value)).Append('\'');
+   protected override void WriteBinary(StringBuilder text, byte[] value) => text.Append("X'").Append(Convert.ToHexString(value)).Append('\'');
 
    /// <summary>
    /// Only integers and text: SQLite keeps what was stored, so a date may be held with a time or a 'T', a guid in
    /// either case, a decimal with more digits than its scale, and each reads the same as the canonical value it
    /// doesn't equal.
    /// </summary>
-   internal override bool ComparesExactly(ScalarType type) => type.IsInteger || type.Kind == ScalarKind.String;
+   protected override bool ComparesExactly(ScalarType type) => type.IsInteger || type.Kind == ScalarKind.String;
 
    /// <summary>Whole-valued decimals are stored as integers, and integer division truncates, so division is done in reals.</summary>
-   internal override SqlExpr Divide(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
+   protected override SqlExpr Divide(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       leftType.Kind is ScalarKind.Double or ScalarKind.Single
          ? new SqlBinary(SqlBinaryOp.Divide, left, right)
          : new SqlBinary(SqlBinaryOp.Divide, Cast(left, ScalarType.Double), right);
 
    /// <summary><c>%</c> works on integers only; <c>mod</c> keeps the fraction.</summary>
-   internal override SqlExpr Modulo(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
+   protected override SqlExpr Modulo(SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType) =>
       leftType.IsInteger && rightType.IsInteger ? new SqlBinary(SqlBinaryOp.Modulo, left, right) : Call("mod", left, right);
 
    /// <summary>
@@ -65,7 +72,7 @@ internal sealed class SqliteDialect : SqlDialect
    /// first. A date-time with an offset is text in its own time, so both sides of a comparison with one are written
    /// in UTC first.
    /// </summary>
-   internal override SqlExpr Compare(SqlBinaryOp op, SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType)
+   protected override SqlExpr Compare(SqlBinaryOp op, SqlExpr left, SqlExpr right, ScalarType leftType, ScalarType rightType)
    {
       if (leftType.Kind == ScalarKind.DateTimeOffset || rightType.Kind == ScalarKind.DateTimeOffset)
       {
@@ -81,7 +88,7 @@ internal sealed class SqliteDialect : SqlDialect
    /// 'T', a date-time to any precision or with an offset. Such keys are compared through a function, which their
    /// index doesn't serve; whole numbers and text are compared as they are.
    /// </summary>
-   internal override SqlExpr KeyEquals(SqlColumn column, SqlExpr value, ScalarType type) => type.Kind switch
+   protected override SqlExpr KeyEquals(SqlColumn column, SqlExpr value, ScalarType type) => type.Kind switch
    {
       ScalarKind.Guid => Binary(SqlBinaryOp.Equal, Call("upper", column), value),
       ScalarKind.Date => Binary(SqlBinaryOp.Equal, Call("date", column), value),
@@ -90,13 +97,13 @@ internal sealed class SqliteDialect : SqlDialect
    };
 
    /// <summary>Date-times with an offset sort in UTC.</summary>
-   internal override SqlExpr SortKey(SqlExpr key, ScalarType type) => type.Kind == ScalarKind.DateTimeOffset ? Instant(key, type) : key;
+   protected override SqlExpr SortKey(SqlExpr key, ScalarType type) => type.Kind == ScalarKind.DateTimeOffset ? Instant(key, type) : key;
 
    /// <summary>A date or date-time, with or without an offset, as UTC text to the millisecond, which compares as the instants do.</summary>
    private static SqlExpr Instant(SqlExpr value, ScalarType type) =>
       type.Kind is ScalarKind.Date or ScalarKind.DateTime or ScalarKind.DateTimeOffset ? Call("strftime", Text("%Y-%m-%d %H:%M:%f"), value) : value;
 
-   internal override SqlExpr? Function(SqlCall c) => c.Id switch
+   protected override SqlExpr? Function(SqlCall c) => c.Id switch
    {
       FunctionId.Lower => Call("lower", c.Arg(0)),
       FunctionId.Upper => Call("upper", c.Arg(0)),
@@ -200,4 +207,19 @@ internal sealed class SqliteDialect : SqlDialect
          new SqlWhen(new SqlIn(lower, [Text("false"), Text("f"), Text("no"), Text("n"), Text("0")], false), Integer(0)),
       ], null);
    }
+
+   /// <summary><c>REPLACE</c> inserts (deleting the row it replaces); <c>load_extension</c> runs a library's code.</summary>
+   protected override ChangeScriptRules ChangeRules { get; } = new()
+   {
+      MoreChanges = new Dictionary<string, DmlStatementKind> { ["REPLACE"] = DmlStatementKind.Insert },
+      ForbiddenFunctions = ChangeScriptRules.Words("load_extension"),
+   };
+
+   protected override ScriptSyntax ScriptSyntax { get; } = new()
+   {
+      BracketNames = true,
+      BacktickNames = true,
+      NestedComments = false,
+      TriggerBodies = true,
+   };
 }

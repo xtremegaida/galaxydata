@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using GalaxyData.Query.Dml;
 using GalaxyData.Query.Sql;
+using GalaxyData.Query.Tests.Sql;
 using Shouldly;
 using Xunit;
 
@@ -10,7 +11,7 @@ namespace GalaxyData.Query.Tests.Dml;
 /// <summary>Splitting scripts into statements, as each dialect quotes and comments, and the guard that keeps edited scripts to data changes.</summary>
 public sealed class SqlScriptTests
 {
-   private static SqlDialect Dialect(string providerKind) => SqlDialect.All.Single(d => d.ProviderKind == providerKind);
+   private static SqlDialect Dialect(string providerKind) => TestDialects.All.Single(d => d.ProviderKind == providerKind);
 
    private static string[] Statements(string providerKind, string script)
    {
@@ -56,7 +57,7 @@ public sealed class SqlScriptTests
    {
       Statements("postgres", "/* a /* b; */ c; */ UPDATE t SET x = 1").ShouldBe(["UPDATE t SET x = 1"]);
       Statements("sqlserver", "/* a /* b; */ c; */ UPDATE t SET x = 1").ShouldBe(["UPDATE t SET x = 1"]);
-      SplitScript sqlite = SqlScriptSplitter.Split("/* a /* b; */ c; */ UPDATE t SET x = 1", SqlDialect.Sqlite);
+      SplitScript sqlite = SqlScriptSplitter.Split("/* a /* b; */ c; */ UPDATE t SET x = 1", TestDialects.Sqlite);
       sqlite.Statements.Select(s => s.Text).ShouldBe(["c", "*/ UPDATE t SET x = 1"]);
    }
 
@@ -66,7 +67,7 @@ public sealed class SqlScriptTests
       Statements("sqlserver", "UPDATE a SET x = 'GO'\nGO\nUPDATE b SET go = 2\n  go   -- next\nDELETE FROM c\nGO 1")
          .ShouldBe(["UPDATE a SET x = 'GO'", "UPDATE b SET go = 2", "DELETE FROM c"]);
       Statements("postgres", "UPDATE a SET x = 1\nGO\n").ShouldBe(["UPDATE a SET x = 1\nGO"]);
-      SplitScript twice = SqlScriptSplitter.Split("UPDATE a SET x = x + 1\nGO 2\n", SqlDialect.SqlServer);
+      SplitScript twice = SqlScriptSplitter.Split("UPDATE a SET x = x + 1\nGO 2\n", TestDialects.SqlServer);
       twice.Problems.Single().ShouldBe(new ScriptProblem("GO with a count would run its batch more than once", 23, 4, 2));
    }
 
@@ -83,11 +84,11 @@ public sealed class SqlScriptTests
    [Fact]
    public void ReportsWhatIsntClosed()
    {
-      SplitScript script = SqlScriptSplitter.Split("UPDATE t SET a = 1;\nUPDATE t SET b = 'x;\n", SqlDialect.Sqlite);
+      SplitScript script = SqlScriptSplitter.Split("UPDATE t SET a = 1;\nUPDATE t SET b = 'x;\n", TestDialects.Sqlite);
       script.Problems.Single().ShouldBe(new ScriptProblem("This string isn't closed", 37, 4, 2));
-      SqlScriptSplitter.Split("UPDATE t SET a = 1 /* x", SqlDialect.SqlServer).Problems.Single().Message.ShouldBe("This comment isn't closed");
-      SqlScriptSplitter.Split("UPDATE t SET a = $q$ x", SqlDialect.PostgreSql).Problems.Single().Message.ShouldBe("This $q$ quote isn't closed");
-      SqlScriptSplitter.Split("UPDATE [t SET a = 1", SqlDialect.SqlServer).Problems.Single().Message.ShouldBe("This quoted name isn't closed");
+      SqlScriptSplitter.Split("UPDATE t SET a = 1 /* x", TestDialects.SqlServer).Problems.Single().Message.ShouldBe("This comment isn't closed");
+      SqlScriptSplitter.Split("UPDATE t SET a = $q$ x", TestDialects.PostgreSql).Problems.Single().Message.ShouldBe("This $q$ quote isn't closed");
+      SqlScriptSplitter.Split("UPDATE [t SET a = 1", TestDialects.SqlServer).Problems.Single().Message.ShouldBe("This quoted name isn't closed");
    }
 
    [Fact]
@@ -100,7 +101,7 @@ public sealed class SqlScriptTests
          DELETE FROM t WHERE id IN (SELECT a FROM y);
          with recursive r as (select 1) select * from r;
          (SELECT 1)
-         """, SqlDialect.PostgreSql);
+         """, TestDialects.PostgreSql);
       script.Statements.Select(s => (s.Line, s.Keyword)).ShouldBe([(1, "UPDATE"), (3, "DELETE"), (5, "SELECT"), (6, null)]);
    }
 
@@ -165,8 +166,8 @@ public sealed class SqlScriptTests
    [Fact]
    public void AnAdministratorMayRunAnyStatementButTransactions()
    {
-      SplitScript script = SqlScriptSplitter.Split("CREATE TABLE x (a int); INSERT INTO x VALUES (1); ROLLBACK", SqlDialect.Sqlite);
-      IReadOnlyList<ScriptProblem> problems = DmlGuard.Check(script, SqlDialect.Sqlite, allowAnyStatement: true);
+      SplitScript script = SqlScriptSplitter.Split("CREATE TABLE x (a int); INSERT INTO x VALUES (1); ROLLBACK", TestDialects.Sqlite);
+      IReadOnlyList<ScriptProblem> problems = DmlGuard.Check(script, TestDialects.Sqlite, allowAnyStatement: true);
       problems.Select(p => p.Message).ShouldBe(["ROLLBACK can't be run here: the changes of each connection run in a transaction of the engine's, committed when every statement has succeeded"]);
       problems[0].Line.ShouldBe(1);
       problems[0].Start.ShouldBe(50);

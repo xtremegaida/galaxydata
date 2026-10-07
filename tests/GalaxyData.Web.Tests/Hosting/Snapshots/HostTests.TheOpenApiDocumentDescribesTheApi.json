@@ -9388,6 +9388,18 @@
               "null",
               "string"
             ]
+          },
+          "kindName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "kindIcon": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -15404,6 +15416,18 @@
             ]
           },
           "sourceKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "sourceKindName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "sourceIcon": {
             "type": [
               "null",
               "string"

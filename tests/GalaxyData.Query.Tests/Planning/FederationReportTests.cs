@@ -8,6 +8,7 @@ using GalaxyData.Query.Planning;
 using GalaxyData.Query.Planning.Federation;
 using GalaxyData.Query.Planning.Optimizer;
 using GalaxyData.Query.Sql;
+using GalaxyData.Query.Tests.Sql;
 using GalaxyData.Testing;
 using Shouldly;
 using Xunit;
@@ -42,9 +43,9 @@ public sealed class FederationReportTests
 
    private static SqlDialect? Dialect(SourceInfo source) => source.Alias switch
    {
-      "sales" => SqlDialect.PostgreSql,
-      "crm" => SqlDialect.SqlServer,
-      _ => SqlDialect.Sqlite,
+      "sales" => TestDialects.PostgreSql,
+      "crm" => TestDialects.SqlServer,
+      _ => TestDialects.Sqlite,
    };
 
    [Fact]
@@ -88,7 +89,7 @@ public sealed class FederationReportTests
 
    private static string Report(LogicalPlan plan, bool pushDown, Func<PlanNode, SourceInfo, bool>? runs = null)
    {
-      FederatedPlan federated = FederationPlanner.Plan(plan, Dialect, SqlDialect.DuckDb, pushDown, runs);
+      FederatedPlan federated = FederationPlanner.Plan(plan, Dialect, TestDialects.DuckDb, pushDown, runs);
       StringBuilder text = new();
       text.Append(PlanPrinter.Print(plan.Root, n => federated.Sites.GetValueOrDefault(n)));
       foreach (PlannedFragment fragment in federated.Fragments)

@@ -154,7 +154,7 @@ public sealed class DuckDbMergeEngine : IMergeEngine, IDisposable
       foreach (string schema in schemas)
       {
          using DbCommand drop = connection.CreateCommand();
-         drop.CommandText = $"DROP SCHEMA {SqlDialect.DuckDb.QuoteIdentifier(schema)} CASCADE";
+         drop.CommandText = $"DROP SCHEMA {DuckDbDialect.Instance.QuoteIdentifier(schema)} CASCADE";
          drop.ExecuteNonQuery();
       }
    }
@@ -195,8 +195,8 @@ public sealed class DuckDbMergeEngine : IMergeEngine, IDisposable
          {
             // Fragments of sources kept in the merge engine run their SQL on it (AppendQueryAsync), in UTC as every query does.
             await engine.Provider.PrepareConnectionAsync(loader, cancellationToken).ConfigureAwait(false);
-            string definitions = string.Join(", ", columns.Select(c => SqlDialect.DuckDb.QuoteIdentifier(c.Name) + " " + DuckDbTypeMapper.TypeName(c.Type)));
-            await loader.ExecuteAsync($"CREATE TABLE {schema}.{SqlDialect.DuckDb.QuoteIdentifier(name)} ({definitions})", cancellationToken).ConfigureAwait(false);
+            string definitions = string.Join(", ", columns.Select(c => DuckDbDialect.Instance.QuoteIdentifier(c.Name) + " " + DuckDbTypeMapper.TypeName(c.Type)));
+            await loader.ExecuteAsync($"CREATE TABLE {schema}.{DuckDbDialect.Instance.QuoteIdentifier(name)} ({definitions})", cancellationToken).ConfigureAwait(false);
             return new TableWriter(loader, schema, name, columns);
          }
          catch
@@ -316,8 +316,8 @@ public sealed class DuckDbMergeEngine : IMergeEngine, IDisposable
          appender = null;
          await using DuckDBCommand command = connection.CreateCommand();
          prepare(command);
-         string names = string.Join(", ", columns.Select(c => SqlDialect.DuckDb.QuoteIdentifier(c.Name)));
-         command.CommandText = $"INSERT INTO {schema}.{SqlDialect.DuckDb.QuoteIdentifier(name)} ({names}) {command.CommandText}";
+         string names = string.Join(", ", columns.Select(c => DuckDbDialect.Instance.QuoteIdentifier(c.Name)));
+         command.CommandText = $"INSERT INTO {schema}.{DuckDbDialect.Instance.QuoteIdentifier(name)} ({names}) {command.CommandText}";
          using (cancellationToken.Register(static c => ((DbCommand)c!).Cancel(), command))
          {
             return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);

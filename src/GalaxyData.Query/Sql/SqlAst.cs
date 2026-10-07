@@ -5,15 +5,18 @@ namespace GalaxyData.Query.Sql;
 
 /// <summary>
 /// A small SQL syntax tree, just enough for what the planner produces. Dialects decide how each node is written;
-/// expressions know their precedence so the writer can add the parentheses they need and no more.
+/// expressions know their precedence so the writer can add the parentheses they need and no more. Dialects build
+/// expressions of the public nodes; the kinds of node are the engine's own.
 /// </summary>
-internal abstract class SqlExpr
+public abstract class SqlExpr
 {
+   private protected SqlExpr() { }
+
    /// <summary>How tightly the expression binds; <see cref="SqlPrecedence.Atom"/> never needs parentheses.</summary>
-   public abstract int Precedence { get; }
+   internal abstract int Precedence { get; }
 
    /// <summary>A search condition rather than a value; matters where booleans are not values (SQL Server).</summary>
-   public virtual bool IsPredicate => false;
+   internal virtual bool IsPredicate => false;
 }
 
 internal static class SqlPrecedence
@@ -28,33 +31,43 @@ internal static class SqlPrecedence
    public const int Atom = 9;
 }
 
-internal sealed class SqlColumn(string? table, string column) : SqlExpr
+/// <summary>A column of a table (or of no table: one a statement gives back).</summary>
+public sealed class SqlColumn : SqlExpr
 {
-   public string? Table { get; } = table;
+   internal SqlColumn(string? table, string column)
+   {
+      Table = table;
+      Column = column;
+   }
 
-   public string Column { get; } = column;
+   public string? Table { get; }
+
+   public string Column { get; }
 
    /// <summary>The type of a table's column as its database declares it (<c>datetime</c>), for the values compared with it.</summary>
-   public string? NativeType { get; init; }
+   public string? NativeType { get; internal init; }
 
-   public override int Precedence => SqlPrecedence.Atom;
+   internal override int Precedence => SqlPrecedence.Atom;
 }
 
-internal sealed class SqlParameterRef(SqlParameterSlot slot) : SqlExpr
+/// <summary>A parameter of the statement.</summary>
+public sealed class SqlParameterRef : SqlExpr
 {
-   public SqlParameterSlot Slot { get; } = slot;
+   internal SqlParameterRef(SqlParameterSlot slot) { Slot = slot; }
 
-   public override int Precedence => SqlPrecedence.Atom;
+   public SqlParameterSlot Slot { get; }
+
+   internal override int Precedence => SqlPrecedence.Atom;
 }
 
 /// <summary>A constant written into the SQL text: null, booleans, row counts, and fixed text the dialect needs.</summary>
-internal sealed class SqlLiteral(object? value, ScalarType type) : SqlExpr
+public sealed class SqlLiteral(object? value, ScalarType type) : SqlExpr
 {
    public object? Value { get; } = value;
 
    public ScalarType Type { get; } = type;
 
-   public override int Precedence => Value is long or int or decimal or double && IsNegative ? SqlPrecedence.Unary : SqlPrecedence.Atom;
+   internal override int Precedence => Value is long or int or decimal or double && IsNegative ? SqlPrecedence.Unary : SqlPrecedence.Atom;
 
    private bool IsNegative => Value switch
    {
@@ -67,31 +80,31 @@ internal sealed class SqlLiteral(object? value, ScalarType type) : SqlExpr
 }
 
 /// <summary>Text the dialect writes verbatim: a keyword argument (<c>day</c>) or a fixed expression (<c>INTERVAL '1 day'</c>).</summary>
-internal sealed class SqlRaw(string text) : SqlExpr
+public sealed class SqlRaw(string text) : SqlExpr
 {
    public string Text { get; } = text;
 
-   public override int Precedence => SqlPrecedence.Atom;
+   internal override int Precedence => SqlPrecedence.Atom;
 }
 
-internal enum SqlUnaryOp : byte
+public enum SqlUnaryOp : byte
 {
    Negate,
    Not,
 }
 
-internal sealed class SqlUnary(SqlUnaryOp op, SqlExpr operand) : SqlExpr
+public sealed class SqlUnary(SqlUnaryOp op, SqlExpr operand) : SqlExpr
 {
    public SqlUnaryOp Op { get; } = op;
 
    public SqlExpr Operand { get; } = operand;
 
-   public override int Precedence => Op == SqlUnaryOp.Not ? SqlPrecedence.Not : SqlPrecedence.Unary;
+   internal override int Precedence => Op == SqlUnaryOp.Not ? SqlPrecedence.Not : SqlPrecedence.Unary;
 
-   public override bool IsPredicate => Op == SqlUnaryOp.Not;
+   internal override bool IsPredicate => Op == SqlUnaryOp.Not;
 }
 
-internal enum SqlBinaryOp : byte
+public enum SqlBinaryOp : byte
 {
    Add,
    Subtract,
@@ -112,7 +125,7 @@ internal enum SqlBinaryOp : byte
    Glob,
 }
 
-internal sealed class SqlBinary(SqlBinaryOp op, SqlExpr left, SqlExpr right) : SqlExpr
+public sealed class SqlBinary(SqlBinaryOp op, SqlExpr left, SqlExpr right) : SqlExpr
 {
    public SqlBinaryOp Op { get; } = op;
 
@@ -120,7 +133,7 @@ internal sealed class SqlBinary(SqlBinaryOp op, SqlExpr left, SqlExpr right) : S
 
    public SqlExpr Right { get; } = right;
 
-   public override int Precedence => Op switch
+   internal override int Precedence => Op switch
    {
       SqlBinaryOp.Or => SqlPrecedence.Or,
       SqlBinaryOp.And => SqlPrecedence.And,
@@ -129,21 +142,21 @@ internal sealed class SqlBinary(SqlBinaryOp op, SqlExpr left, SqlExpr right) : S
       _ => SqlPrecedence.Comparison,
    };
 
-   public override bool IsPredicate => Precedence <= SqlPrecedence.Comparison;
+   internal override bool IsPredicate => Precedence <= SqlPrecedence.Comparison;
 }
 
-internal sealed class SqlIsNull(SqlExpr operand, bool negated) : SqlExpr
+public sealed class SqlIsNull(SqlExpr operand, bool negated) : SqlExpr
 {
    public SqlExpr Operand { get; } = operand;
 
    public bool Negated { get; } = negated;
 
-   public override int Precedence => SqlPrecedence.Comparison;
+   internal override int Precedence => SqlPrecedence.Comparison;
 
-   public override bool IsPredicate => true;
+   internal override bool IsPredicate => true;
 }
 
-internal sealed class SqlIn(SqlExpr operand, IReadOnlyList<SqlExpr> items, bool negated) : SqlExpr
+public sealed class SqlIn(SqlExpr operand, IReadOnlyList<SqlExpr> items, bool negated) : SqlExpr
 {
    public SqlExpr Operand { get; } = operand;
 
@@ -151,12 +164,12 @@ internal sealed class SqlIn(SqlExpr operand, IReadOnlyList<SqlExpr> items, bool 
 
    public bool Negated { get; } = negated;
 
-   public override int Precedence => SqlPrecedence.Comparison;
+   internal override int Precedence => SqlPrecedence.Comparison;
 
-   public override bool IsPredicate => true;
+   internal override bool IsPredicate => true;
 }
 
-internal sealed class SqlBetween(SqlExpr operand, SqlExpr low, SqlExpr high) : SqlExpr
+public sealed class SqlBetween(SqlExpr operand, SqlExpr low, SqlExpr high) : SqlExpr
 {
    public SqlExpr Operand { get; } = operand;
 
@@ -164,13 +177,13 @@ internal sealed class SqlBetween(SqlExpr operand, SqlExpr low, SqlExpr high) : S
 
    public SqlExpr High { get; } = high;
 
-   public override int Precedence => SqlPrecedence.Comparison;
+   internal override int Precedence => SqlPrecedence.Comparison;
 
-   public override bool IsPredicate => true;
+   internal override bool IsPredicate => true;
 }
 
 /// <summary><c>x LIKE p</c>, optionally <c>ILIKE</c>, with an escape character.</summary>
-internal sealed class SqlLike(SqlExpr operand, SqlExpr pattern, bool caseInsensitive, char? escape) : SqlExpr
+public sealed class SqlLike(SqlExpr operand, SqlExpr pattern, bool caseInsensitive, char? escape) : SqlExpr
 {
    public SqlExpr Operand { get; } = operand;
 
@@ -180,33 +193,33 @@ internal sealed class SqlLike(SqlExpr operand, SqlExpr pattern, bool caseInsensi
 
    public char? Escape { get; } = escape;
 
-   public override int Precedence => SqlPrecedence.Comparison;
+   internal override int Precedence => SqlPrecedence.Comparison;
 
-   public override bool IsPredicate => true;
+   internal override bool IsPredicate => true;
 }
 
-internal sealed record SqlWhen(SqlExpr Condition, SqlExpr Result);
+public sealed record SqlWhen(SqlExpr Condition, SqlExpr Result);
 
-internal sealed class SqlCase(IReadOnlyList<SqlWhen> whens, SqlExpr? otherwise) : SqlExpr
+public sealed class SqlCase(IReadOnlyList<SqlWhen> whens, SqlExpr? otherwise) : SqlExpr
 {
    public IReadOnlyList<SqlWhen> Whens { get; } = whens;
 
    public SqlExpr? Else { get; } = otherwise;
 
-   public override int Precedence => SqlPrecedence.Atom;
+   internal override int Precedence => SqlPrecedence.Atom;
 }
 
-internal sealed class SqlCast(SqlExpr operand, string typeName) : SqlExpr
+public sealed class SqlCast(SqlExpr operand, string typeName) : SqlExpr
 {
    public SqlExpr Operand { get; } = operand;
 
    public string TypeName { get; } = typeName;
 
-   public override int Precedence => SqlPrecedence.Atom;
+   internal override int Precedence => SqlPrecedence.Atom;
 }
 
 /// <summary>An aggregate: <c>count(*)</c> when the argument is null, <c>count(DISTINCT x)</c>, <c>sum(x)</c>.</summary>
-internal sealed class SqlAggregate(string name, SqlExpr? argument, bool distinct = false) : SqlExpr
+public sealed class SqlAggregate(string name, SqlExpr? argument, bool distinct = false) : SqlExpr
 {
    public string Name { get; } = name;
 
@@ -214,7 +227,7 @@ internal sealed class SqlAggregate(string name, SqlExpr? argument, bool distinct
 
    public bool Distinct { get; } = distinct;
 
-   public override int Precedence => SqlPrecedence.Atom;
+   internal override int Precedence => SqlPrecedence.Atom;
 }
 
 /// <summary><c>[NOT] EXISTS (select)</c>.</summary>
@@ -224,9 +237,9 @@ internal sealed class SqlExists(SqlQuery query, bool negated) : SqlExpr
 
    public bool Negated { get; } = negated;
 
-   public override int Precedence => Negated ? SqlPrecedence.Not : SqlPrecedence.Atom;
+   internal override int Precedence => Negated ? SqlPrecedence.Not : SqlPrecedence.Atom;
 
-   public override bool IsPredicate => true;
+   internal override bool IsPredicate => true;
 }
 
 /// <summary>A subquery giving one value.</summary>
@@ -234,7 +247,7 @@ internal sealed class SqlScalarSubquery(SqlQuery query) : SqlExpr
 {
    public SqlQuery Query { get; } = query;
 
-   public override int Precedence => SqlPrecedence.Atom;
+   internal override int Precedence => SqlPrecedence.Atom;
 }
 
 /// <summary><c>x IN (select)</c>.</summary>
@@ -244,12 +257,12 @@ internal sealed class SqlInSubquery(SqlExpr operand, SqlQuery query) : SqlExpr
 
    public SqlQuery Query { get; } = query;
 
-   public override int Precedence => SqlPrecedence.Comparison;
+   internal override int Precedence => SqlPrecedence.Comparison;
 
-   public override bool IsPredicate => true;
+   internal override bool IsPredicate => true;
 }
 
-internal sealed class SqlFunctionCall(string name, IReadOnlyList<SqlExpr> arguments) : SqlExpr
+public sealed class SqlFunctionCall(string name, IReadOnlyList<SqlExpr> arguments) : SqlExpr
 {
    public SqlFunctionCall(string name, params SqlExpr[] arguments) : this(name, (IReadOnlyList<SqlExpr>)arguments) { }
 
@@ -257,22 +270,22 @@ internal sealed class SqlFunctionCall(string name, IReadOnlyList<SqlExpr> argume
 
    public IReadOnlyList<SqlExpr> Arguments { get; } = arguments;
 
-   public override int Precedence => SqlPrecedence.Atom;
+   internal override int Precedence => SqlPrecedence.Atom;
 }
 
 /// <summary>
 /// Function-like syntax that isn't a plain call, such as <c>EXTRACT(YEAR FROM {0})</c>. <c>{n}</c> is replaced by
 /// argument n, parenthesized unless it is atomic.
 /// </summary>
-internal sealed class SqlTemplate(string format, IReadOnlyList<SqlExpr> arguments, bool isPredicate = false) : SqlExpr
+public sealed class SqlTemplate(string format, IReadOnlyList<SqlExpr> arguments, bool isPredicate = false) : SqlExpr
 {
    public string Format { get; } = format;
 
    public IReadOnlyList<SqlExpr> Arguments { get; } = arguments;
 
-   public override int Precedence => SqlPrecedence.Atom;
+   internal override int Precedence => SqlPrecedence.Atom;
 
-   public override bool IsPredicate { get; } = isPredicate;
+   internal override bool IsPredicate { get; } = isPredicate;
 }
 
 #region Queries
@@ -324,7 +337,7 @@ internal sealed record SqlOrderItem(SqlExpr Expr, bool Descending, bool Nullable
 /// <summary>A query: a SELECT, or a set operation of two.</summary>
 internal abstract class SqlQuery;
 
-internal enum SqlSetOperator : byte
+public enum SqlSetOperator : byte
 {
    Union,
    UnionAll,

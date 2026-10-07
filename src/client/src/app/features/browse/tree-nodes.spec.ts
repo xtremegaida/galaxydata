@@ -1,5 +1,5 @@
 import { schemaNode, sourceNode, tableNode } from '../../../testing/catalog';
-import { compactCount, iconOf, isEntity, kindOf, matchParts, sourceKindName } from './tree-nodes';
+import { compactCount, iconOf, isEntity, kindOf, matchParts } from './tree-nodes';
 
 describe('tree nodes', () => {
   it('tells entities from what holds them', () => {
@@ -15,10 +15,13 @@ describe('tree nodes', () => {
     expect(kindOf(sourceNode('shop'))).toBe('connection');
     expect(kindOf(schemaNode('reports', { kind: 'folder' }))).toBe('folder of virtual entities');
     expect(iconOf(sourceNode('shop'))).toBe('database');
-    expect(iconOf(sourceNode('xl', { sourceKind: 'excel' }))).toBe('table_view');
+    expect(iconOf(sourceNode('xl', { sourceKind: 'excel', sourceIcon: 'table_view' }))).toBe(
+      'table_view',
+    );
+    expect(
+      iconOf(sourceNode('ora', { sourceKind: 'oracle', sourceKindName: null, sourceIcon: null })),
+    ).toBe('database');
     expect(iconOf(tableNode('shop.open_orders', { kind: 'view' }))).toBe('table_eye');
-    expect(sourceKindName('sqlserver')).toBe('SQL Server');
-    expect(sourceKindName('oracle')).toBe('oracle');
   });
 
   it('counts rows as they are read at a glance', () => {

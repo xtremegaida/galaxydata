@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using GalaxyData.Connectors;
 using GalaxyData.Web.Metadata;
 
 namespace GalaxyData.Web.Connections;

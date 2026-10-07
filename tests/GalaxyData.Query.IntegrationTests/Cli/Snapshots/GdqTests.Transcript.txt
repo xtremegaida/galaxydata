@@ -269,7 +269,7 @@ error GDQ2001: There is no 'totl' here. Did you mean 'total'?
 ### a source that isn't one
 exit 2
 --- err
-gdq: 'oracle' is not a source kind; use sqlite, duckdb, postgres, sqlserver or excel
+gdq: 'oracle' is not a source kind; use sqlite, duckdb, postgres, sqlserver, clickhouse or excel
 
 ### a database that doesn't exist
 exit 2

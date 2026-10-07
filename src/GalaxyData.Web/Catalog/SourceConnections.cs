@@ -4,16 +4,21 @@ using System.Data.Common;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using GalaxyData.Connectors;
 using GalaxyData.Query.Catalog;
-using GalaxyData.Query.Excel;
 using GalaxyData.Query.Execution;
-using GalaxyData.Web.Connections;
 
 namespace GalaxyData.Web.Catalog;
 
-/// <summary>How a source of the catalog connects: its kind and connection string, or why it can't (<see cref="Problem"/>).</summary>
+/// <summary>
+/// How a source of the catalog connects: its kind and connection string, or why it can't (<see cref="Problem"/>); or
+/// the connector that opens it itself (<see cref="Attached"/>), with no connection string.
+/// </summary>
 public sealed record SourceRuntime(string Alias, ConnectionKind Kind, string? ConnectionString, string? Problem = null)
 {
+   /// <summary>The sources its connector opens itself, of which this is one (a folder of workbooks).</summary>
+   public IAttachedSources? Attached { get; init; }
+
    /// <summary>Its alias and kind: never the connection string, which has its secrets.</summary>
    public override string ToString() => $"{Alias} ({Kind.Id})";
 }
@@ -22,36 +27,34 @@ public sealed record SourceRuntime(string Alias, ConnectionKind Kind, string? Co
 /// How queries reach the sources: the engine's <see cref="IConnectionFactory"/>. Each source connects as the catalog
 /// last built says, with a connection string written from its settings and secrets (read-only or not). Sources with
 /// the same string share a connector (PostgreSQL's data source; the providers' pools), let go once no source uses the
-/// string any more. Folders of workbooks are registered with the Excel provider, which opens its own connections.
+/// string any more. Sources a connector opens itself (folders of workbooks) are attached to it under their aliases.
 /// </summary>
-public sealed class SourceConnections(SourceProviders providers) : IConnectionFactory, IAsyncDisposable
+public sealed class SourceConnections : IConnectionFactory, IAsyncDisposable
 {
    private readonly Lock gate = new();
    private readonly Dictionary<string, SourceConnector> connectors = new(StringComparer.Ordinal);
-   private readonly Dictionary<string, ExcelFolderOptions> folders = new(StringComparer.Ordinal);
+   private readonly Dictionary<string, IAttachedSources> attached = new(StringComparer.Ordinal);
    private Dictionary<string, SourceRuntime> sources = new(StringComparer.OrdinalIgnoreCase);
    private bool disposed;
 
    /// <summary>
-   /// Registers a source's folder of workbooks with the Excel provider, unless it is registered so already (which
-   /// would drop the sheets loaded from it); the source to add to a catalog.
+   /// Attaches a source to the connector that opens it, with its settings and options, unless it is attached so
+   /// already (which would drop what was loaded for it); the source to add to a catalog.
    /// </summary>
-   internal SourceInfo Folder(string alias, ExcelFolderOptions options)
+   internal SourceInfo Attach(string alias, IAttachedSources owner, IReadOnlyDictionary<string, string> settings, IReadOnlyDictionary<string, string> options)
    {
       lock (gate)
       {
-         if (!folders.TryGetValue(alias, out ExcelFolderOptions? registered) || !Same(registered, options))
-         {
-            providers.Excel.AddFolder(alias, options);
-            folders[alias] = options;
-         }
+         if (attached.TryGetValue(alias, out IAttachedSources? before) && !ReferenceEquals(before, owner)) { before.Detach(alias); }
+         SourceInfo source = owner.Attach(alias, settings, options);
+         attached[alias] = owner;
+         return source;
       }
-      return providers.Excel.Source(alias);
    }
 
    /// <summary>
    /// Makes the sources of a catalog just built the ones queries reach. Connectors whose strings no source has any
-   /// more are let go, and folders no source has are forgotten.
+   /// more are let go, and attached sources no source is any more are detached.
    /// </summary>
    internal async Task PublishAsync(IReadOnlyCollection<SourceRuntime> next)
    {
@@ -65,11 +68,12 @@ public sealed class SourceConnections(SourceProviders providers) : IConnectionFa
             retired.Add(connectors[connectionString]);
             connectors.Remove(connectionString);
          }
-         // The provider's names are exact: a folder whose alias came back in another case is another folder.
-         foreach (string alias in folders.Keys.Where(a => !(sources.TryGetValue(a, out SourceRuntime? s) && s.Kind is ExcelKind && s.Alias == a)).ToList())
+         // Attached names are exact: a source whose alias came back in another case is another source.
+         foreach ((string alias, IAttachedSources owner) in attached.Where(a => !(sources.TryGetValue(a.Key, out SourceRuntime? s) && ReferenceEquals(s.Attached, a.Value) &&
+                                                                                    s.Alias == a.Key)).ToList())
          {
-            providers.Excel.RemoveFolder(alias);
-            folders.Remove(alias);
+            owner.Detach(alias);
+            attached.Remove(alias);
          }
       }
       // Connections already open go on; a query opening another as its source changed opens it as it is now.
@@ -109,9 +113,6 @@ public sealed class SourceConnections(SourceProviders providers) : IConnectionFa
          return connector;
       }
    }
-
-   private static bool Same(ExcelFolderOptions a, ExcelFolderOptions b) =>
-      string.Equals(a.Path, b.Path, StringComparison.Ordinal) && a.HeaderRow == b.HeaderRow && a.AllText == b.AllText && a.IncludeHiddenSheets == b.IncludeHiddenSheets;
 
    public async ValueTask DisposeAsync()
    {

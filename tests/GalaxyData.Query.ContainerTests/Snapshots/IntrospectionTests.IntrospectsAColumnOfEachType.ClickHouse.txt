@@ -1,0 +1,31 @@
+id: Int32 -> int32
+b: Nullable(Bool) -> boolean?
+i8: Nullable(Int8) -> int16?
+i16: Nullable(Int16) -> int16?
+i32: Nullable(Int32) -> int32?
+i64: Nullable(Int64) -> int64?
+u8: Nullable(UInt8) -> int16?
+u16: Nullable(UInt16) -> int32?
+u32: Nullable(UInt32) -> int64?
+u64: Nullable(UInt64) -> decimal(20,0)?
+i128: Nullable(Int128) -> unknown?
+dec: Nullable(Decimal(12, 4)) -> decimal(12,4)?
+dec38: Nullable(Decimal(38, 10)) -> decimal(38,10)?
+f32: Nullable(Float32) -> single?
+f64: Nullable(Float64) -> double?
+txt: Nullable(String) -> string?
+fs: Nullable(FixedString(3)) -> string(3)?
+lc: LowCardinality(Nullable(String)) -> string?
+en: Nullable(Enum8('sad' = 1, 'ok' = 2, 'happy' = 3)) -> string?
+uid: Nullable(UUID) -> guid?
+d: Nullable(Date) -> date?
+d32: Nullable(Date32) -> date?
+dt: Nullable(DateTime) -> datetime?
+dt64: Nullable(DateTime64(3)) -> datetime?
+dtz: Nullable(DateTime64(3, 'Africa/Johannesburg')) -> datetimeoffset?
+ip4: Nullable(IPv4) -> string?
+ip6: Nullable(IPv6) -> string?
+arr: Array(Int32) -> unknown
+mp: Map(String, Int32) -> unknown
+tup: Tuple(Int32, String) -> unknown
+js: JSON -> json
