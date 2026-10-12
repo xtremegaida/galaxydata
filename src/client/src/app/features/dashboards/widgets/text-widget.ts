@@ -48,6 +48,10 @@ import { markdownHtml } from './markdown';
         code {
           font-family: var(--gd-code-font-family);
         }
+        /* Nothing below the last: a lone heading fits a row, unscrolled. */
+        > :last-child {
+          margin-bottom: 0;
+        }
       }
     }
     .empty {

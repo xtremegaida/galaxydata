@@ -3,6 +3,7 @@ import type { Listens } from './widget-defaults';
 import type { WidgetConfig } from './definition';
 import {
   barDefaults,
+  headingDefaults,
   lineDefaults,
   pieDefaults,
   tableDefaults,
@@ -35,6 +36,17 @@ const settings = () => import('../editor/kinds/kind-settings');
 
 /** The kinds the application has, in the palette's order. */
 export const builtInKinds: readonly WidgetKind[] = [
+  {
+    kind: 'heading',
+    label: 'Heading',
+    icon: 'title',
+    defaultSize: { w: 12, h: 1 },
+    minWidthPx: 120,
+    data: false,
+    defaults: () => headingDefaults(),
+    view: () => import('../widgets/heading-widget').then((m) => m.HeadingWidget),
+    editor: () => settings().then((m) => m.HeadingSettings),
+  },
   {
     kind: 'text',
     label: 'Text',

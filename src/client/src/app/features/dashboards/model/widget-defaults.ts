@@ -2,6 +2,7 @@ import type { Schema } from '../../../core/api/api-client';
 import type {
   BarConfig,
   Dimension,
+  HeadingConfig,
   LineConfig,
   Measure,
   PieConfig,
@@ -25,6 +26,10 @@ export function rowCount(): Measure {
 
 export function textDefaults(): TextConfig {
   return { kind: 'text', markdown: '' };
+}
+
+export function headingDefaults(): HeadingConfig {
+  return { kind: 'heading', text: '', size: 'large', align: 'start' };
 }
 
 export function barDefaults(source: string | null, listens: Listens = all): BarConfig {

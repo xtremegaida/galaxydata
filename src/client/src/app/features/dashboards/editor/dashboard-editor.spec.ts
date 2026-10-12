@@ -365,6 +365,42 @@ describe('the dashboard editor', () => {
     );
   });
 
+  it('adds a heading a row high, its text, size and alignment its own, asking for no rows', async () => {
+    const { page, http, store, harness } = await open();
+    button(page.querySelector('.add-widgets')!, 'Heading').click();
+    harness.detectChanges();
+    const made = store.selected()!;
+    const config = () => store.draft().widgets.find((w) => w.id === made)?.config;
+    expect([config(), store.draft().layout.items[made]]).toEqual([
+      { kind: 'heading', text: '', size: 'large', align: 'start' },
+      { x: 0, y: 7, w: 12, h: 1 },
+    ]);
+    await eventually(harness, () => !!page.querySelector('gd-heading-settings input'));
+    const panel = page.querySelector('gd-widget-panel')!;
+    // A heading is its own title, and stands on the page as no region of its own.
+    expect([...panel.querySelectorAll('mat-label')].map((l) => textOf(l))).not.toContain('Title');
+    const cell = page.querySelector('[data-gd-cell="0,7,12,1"]')!;
+    expect(cell.querySelector('section')!.hasAttribute('aria-label')).toBe(false);
+
+    const text = panel.querySelector<HTMLInputElement>('gd-heading-settings input')!;
+    text.value = 'Orders';
+    text.dispatchEvent(new Event('input'));
+    harness.detectChanges();
+    await eventually(harness, () => !!cell.querySelector('gd-heading-widget h2'));
+    expect(textOf(cell.querySelector('gd-heading-widget h2'))).toBe('Orders');
+    button(panel, 'Medium').click();
+    panel.querySelector<HTMLElement>('button[aria-label=Centred]')!.click();
+    harness.detectChanges();
+    expect(config()).toEqual({ kind: 'heading', text: 'Orders', size: 'medium', align: 'center' });
+    expect(textOf(cell.querySelector('gd-heading-widget h3'))).toBe('Orders');
+    expect(store.nameOf(made)).toBe('Heading: Orders');
+    expect(await previews(http)).toEqual([]);
+    // Its settings' edits within a second are one step, as every widget's are.
+    press('z', { ctrlKey: true });
+    harness.detectChanges();
+    expect(config()).toEqual({ kind: 'heading', text: '', size: 'large', align: 'start' });
+  });
+
   it('saves with Ctrl+S at the version read, and undoes and redoes by name', async () => {
     const { page, http, store, harness } = await open();
     page.querySelector<HTMLElement>('[data-gd-cell="0,1,6,6"] .cover')!.click();

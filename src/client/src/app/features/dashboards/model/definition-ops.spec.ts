@@ -295,6 +295,18 @@ describe('what publishing says changed', () => {
     ]);
     expect(changesBetween(before, { ...before })).toEqual(['Nothing: it is as published.']);
   });
+
+  it('names a heading by its text', () => {
+    const before = salesDefinition();
+    const heading = (text: string) =>
+      addWidget(before, { kind: 'heading', text, size: 'large', align: 'start' }, { w: 12, h: 1 })
+        .definition;
+    expect(changesBetween(before, heading('Orders'))).toEqual([
+      'Added the heading "Orders".',
+      'Changed its layout.',
+    ]);
+    expect(changesBetween(before, heading(''))[0]).toMatch(/^Added the heading \S+\.$/);
+  });
 });
 
 describe("a dashboard's tabs", () => {

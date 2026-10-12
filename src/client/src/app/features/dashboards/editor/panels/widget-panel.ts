@@ -59,18 +59,20 @@ type Listens = DataConfig['listens'];
     @if (widget(); as widget) {
       <div class="panel">
         <p class="kind">{{ kind()?.label ?? widget.config.kind }} · {{ widget.id }}</p>
-        <mat-form-field subscriptSizing="dynamic">
-          <mat-label>Title</mat-label>
-          <input
-            matInput
-            [value]="widget.title ?? ''"
-            (input)="titled($event)"
-            autocomplete="off"
-          />
-          @if (!data()) {
-            <mat-hint>Without one, the text stands on the page, unframed</mat-hint>
-          }
-        </mat-form-field>
+        @if (widget.config.kind !== 'heading') {
+          <mat-form-field subscriptSizing="dynamic">
+            <mat-label>Title</mat-label>
+            <input
+              matInput
+              [value]="widget.title ?? ''"
+              (input)="titled($event)"
+              autocomplete="off"
+            />
+            @if (!data()) {
+              <mat-hint>Without one, the text stands on the page, unframed</mat-hint>
+            }
+          </mat-form-field>
+        }
         @if (tabs().length > 0) {
           <mat-form-field subscriptSizing="dynamic">
             <mat-label>Tab</mat-label>

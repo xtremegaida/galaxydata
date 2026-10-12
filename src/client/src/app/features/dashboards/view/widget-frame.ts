@@ -87,7 +87,7 @@ interface Paused {
     <section
       class="frame"
       [attr.aria-labelledby]="title() ? titleId : null"
-      [attr.aria-label]="title() ? null : kindLabel()"
+      [attr.aria-label]="title() || heading() ? null : kindLabel()"
     >
       @if (!plain() || edit) {
         <header class="bar">
@@ -340,12 +340,16 @@ export class WidgetFrame {
   protected readonly titleId = `gd-widget-${++frames}`;
 
   protected readonly config = computed(() => configOf(this.widget()));
-  protected readonly title = computed(() => this.widget().title?.trim() || null);
+  /** A heading is its own title, and no region: it introduces those below it. */
+  protected readonly heading = computed(() => this.config().kind === 'heading');
+  protected readonly title = computed(() =>
+    this.heading() ? null : this.widget().title?.trim() || null,
+  );
   protected readonly kind = computed(() => kindOf(this.kinds, this.config()));
   protected readonly kindLabel = computed(() => this.kind()?.label ?? 'Widget');
   protected readonly unknown = computed(() => !this.kind());
   protected readonly chart = computed(() => isChart(this.config()));
-  /** A text widget without a title has no frame: headings and notes stand on the page. */
+  /** Headings, and text without a title, have no frame: they stand on the page. */
   protected readonly plain = computed(() => !isData(this.config()) && !this.title());
   /** Whether its rows may be shown in a popup: always in the application, as the dashboard says embedded. */
   protected readonly showsData = computed(

@@ -187,6 +187,7 @@ public sealed record DashboardWidget(
 /// <summary>What a widget shows, by its kind. A kind is added here, with its rules and query (<c>IWidgetKind</c>), and in the client's registry.</summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(TextConfig), "text")]
+[JsonDerivedType(typeof(HeadingConfig), "heading")]
 [JsonDerivedType(typeof(PieConfig), "pie")]
 [JsonDerivedType(typeof(BarConfig), "bar")]
 [JsonDerivedType(typeof(LineConfig), "line")]
@@ -195,6 +196,28 @@ public abstract record WidgetConfig;
 
 /// <summary>Markdown: headings and notes are widgets, as a dashboard has no title of its own.</summary>
 public sealed record TextConfig(string Markdown) : WidgetConfig;
+
+/// <summary>A heading: plain text at a size (its level on the page) and an alignment, as much of it as fits shown.</summary>
+public sealed record HeadingConfig(string Text, HeadingSize Size, HeadingAlign Align) : WidgetConfig;
+
+public enum HeadingSize
+{
+   /// <summary>The page's second level (its first, hidden, is the dashboard's name).</summary>
+   Large,
+
+   Medium,
+
+   Small,
+}
+
+public enum HeadingAlign
+{
+   Start,
+
+   Center,
+
+   End,
+}
 
 /// <summary>
 /// A widget of a source's rows: its own conditions, whether choosing its slices filters the widgets that listen

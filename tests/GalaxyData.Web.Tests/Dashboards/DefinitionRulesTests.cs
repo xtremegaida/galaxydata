@@ -129,6 +129,20 @@ public sealed class DefinitionRulesTests
       Fields(With(raw with { Dimensions = [new Dimension(new FieldRef([], "status"), null, "Status")], PageSize = 5000 }))
          .ShouldBe(["definition.widgets[1].config.dimensions", "definition.widgets[1].config.pageSize"]);
       Fields(With(new TextConfig(new string('x', 20_001)))).ShouldBe(["definition.widgets[1].config.markdown"]);
+      Check(With(new HeadingConfig("", HeadingSize.Small, HeadingAlign.End))).Errors.ShouldBeEmpty("a heading still to be written");
+      Fields(With(new HeadingConfig(new string('x', 201), HeadingSize.Large, HeadingAlign.Start))).ShouldBe(["definition.widgets[1].config.text"]);
+      Fields(With(new HeadingConfig(null!, HeadingSize.Large, HeadingAlign.Start))).ShouldBe(["definition.widgets[1].config.text"]);
+   }
+
+   [Fact]
+   public void AHeadingIsReadAsTheClientWritesIt()
+   {
+      DashboardDefinition sales = Definitions.Sales();
+      string json = DefinitionJson.Write(sales with { Widgets = [sales.Widgets[0] with { Config = new HeadingConfig("Sales", HeadingSize.Medium, HeadingAlign.Center) }] });
+      json.ShouldContain("{\"kind\":\"heading\",\"text\":\"Sales\",\"size\":\"medium\",\"align\":\"center\"}");
+      DefinitionJson.Read(json.Replace("\"size\":\"medium\"", "\"size\":\"large\"", System.StringComparison.Ordinal))
+         .Widgets[0].Config.ShouldBe(new HeadingConfig("Sales", HeadingSize.Large, HeadingAlign.Center));
+      Should.Throw<JsonException>(() => DefinitionJson.Read(json.Replace("\"size\":\"medium\"", "\"size\":\"huge\"", System.StringComparison.Ordinal)));
    }
 
    [Fact]

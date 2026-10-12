@@ -132,7 +132,10 @@ export class EditorStore {
         continue;
       }
       if (!isData(config)) {
-        if (/!\[[^\]]*\]\((?!\/(?!\/)|data:image\/)/i.test(config.markdown)) {
+        if (
+          config.kind === 'text' &&
+          /!\[[^\]]*\]\((?!\/(?!\/)|data:image\/)/i.test(config.markdown)
+        ) {
           issues.push({
             severity: 'warning',
             message: `${widget.title ?? 'A text widget'} shows images of other sites, which the page's security policy doesn't load: they show as links.`,
@@ -305,22 +308,24 @@ export class EditorStore {
       return id;
     }
     const config = configOf(widget);
-    if (widget.title?.trim()) {
+    if (config.kind !== 'heading' && widget.title?.trim()) {
       return widget.title.trim();
     }
-    // A text widget is named by its first line (a heading, usually).
+    // A heading by its text, a text widget by its first line (a heading, usually).
     const first =
-      config.kind === 'text'
-        ? config.markdown
-            .split('\n')
-            .map((line) =>
-              line
-                .replace(/^[#>*\s-]+/, '')
-                .replace(/[*_`[\]]/g, '')
-                .trim(),
-            )
-            .find(Boolean)
-        : undefined;
+      config.kind === 'heading'
+        ? config.text.trim()
+        : config.kind === 'text'
+          ? config.markdown
+              .split('\n')
+              .map((line) =>
+                line
+                  .replace(/^[#>*\s-]+/, '')
+                  .replace(/[*_`[\]]/g, '')
+                  .trim(),
+              )
+              .find(Boolean)
+          : undefined;
     const kind = kindOf(this.kinds, config)?.label ?? 'Widget';
     return first
       ? `${kind}: ${first.length > 40 ? first.slice(0, 40) + '…' : first}`

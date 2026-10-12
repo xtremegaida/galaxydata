@@ -13041,6 +13041,20 @@
           }
         }
       },
+      "HeadingAlign": {
+        "enum": [
+          "start",
+          "center",
+          "end"
+        ]
+      },
+      "HeadingSize": {
+        "enum": [
+          "large",
+          "medium",
+          "small"
+        ]
+      },
       "HealthCheckDto": {
         "required": [
           "name",
@@ -16945,6 +16959,9 @@
             "$ref": "#/components/schemas/WidgetConfigTextConfig"
           },
           {
+            "$ref": "#/components/schemas/WidgetConfigHeadingConfig"
+          },
+          {
             "$ref": "#/components/schemas/WidgetConfigPieConfig"
           },
           {
@@ -16961,6 +16978,7 @@
           "propertyName": "kind",
           "mapping": {
             "text": "#/components/schemas/WidgetConfigTextConfig",
+            "heading": "#/components/schemas/WidgetConfigHeadingConfig",
             "pie": "#/components/schemas/WidgetConfigPieConfig",
             "bar": "#/components/schemas/WidgetConfigBarConfig",
             "line": "#/components/schemas/WidgetConfigLineConfig",
@@ -17067,6 +17085,30 @@
           },
           "listens": {
             "$ref": "#/components/schemas/Listens"
+          }
+        }
+      },
+      "WidgetConfigHeadingConfig": {
+        "required": [
+          "text",
+          "size",
+          "align"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "heading"
+            ],
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "size": {
+            "$ref": "#/components/schemas/HeadingSize"
+          },
+          "align": {
+            "$ref": "#/components/schemas/HeadingAlign"
           }
         }
       },

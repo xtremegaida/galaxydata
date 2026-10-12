@@ -510,7 +510,7 @@ the server keeps and checks).
   ownerless ones), found by name; each with its sharing, whether it is public, published and changed since. A menu
   each: Edit and Delete one's own, Copy, and for administrators Make private and Stop its public link.
 - **A dashboard** (`dashboard-page.ts`): its published copy (its owner's working copy while there is none, or on
-  asking, `?copy=working`). It has no title section: headings and notes are text widgets, so a blank dashboard is a
+  asking, `?copy=working`). It has no title section: headings and notes are widgets, so a blank dashboard is a
   blank page; its name is the page's title and a heading only screen readers find. A bar holds Refresh (and when
   the rows were read), Publish, Share and Edit as the user may, and a menu: Revisions, Copy, Delete.
 - **The grid** (`layout/`): a CSS grid of the breakpoint the grid's own width reaches (`ResizeObserver`), the
@@ -525,8 +525,11 @@ the server keeps and checks).
   reading, they stop (the shown tab's requests don't wait behind theirs). "Read at" and the timer's waits are the
   shown widgets'. A dashboard without tabs is one grid, as ever.
 - **Widgets** (`model/widget-registry.ts`, `WIDGET_KINDS`): a kind is its label, icon, default and least sizes,
-  defaults, and two components loaded when needed, its view and its settings' editor. Text (Markdown, `marked`, its
-  HTML escaped, links in new tabs, headings a level down, images of this site only); pie, bar and line charts
+  defaults, and two components loaded when needed, its view and its settings' editor. Headings (plain text, large,
+  medium or small as the page's second, third and fourth levels, aligned left, centred or right, unframed; as many
+  lines as the widget's height holds, ending in an ellipsis, never scrolled); text (Markdown, `marked`, its HTML
+  escaped, links in new tabs, headings a level down, images of this site only; scrolled when longer than its
+  widget); pie, bar and line charts
   (ECharts, loaded with the first chart, `ECHARTS_IMPORT`; options built by pure functions; colours from their
   palette, below; a table of the rows instead, with buttons, for the keyboard, and each row's colour); tables. A kind
   the page doesn't know is said so. A new kind is a server `IWidgetKind` and a client `WidgetKind`.

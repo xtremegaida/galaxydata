@@ -19,13 +19,15 @@ export type Bucket = Schema<'Bucket'>;
 export type LegendPosition = Schema<'LegendPosition'>;
 
 export type TextConfig = Schema<'WidgetConfigTextConfig'> & { kind: 'text' };
+export type HeadingConfig = Schema<'WidgetConfigHeadingConfig'> & { kind: 'heading' };
 export type PieConfig = Schema<'WidgetConfigPieConfig'> & { kind: 'pie' };
 export type BarConfig = Schema<'WidgetConfigBarConfig'> & { kind: 'bar' };
 export type LineConfig = Schema<'WidgetConfigLineConfig'> & { kind: 'line' };
 export type TableConfig = Schema<'WidgetConfigTableConfig'> & { kind: 'table' };
 
 /** What a widget shows, by its kind. */
-export type WidgetConfig = TextConfig | PieConfig | BarConfig | LineConfig | TableConfig;
+export type WidgetConfig =
+  TextConfig | HeadingConfig | PieConfig | BarConfig | LineConfig | TableConfig;
 
 /** The kinds of widgets of data: they have a source, queries and rows. */
 export type DataConfig = PieConfig | BarConfig | LineConfig | TableConfig;
@@ -50,7 +52,7 @@ export function configOf(widget: Widget): WidgetConfig {
 }
 
 export function isData(config: WidgetConfig): config is DataConfig {
-  return config.kind !== 'text';
+  return config.kind !== 'text' && config.kind !== 'heading';
 }
 
 export function isChart(config: WidgetConfig): config is ChartConfig {

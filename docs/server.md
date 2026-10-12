@@ -721,8 +721,8 @@ when it starts again, as each connection may have committed or not. Administrato
 
 ## Dashboards
 
-A dashboard is a grid of widgets (text, pie, bar and line charts, tables) over sources (the catalog's tables, views
-and virtual entities), with filters, and slices chosen in one widget filtering those that listen to it. Its
+A dashboard is a grid of widgets (headings, text, pie, bar and line charts, tables) over sources (the catalog's
+tables, views and virtual entities), with filters, and slices chosen in one widget filtering those that listen to it. Its
 definition is one JSON document, kept in a canonical form (keys sorted, numbers shortest) and hashed (SHA-256), so a
 save that changes nothing is none.
 

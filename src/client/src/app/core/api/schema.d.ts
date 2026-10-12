@@ -2192,6 +2192,10 @@ export interface components {
             label: string;
             collapsed: boolean;
         };
+        /** @enum {unknown} */
+        HeadingAlign: "start" | "center" | "end";
+        /** @enum {unknown} */
+        HeadingSize: "large" | "medium" | "small";
         HealthCheckDto: {
             name: string;
             status: components["schemas"]["HealthStatus"];
@@ -3102,7 +3106,7 @@ export interface components {
             field: components["schemas"]["FieldRef"];
             value: components["schemas"]["ConditionValue"];
         };
-        WidgetConfig: components["schemas"]["WidgetConfigTextConfig"] | components["schemas"]["WidgetConfigPieConfig"] | components["schemas"]["WidgetConfigBarConfig"] | components["schemas"]["WidgetConfigLineConfig"] | components["schemas"]["WidgetConfigTableConfig"];
+        WidgetConfig: components["schemas"]["WidgetConfigTextConfig"] | components["schemas"]["WidgetConfigHeadingConfig"] | components["schemas"]["WidgetConfigPieConfig"] | components["schemas"]["WidgetConfigBarConfig"] | components["schemas"]["WidgetConfigLineConfig"] | components["schemas"]["WidgetConfigTableConfig"];
         WidgetConfigBarConfig: {
             /** @enum {string} */
             kind?: "bar";
@@ -3125,6 +3129,13 @@ export interface components {
             conditions: components["schemas"]["WidgetCondition"][];
             emits: boolean;
             listens: components["schemas"]["Listens"];
+        };
+        WidgetConfigHeadingConfig: {
+            /** @enum {string} */
+            kind?: "heading";
+            text: string;
+            size: components["schemas"]["HeadingSize"];
+            align: components["schemas"]["HeadingAlign"];
         };
         WidgetConfigLineConfig: {
             /** @enum {string} */
@@ -3350,6 +3361,8 @@ export type GridRowDto = components['schemas']['GridRowDto'];
 export type GridSortDto = components['schemas']['GridSortDto'];
 export type GridStateDto = components['schemas']['GridStateDto'];
 export type GroupDto = components['schemas']['GroupDto'];
+export type HeadingAlign = components['schemas']['HeadingAlign'];
+export type HeadingSize = components['schemas']['HeadingSize'];
 export type HealthCheckDto = components['schemas']['HealthCheckDto'];
 export type HealthResponse = components['schemas']['HealthResponse'];
 export type HealthStatus = components['schemas']['HealthStatus'];
@@ -3497,6 +3510,7 @@ export type WidgetColumnDto = components['schemas']['WidgetColumnDto'];
 export type WidgetCondition = components['schemas']['WidgetCondition'];
 export type WidgetConfig = components['schemas']['WidgetConfig'];
 export type WidgetConfigBarConfig = components['schemas']['WidgetConfigBarConfig'];
+export type WidgetConfigHeadingConfig = components['schemas']['WidgetConfigHeadingConfig'];
 export type WidgetConfigLineConfig = components['schemas']['WidgetConfigLineConfig'];
 export type WidgetConfigPieConfig = components['schemas']['WidgetConfigPieConfig'];
 export type WidgetConfigTableConfig = components['schemas']['WidgetConfigTableConfig'];

@@ -1,9 +1,13 @@
 import { sameJson } from '../../../core/api/same-json';
-import type { Definition, Widget } from './definition';
+import { configOf, type Definition, type Widget } from './definition';
 import { onTab, tabOf, tabsOf } from './tabs';
 
-/** A widget as a change names it: its title, else its kind and id. */
+/** A widget as a change names it: a heading by its text, else its title, else its kind and id. */
 function nameOf(widget: Widget): string {
+  const config = configOf(widget);
+  if (config.kind === 'heading' && config.text.trim()) {
+    return `the heading "${config.text.trim()}"`;
+  }
   return widget.title?.trim() || `the ${widget.config.kind ?? 'widget'} ${widget.id}`;
 }
 

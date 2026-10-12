@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input, model } from '@angular/core';
 import { MatButton, MatIconButton } from '@angular/material/button';
+import { MatButtonToggle, MatButtonToggleGroup } from '@angular/material/button-toggle';
 import { MatOption } from '@angular/material/core';
 import { MatFormField, MatHint, MatLabel } from '@angular/material/form-field';
 import { MatIcon } from '@angular/material/icon';
@@ -9,6 +10,7 @@ import { MatSlideToggle } from '@angular/material/slide-toggle';
 import type {
   BarConfig,
   Dimension,
+  HeadingConfig,
   LineConfig,
   Measure,
   PieConfig,
@@ -104,6 +106,82 @@ export class TextSettings {
 
   protected typed(event: Event): string {
     return (event.target as HTMLTextAreaElement).value;
+  }
+}
+
+let headings = 0;
+
+/** A heading's text, its size (its level on the page: large is the second) and its alignment. */
+@Component({
+  selector: 'gd-heading-settings',
+  imports: [MatButtonToggle, MatButtonToggleGroup, MatFormField, MatIcon, MatInput, MatLabel],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <mat-form-field subscriptSizing="dynamic">
+      <mat-label>Heading</mat-label>
+      <input
+        matInput
+        maxlength="200"
+        autocomplete="off"
+        spellcheck="true"
+        [value]="config().text"
+        (input)="config.set({ ...config(), text: typed($event) })"
+      />
+    </mat-form-field>
+    <div class="choice">
+      <span class="choice-label" [id]="ids + '-size'">Size</span>
+      <mat-button-toggle-group
+        hideSingleSelectionIndicator
+        [attr.aria-labelledby]="ids + '-size'"
+        [value]="config().size"
+        (change)="config.set({ ...config(), size: $event.value })"
+      >
+        <mat-button-toggle value="large">Large</mat-button-toggle>
+        <mat-button-toggle value="medium">Medium</mat-button-toggle>
+        <mat-button-toggle value="small">Small</mat-button-toggle>
+      </mat-button-toggle-group>
+    </div>
+    <div class="choice">
+      <span class="choice-label" [id]="ids + '-align'">Alignment</span>
+      <mat-button-toggle-group
+        hideSingleSelectionIndicator
+        [attr.aria-labelledby]="ids + '-align'"
+        [value]="config().align"
+        (change)="config.set({ ...config(), align: $event.value })"
+      >
+        <mat-button-toggle value="start" aria-label="Left">
+          <mat-icon>format_align_left</mat-icon>
+        </mat-button-toggle>
+        <mat-button-toggle value="center" aria-label="Centred">
+          <mat-icon>format_align_center</mat-icon>
+        </mat-button-toggle>
+        <mat-button-toggle value="end" aria-label="Right">
+          <mat-icon>format_align_right</mat-icon>
+        </mat-button-toggle>
+      </mat-button-toggle-group>
+    </div>
+  `,
+  styles: `
+    ${settingsStyles}
+    .choice {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .choice-label {
+      min-width: 72px;
+      font: var(--mat-sys-label-large);
+      color: var(--mat-sys-on-surface-variant);
+    }
+  `,
+})
+export class HeadingSettings {
+  readonly entity = input<string | null>(null);
+  readonly config = model.required<HeadingConfig>();
+  protected readonly ids = `gd-heading-${++headings}`;
+
+  protected typed(event: Event): string {
+    return (event.target as HTMLInputElement).value;
   }
 }
 

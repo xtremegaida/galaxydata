@@ -38,7 +38,7 @@ public sealed class WidgetKinds(IEnumerable<IWidgetKind> kinds)
    }
 
    /// <summary>The kinds the application has.</summary>
-   public static IEnumerable<IWidgetKind> BuiltIn() => [new TextKind(), new PieKind(), new BarKind(), new LineKind(), new TableKind()];
+   public static IEnumerable<IWidgetKind> BuiltIn() => [new TextKind(), new HeadingKind(), new PieKind(), new BarKind(), new LineKind(), new TableKind()];
 }
 
 /// <summary>A kind whose configs are <typeparamref name="T"/>.</summary>
@@ -127,6 +127,15 @@ public sealed class TextKind : WidgetKind<TextConfig>
    {
       if (config.Markdown == null) { check.Error(path + ".markdown", "Give the text (or none)"); }
       else if (config.Markdown.Length > MaxLength) { check.Error(path + ".markdown", $"A text widget has {MaxLength:N0} characters at most"); }
+   }
+}
+
+public sealed class HeadingKind : WidgetKind<HeadingConfig>
+{
+   protected override void Check(HeadingConfig config, string? widget, DefinitionCheck check, string path)
+   {
+      if (config.Text == null) { check.Error(path + ".text", "Give the heading (or none)"); }
+      else if (config.Text.Length > DefinitionRules.LabelLength) { check.Error(path + ".text", $"A heading has {DefinitionRules.LabelLength} characters at most"); }
    }
 }
 
