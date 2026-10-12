@@ -290,6 +290,14 @@ test('builds a dashboard in the editor: sources linked, widgets, a filter', asyn
   await expect(page).toHaveURL(/\/dashboards\/new$/);
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Shop');
 
+  // The settings' tabs run past the panel's edge. One brought into view (to be clicked, or a word found in it)
+  // scrolls the tabs alone, never the page, though the drawer of changes waits, closed, past its right edge.
+  const shell = page.locator('mat-sidenav-container');
+  for (const tab of await settings().getByRole('tab').all()) {
+    await tab.evaluate((label) => label.scrollIntoView({ block: 'nearest', inline: 'center' }));
+    expect(await shell.evaluate((container) => container.scrollLeft)).toBe(0);
+  }
+
   await settings().getByRole('tab', { name: 'Sources' }).click();
   for (const entity of ['shop.orders', 'shop.customers']) {
     await settings().getByRole('combobox', { name: 'Add a source' }).fill(entity.split('.')[1]);

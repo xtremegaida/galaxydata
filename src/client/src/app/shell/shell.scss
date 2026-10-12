@@ -47,9 +47,12 @@
   flex: 1;
 }
 
+// Clipped, never scrolled: the closed drawer of changes waits past the right edge, and Material's `hidden`
+// would let anything brought into view (a tab label, a word found) slide the whole page sideways to it.
 .container {
   flex: 1;
   min-height: 0;
+  overflow: clip;
 }
 
 .navigation {

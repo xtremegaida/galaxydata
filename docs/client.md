@@ -927,8 +927,9 @@ its own: the client's `npm ci`, which publishing runs, doesn't install it). In o
 8. opens the reference picker at the row a reference refers to (on its second page, chosen, the keyboard on it);
 9. makes an entity's settings from its page (a column's label), which its page shows;
 10. runs a query, and explains it;
-11. builds a dashboard in the editor: the orders and customers linked through `customer`, a text widget with a
-    heading and a link, a bar chart, a pie, a table grouped through a navigation, a Status filter; saved with Ctrl+S;
+11. builds a dashboard in the editor (its settings' tabs, brought into view, scroll alone, never the page): the
+    orders and customers linked through `customer`, a text widget with a heading and a link, a bar chart, a pie, a
+    table grouped through a navigation, a Status filter; saved with Ctrl+S;
 12. lays it out: a widget moved by keyboard (Enter, arrows, Enter) and by pointer, one resized by its corner (their
     `data-gd-cell`), and the narrow width laid out by hand;
 13. publishes it, chooses slices through the bar chart's table, and the pie (listening) is filtered; reloaded, the
