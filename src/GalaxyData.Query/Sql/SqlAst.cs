@@ -302,6 +302,9 @@ internal sealed class SqlTable(string? schema, string name, string alias) : SqlT
    public string Name { get; } = name;
 
    public string Alias { get; } = alias;
+
+   /// <summary>Whether it is a view, which a dialect may read otherwise (<see cref="SqlDialect.ViewReference"/>).</summary>
+   public bool IsView { get; init; }
 }
 
 internal sealed class SqlDerivedTable(SqlQuery query, string alias) : SqlTableSource

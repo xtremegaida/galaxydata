@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Diagnostics;
 using GalaxyData.Query.Dml;
+using GalaxyData.Query.Introspection;
 using GalaxyData.Query.Sql;
 using GalaxyData.Query.Types;
 using GalaxyData.Web.Auth;
@@ -77,9 +78,14 @@ public sealed record TreeSearchDto(string Text, IReadOnlyList<TreeHitDto> Hits, 
 
 public sealed record KeyDto(string? Name, IReadOnlyList<string> Columns, bool IsDeclared);
 
-/// <summary>A column, and what the user may do with it: change it, and give it a value in a new row.</summary>
+/// <summary>
+/// A column, and what the user may do with it: change it, and give it a value in a new row. <see cref="Values"/> and
+/// <see cref="Aggregate"/> are what its source says of it: the values it is known to take, and how its values are
+/// summed up over many rows.
+/// </summary>
 public sealed record EntityColumnDto(string Name, int Ordinal, TypeDto Type, string? NativeType, bool IsKey, bool IsIdentity, bool IsComputed, bool HasDefault,
-                                     bool IsRowVersion, bool Hidden, string? Label, string? Comment, bool CanUpdate, InsertMode Insert, string? ReadOnlyReason);
+                                     bool IsRowVersion, bool Hidden, string? Label, string? Comment, bool CanUpdate, InsertMode Insert, string? ReadOnlyReason,
+                                     IReadOnlyList<string>? Values, AggregateHint? Aggregate);
 
 /// <summary>
 /// A navigation to the rows a row is linked to: along a foreign key, or a relation the overlay adds. For administrators,
@@ -101,7 +107,7 @@ public sealed record EntityOverlayDto(int? VirtualEntity, int? Settings);
 /// it (<see cref="Overlay"/>; null for others).
 /// </summary>
 public sealed record EntityDto(string Name, string QualifiedName, EntityKind Kind, string? Source, string? Schema, string? Table, string? Comment,
-                               long? RowCountEstimate, bool HasTriggers, KeyDto? Key, IReadOnlyList<KeyDto> UniqueKeys, string? DisplayColumn,
+                               long? RowCountEstimate, bool HasTriggers, KeyDto? Key, IReadOnlyList<KeyDto> UniqueKeys, string? DisplayColumn, string? TimeColumn,
                                IReadOnlyList<EntityColumnDto> Columns, IReadOnlyList<NavigationDto> Navigations, CapabilitiesDto Capabilities,
                                string? Query, string? Problem, EntityOverlayDto? Overlay);
 
@@ -282,7 +288,7 @@ public static class CatalogEndpoints
       VirtualEntity? defined = entity as VirtualEntity;
       return new EntityDto(entity.DisplayName, entity.QualifiedName.ToString(), entity.Kind, table?.Source.Alias, table?.Schema, table?.Table, entity.Comment,
          table?.RowCountEstimate, table?.HasTriggers ?? false, entity.Key is { } key ? Key(key) : null, entity.UniqueKeys.Select(Key).ToList(),
-         entity.DisplayColumn?.Name, entity.Columns.Select(c => Column(c, dialect, capabilities)).ToList(),
+         entity.DisplayColumn?.Name, entity.TimeColumn?.Name, entity.Columns.Select(c => Column(c, dialect, capabilities)).ToList(),
          [.. entity.Navigations.Select(n => Navigation(n, inherited: false, overlay)), .. entity.InheritedNavigations.Select(n => Navigation(n, inherited: true, overlay))],
          capabilities, defined?.QueryText, defined?.Problem,
          overlay == null ? null : new EntityOverlayDto(IdOf(overlay, defined?.OverlayItem), IdOf(overlay, entity.SettingsItem)));
@@ -296,7 +302,7 @@ public static class CatalogEndpoints
    {
       ColumnCapabilities can = EntityCapabilities.Of(column, dialect, entity);
       return new EntityColumnDto(column.Name, column.Ordinal, TypeDto.Of(column.Type), column.NativeType, column.IsKey, column.IsIdentity, column.IsComputed,
-         column.HasDefault, column.IsRowVersion, column.Hidden, column.Label, column.Comment, can.CanUpdate, can.Insert, can.Reason);
+         column.HasDefault, column.IsRowVersion, column.Hidden, column.Label, column.Comment, can.CanUpdate, can.Insert, can.Reason, column.Values, column.Aggregate);
    }
 
    private static NavigationDto Navigation(NavigationDef navigation, bool inherited, StoredOverlay? overlay) =>

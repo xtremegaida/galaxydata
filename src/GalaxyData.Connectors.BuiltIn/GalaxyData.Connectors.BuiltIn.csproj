@@ -9,6 +9,7 @@
     <ProjectReference Include="..\GalaxyData.Query.ClickHouse\GalaxyData.Query.ClickHouse.csproj" />
     <ProjectReference Include="..\GalaxyData.Query.DuckDb\GalaxyData.Query.DuckDb.csproj" />
     <ProjectReference Include="..\GalaxyData.Query.Excel\GalaxyData.Query.Excel.csproj" />
+    <ProjectReference Include="..\GalaxyData.Query.HyperWhirlpool\GalaxyData.Query.HyperWhirlpool.csproj" />
     <ProjectReference Include="..\GalaxyData.Query.PostgreSql\GalaxyData.Query.PostgreSql.csproj" />
     <ProjectReference Include="..\GalaxyData.Query.Sqlite\GalaxyData.Query.Sqlite.csproj" />
     <ProjectReference Include="..\GalaxyData.Query.SqlServer\GalaxyData.Query.SqlServer.csproj" />

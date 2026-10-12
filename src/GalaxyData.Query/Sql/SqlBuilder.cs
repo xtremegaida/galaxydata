@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using GalaxyData.Query.Binding;
 using GalaxyData.Query.Catalog;
+using GalaxyData.Query.Introspection;
 using GalaxyData.Query.Planning;
 using GalaxyData.Query.Planning.Federation;
 using GalaxyData.Query.Planning.Optimizer;
@@ -256,7 +257,7 @@ internal sealed class SqlBuilder
                        (string.IsNullOrEmpty(table.Schema) || string.Equals(table.Schema, options.DefaultSchema ?? table.Source.DefaultSchema, StringComparison.Ordinal))
          ? null
          : table.Schema;
-      frame.Select.From = new SqlTable(schema, table.Table, alias) { Catalog = table.Source.Catalog };
+      frame.Select.From = new SqlTable(schema, table.Table, alias) { Catalog = table.Source.Catalog, IsView = table.TableKind == TableKind.View };
       foreach (ScanColumn column in scan.Columns)
       {
          SqlColumn read = new(alias, column.Column.Name) { NativeType = column.Column.NativeType };

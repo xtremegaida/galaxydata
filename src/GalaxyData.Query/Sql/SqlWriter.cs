@@ -156,6 +156,24 @@ internal sealed class SqlWriter
       text.Append(dialect.Identifier(table.Name));
    }
 
+   /// <summary>A table as a statement reads it: its name, or a view as the dialect reads views, under its alias.</summary>
+   private void TableReference(SqlTable table)
+   {
+      if (!table.IsView)
+      {
+         TableName(table);
+         if (!string.Equals(table.Name, table.Alias, StringComparison.Ordinal)) { text.Append(" AS ").Append(dialect.Identifier(table.Alias)); }
+         return;
+      }
+      int start = text.Length;
+      TableName(table);
+      string name = text.ToString(start, text.Length - start);
+      string read = dialect.ViewReference(name);
+      text.Length = start;
+      text.Append(read);
+      if (read != name || !string.Equals(table.Name, table.Alias, StringComparison.Ordinal)) { text.Append(" AS ").Append(dialect.Identifier(table.Alias)); }
+   }
+
    private SqlParameterSlot Named(SqlParameterSlot slot)
    {
       if (dialect.SharesParameters && named.TryGetValue(slot, out SqlParameterSlot? existing)) { return existing; }
@@ -326,8 +344,7 @@ internal sealed class SqlWriter
       switch (source)
       {
          case SqlTable table:
-            TableName(table);
-            if (!string.Equals(table.Name, table.Alias, StringComparison.Ordinal)) { text.Append(" AS ").Append(dialect.Identifier(table.Alias)); }
+            TableReference(table);
             break;
          case SqlDerivedTable derived:
             Nested(derived.Query);

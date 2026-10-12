@@ -6,6 +6,7 @@ using GalaxyData.Query.Catalog;
 using GalaxyData.Query.ClickHouse;
 using GalaxyData.Query.DuckDb;
 using GalaxyData.Query.Excel;
+using GalaxyData.Query.HyperWhirlpool;
 using GalaxyData.Query.PostgreSql;
 using GalaxyData.Query.Sqlite;
 using GalaxyData.Query.SqlServer;
@@ -18,9 +19,9 @@ namespace GalaxyData.Web.Tests.Connections;
 /// <summary>The kinds of connection: their fields name keywords as the providers do, secrets are told apart and masked, and read-only is the application's to set.</summary>
 public sealed class ConnectionKindTests
 {
-   public static TheoryData<string> Kinds => new("postgres", "sqlserver", "sqlite", "duckdb", "clickhouse");
+   public static TheoryData<string> Kinds => new("postgres", "sqlserver", "sqlite", "duckdb", "clickhouse", "hyperwhirlpool");
 
-   private static readonly ConnectionKinds All = new([new PostgreSqlKind(), new SqlServerKind(), new SqliteKind(), new DuckDbKind(), new ExcelKind(), new ClickHouseKind()]);
+   private static readonly ConnectionKinds All = new([new PostgreSqlKind(), new SqlServerKind(), new SqliteKind(), new DuckDbKind(), new ExcelKind(), new ClickHouseKind(), new HyperWhirlpoolKind()]);
 
    private static ConnectionKind Kind(string id) => All.Find(id)!;
 
@@ -57,6 +58,7 @@ public sealed class ConnectionKindTests
    [InlineData("sqlite", "data source=C:/f/x.db;default timeout=5", "Data Source=C:/f/x.db|Default Timeout=5")]
    [InlineData("duckdb", "DataSource=C:/f/x.duckdb;threads=2", "Data Source=C:/f/x.duckdb|threads=2")]
    [InlineData("clickhouse", "host=h;PORT=8443;protocol=HTTPS;SET_max_threads=4", "Host=h|Port=8443|Protocol=https|set_max_threads=4")]
+   [InlineData("hyperwhirlpool", "host=h;PORT=443;protocol=HTTPS;database=web;password=rk_x", "Host=h|Port=443|Protocol=https|Database=web|Password=rk_x")]
    public void SynonymsBecomeTheProvidersKeywords(string id, string connectionString, string expected) =>
       string.Join("|", Kind(id).Parse(connectionString).Select(p => $"{p.Key}={p.Value}")).ShouldBe(expected);
 
@@ -69,6 +71,11 @@ public sealed class ConnectionKindTests
    [InlineData("clickhouse", "Host=h;Port=many")]
    [InlineData("clickhouse", "Host=h;Protocol=ftp")]
    [InlineData("clickhouse", "Host=h;Compression=maybe")]
+   [InlineData("hyperwhirlpool", "Host=h;Port=many")]
+   [InlineData("hyperwhirlpool", "Host=h;Username=reader")]
+   [InlineData("hyperwhirlpool", "Host=h;Roles=admin")]
+   [InlineData("hyperwhirlpool", "Host=h;UseSession=true")]
+   [InlineData("hyperwhirlpool", "Host=h;set_readonly=0")]
    public void KeywordsAndValuesTheProviderDoesntTakeAreRefused(string id, string connectionString) =>
       Should.Throw<Exception>(() => Kind(id).Parse(connectionString)).ShouldBeAssignableTo<ArgumentException>();
 
@@ -78,6 +85,7 @@ public sealed class ConnectionKindTests
    [InlineData("sqlserver", "Password")]
    [InlineData("duckdb", "motherduck_token")]
    [InlineData("clickhouse", "Password")]
+   [InlineData("hyperwhirlpool", "Password")]
    public void SecretsAreToldApart(string id, string keyword) => Kind(id).IsSecret(keyword).ShouldBeTrue();
 
    [Theory]
@@ -114,6 +122,23 @@ public sealed class ConnectionKindTests
       SourceInfo source = kind.Configure(new SourceInfo("ch", "clickhouse", "default"), new Dictionary<string, string>());
       (source.IsReadOnly, source.SupportsDml, source.TrustForeignKeys).ShouldBe((true, false, false));
       kind.Options.ShouldBeEmpty();
+   }
+
+   /// <summary>
+   /// HyperWhirlpool sources are always read-only and have no changes to write; the query key is the secret the
+   /// driver sends as its password, and the form asks for it.
+   /// </summary>
+   [Fact]
+   public void AHyperWhirlpoolSourceIsReadOnlyAndItsKeyASecret()
+   {
+      HyperWhirlpoolKind kind = new();
+      kind.AlwaysReadOnly.ShouldBeTrue();
+      SourceInfo source = kind.Configure(new SourceInfo("hw", "hyperwhirlpool", "web"), new Dictionary<string, string>());
+      (source.IsReadOnly, source.SupportsDml, source.TrustForeignKeys).ShouldBe((true, false, false));
+      kind.Options.ShouldBeEmpty();
+      FieldDto key = kind.Fields.Single(f => f.Key == "Password");
+      (key.Label, key.Type, key.Required).ShouldBe(("Query key", FieldType.Password, true));
+      kind.Display(new Dictionary<string, string> { ["Host"] = "h", ["Database"] = "web" }, ["Password"]).ShouldBe("Host=h;Database=web;Password=********");
    }
 
    [Fact]

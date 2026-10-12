@@ -245,12 +245,12 @@ FROM customers AS c
 -- p0 int32 = $n
 
 ### sales.orders.groupBy(customer_id).select(customer_id: key, spend: sum(total), orders: count())
-SELECT o.customer_id, coalesce(sum(o.total), 0) AS spend, count(*) AS orders
+SELECT o.customer_id, coalesce(sumOrNull(o.total), 0) AS spend, count(*) AS orders
 FROM orders AS o
 GROUP BY o.customer_id
 
 ### sales.orders.join(sales.customers, outer.customer_id == inner.id, orders: outer, cust: inner).groupBy(cust.name).select(name: cust.name, count: orders.count(), total: orders.sum(total))
-SELECT c.name, count(*) AS count, coalesce(sum(o.total), 0) AS total
+SELECT c.name, count(*) AS count, coalesce(sumOrNull(o.total), 0) AS total
 FROM orders AS o
 INNER JOIN customers AS c ON o.customer_id = c.id
 GROUP BY c.name
@@ -266,14 +266,14 @@ WHERE EXISTS (
 -- p0 decimal(10,2) = 3
 
 ### sales.orders.groupBy(y: year(order_date), status).where(count() > 1).orderBy(desc(sum(total))).select(y, status, n: count(), big: any(total > 100), mean: avg(total))
-SELECT d.y, d.status, count(*) AS n, max(CASE WHEN d.total > @p0 THEN 1 ELSE 0 END) = 1 AS big, avg(d.total) AS mean
+SELECT d.y, d.status, count(*) AS n, maxOrNull(CASE WHEN d.total > @p0 THEN 1 ELSE 0 END) = 1 AS big, avgOrNull(d.total) AS mean
 FROM (
    SELECT o.status, o.total, CAST(toYear(o.order_date) AS Nullable(Int32)) AS y
    FROM orders AS o
 ) AS d
 GROUP BY d.y, d.status
 HAVING count(*) > 1
-ORDER BY coalesce(sum(d.total), 0) DESC
+ORDER BY coalesce(sumOrNull(d.total), 0) DESC
 -- p0 decimal(10,2) = 100
 
 ### sales.orders.groupBy(customer).select(customer.name, customer.city, n: count())
@@ -291,17 +291,17 @@ GROUP BY o.customer_id
 SELECT o.customer_id, count(*) AS n
 FROM orders AS o
 GROUP BY o.customer_id
-HAVING count(*) > 1 AND coalesce(sum(o.total), 0) > @p0
+HAVING count(*) > 1 AND coalesce(sumOrNull(o.total), 0) > @p0
 -- p0 decimal(38,2) = 10
 
 ### sales.order_lines.groupBy(order).select(order.status, n: count(), qty: qty.sum(), priced: price.countDistinct(), all: all(qty > 0))
-SELECT o2.status, count(*) AS n, coalesce(sum(o.qty), 0) AS qty, count(DISTINCT o.price) AS priced, min(CASE WHEN o.qty > 0 THEN 1 ELSE 0 END) = 1 AS "all", o.order_id AS id
+SELECT o2.status, count(*) AS n, coalesce(sumOrNull(o.qty), 0) AS qty, count(DISTINCT o.price) AS priced, minOrNull(CASE WHEN o.qty > 0 THEN 1 ELSE 0 END) = 1 AS "all", o.order_id AS id
 FROM order_lines AS o
 INNER JOIN orders AS o2 ON o.order_id = o2.id
 GROUP BY o.order_id, o2.status
 
 ### sales.orders.groupBy().select(n: count(), total: sum(total))
-SELECT count(*) AS n, coalesce(sum(o.total), 0) AS total
+SELECT count(*) AS n, coalesce(sumOrNull(o.total), 0) AS total
 FROM orders AS o
 
 ### sales.orders.groupBy(big: total > 100).select(big, n: count())
@@ -317,7 +317,7 @@ GROUP BY d.big
 SELECT c.name, coalesce(d.count, 0) AS n, coalesce(CAST(d.sum AS Nullable(Decimal(38, 2))), CAST(0 AS Nullable(Decimal(38, 2)))) AS spend, d.max AS "last", c.id
 FROM customers AS c
 LEFT JOIN (
-   SELECT o.customer_id, count(*) AS count, coalesce(sum(o.total), 0) AS sum, max(o.order_date) AS max
+   SELECT o.customer_id, count(*) AS count, coalesce(sumOrNull(o.total), 0) AS sum, maxOrNull(o.order_date) AS max
    FROM orders AS o
    GROUP BY o.customer_id
 ) AS d ON c.id = d.customer_id
@@ -365,7 +365,7 @@ WHERE EXISTS (
 SELECT o.id, o.customer_id, o.status, o.total, o.order_date, o.shipped_at, o.ship_customer_id, o.attachment
 FROM orders AS o
 WHERE o.total > (
-   SELECT avg(o2.total) AS avg
+   SELECT avgOrNull(o2.total) AS avg
    FROM orders AS o2
 )
 
@@ -567,7 +567,7 @@ GROUP BY o.customer_id
 -- p0 decimal(10,2) = 3
 
 ### sales.orders.groupBy(customer, big: total > 100).select(customer, big, n: count(), s: sum(total))
-SELECT d.name AS customer, d.big, count(*) AS n, coalesce(sum(d.total), 0) AS s, d.id
+SELECT d.name AS customer, d.big, count(*) AS n, coalesce(sumOrNull(d.total), 0) AS s, d.id
 FROM (
    SELECT o.total, c.name, o.customer_id AS id, o.total > @p0 AS big
    FROM orders AS o

@@ -29,14 +29,16 @@ public sealed class ClickHouseSourceProvider : SourceProvider
 {
    /// <summary>The settings every statement runs with.</summary>
    /// <remarks>
-   /// Outer joins give nulls (not the type's default value) for rows that don't match; aggregates of no rows give
-   /// null (not 0); times are in UTC, as the other providers' sessions are; nothing is written (<c>readonly=2</c> lets
-   /// these settings be sent); and a statement whose client has gone is stopped.
+   /// Outer joins give nulls (not the type's default value) for rows that don't match; aggregates are as they are
+   /// written (the dialect writes those of no rows null), not rewritten, though a server's profile may say otherwise:
+   /// rewritten, a view's merge of aggregate states can't read them; times are in UTC, as the other providers'
+   /// sessions are; nothing is written (<c>readonly=2</c> lets these settings be sent); and a statement whose client
+   /// has gone is stopped.
    /// </remarks>
    public static IReadOnlyDictionary<string, object> Settings { get; } = new Dictionary<string, object>(StringComparer.Ordinal)
    {
       ["join_use_nulls"] = 1,
-      ["aggregate_functions_null_for_empty"] = 1,
+      ["aggregate_functions_null_for_empty"] = 0,
       ["session_timezone"] = "UTC",
       ["readonly"] = 2,
       ["cancel_http_readonly_queries_on_client_close"] = 1,
@@ -57,14 +59,17 @@ public sealed class ClickHouseSourceProvider : SourceProvider
    /// would each have one, and run out of sockets), which reports a server it can't reach as a <see cref="DbException"/>,
    /// as other providers do. <c>SkipServerCertificateValidation=true</c> accepts the server's certificate unchecked.
    /// </summary>
-   public static ClickHouseDataSource CreateDataSource(string connectionString)
+   public static ClickHouseDataSource CreateDataSource(string connectionString) => CreateDataSource(connectionString, "ClickHouse server");
+
+   /// <summary>A data source as <see cref="CreateDataSource(string)"/> makes one, for a server that speaks ClickHouse's HTTP protocol, called <paramref name="server"/> when it can't be reached.</summary>
+   public static ClickHouseDataSource CreateDataSource(string connectionString, string server)
    {
       ClickHouseConnectionStringBuilder builder = new(connectionString);
       bool skipCertificate = builder.TryGetValue(ClickHouseKind.SkipCertificateValidation, out object? skip) &&
                              bool.TryParse(Convert.ToString(skip, CultureInfo.InvariantCulture), out bool flag) && flag;
       SocketsHttpHandler sockets = new() { AutomaticDecompression = DecompressionMethods.All, PooledConnectionLifetime = TimeSpan.FromMinutes(5) };
       if (skipCertificate) { sockets.SslOptions.RemoteCertificateValidationCallback = static (_, _, _, _) => true; }
-      HttpClient client = new(new UnreachableAsDbException(sockets)) { Timeout = builder.Timeout > TimeSpan.Zero ? builder.Timeout : Timeout.InfiniteTimeSpan };
+      HttpClient client = new(new UnreachableAsDbException(sockets, server)) { Timeout = builder.Timeout > TimeSpan.Zero ? builder.Timeout : Timeout.InfiniteTimeSpan };
       return new ClickHouseDataSource(connectionString, client, disposeHttpClient: true);
    }
 
@@ -203,7 +208,7 @@ public sealed class ClickHouseSourceProvider : SourceProvider
    }
 
    /// <summary>A server that can't be reached is a <see cref="DbException"/>, as the engine expects of a source that fails.</summary>
-   private sealed class UnreachableAsDbException(HttpMessageHandler inner) : DelegatingHandler(inner)
+   private sealed class UnreachableAsDbException(HttpMessageHandler inner, string server) : DelegatingHandler(inner)
    {
       protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
       {
@@ -213,7 +218,7 @@ public sealed class ClickHouseSourceProvider : SourceProvider
          }
          catch (HttpRequestException e)
          {
-            throw new ClickHouseUnreachableException($"The ClickHouse server at {request.RequestUri?.GetLeftPart(UriPartial.Authority)} can't be reached: {e.Message}", e);
+            throw new ClickHouseUnreachableException($"The {server} at {request.RequestUri?.GetLeftPart(UriPartial.Authority)} can't be reached: {e.Message}", e);
          }
       }
    }

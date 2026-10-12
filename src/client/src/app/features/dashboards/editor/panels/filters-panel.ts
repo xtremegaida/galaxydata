@@ -19,6 +19,7 @@ import { addFilter, removeFilter, renameNewFilter, updateFilter } from '../../mo
 import { ConditionValueEditor, filterOps, withOp } from '../controls/condition-editor';
 import { FieldPicker } from '../controls/field-picker';
 import { EditorStore } from '../editor-store';
+import { EntityCatalog } from '../entity-catalog';
 
 const kinds: readonly { kind: Filter['kind']; label: string }[] = [
   { kind: 'values', label: 'Values' },
@@ -122,6 +123,7 @@ function startOf(kind: Filter['kind']): ConditionValue {
                 label="Keeps rows whose value"
                 [ops]="opsOf(filter.kind)"
                 [boolean]="filter.kind === 'boolean'"
+                [known]="knownOf(filter)"
                 [value]="value"
                 (valueChange)="change(filter, { value: $event }, 'value')"
               />
@@ -187,6 +189,7 @@ function startOf(kind: Filter['kind']): ConditionValue {
 })
 export class FiltersPanel {
   protected readonly store = inject(EditorStore);
+  private readonly catalog = inject(EntityCatalog);
   private readonly locale = inject(LOCALE_ID);
   protected readonly kinds = kinds;
   protected readonly startOf = startOf;
@@ -197,6 +200,12 @@ export class FiltersPanel {
 
   protected entityOf(source: string): string | null {
     return this.entities().get(source) ?? null;
+  }
+
+  /** The values a filter's field is known to take, when its source says. */
+  protected knownOf(filter: Filter): readonly string[] | null {
+    const field = filter.field;
+    return this.catalog.columnOf(this.entityOf(field.source), field)?.values ?? null;
   }
 
   protected opsOf(kind: Filter['kind']): readonly ConditionValue['op'][] {

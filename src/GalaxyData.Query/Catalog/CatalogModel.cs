@@ -94,6 +94,9 @@ public abstract class EntityDef : CatalogItem
 
    public ColumnDef? DisplayColumn { get; internal set; }
 
+   /// <summary>The column the rows are dated by, when the source says (<see cref="TableSchema.TimeColumn"/>).</summary>
+   public ColumnDef? TimeColumn { get; internal set; }
+
    public bool Hidden { get; internal set; }
 
    /// <summary>The overlay's settings for it, whether or not all of them could be applied.</summary>
@@ -261,6 +264,8 @@ public sealed class ColumnDef
       IsRowVersion = column.IsRowVersion;
       ReadAs = column.ReadAs;
       Comment = column.Comment;
+      Values = column.Values;
+      Aggregate = column.Aggregate;
    }
 
    public EntityDef Owner { get; }
@@ -290,6 +295,12 @@ public sealed class ColumnDef
    public string? Label { get; internal set; }
 
    public string? Comment { get; }
+
+   /// <summary>The values the column is known to take, in order (<see cref="ColumnSchema.Values"/>); null when the source doesn't say.</summary>
+   public IReadOnlyList<string>? Values { get; }
+
+   /// <summary>How the column's values are summed up over many rows (<see cref="ColumnSchema.Aggregate"/>); null when the source doesn't say.</summary>
+   public AggregateHint? Aggregate { get; }
 
    public bool IsKey => Owner.Key?.Columns.Contains(this) ?? false;
 

@@ -7,6 +7,7 @@
     <Project Path="src/GalaxyData.Query.Cli/GalaxyData.Query.Cli.csproj" />
     <Project Path="src/GalaxyData.Query.ClickHouse/GalaxyData.Query.ClickHouse.csproj" />
     <Project Path="src/GalaxyData.Query.DuckDb/GalaxyData.Query.DuckDb.csproj" />
+    <Project Path="src/GalaxyData.Query.HyperWhirlpool/GalaxyData.Query.HyperWhirlpool.csproj" />
     <Project Path="src/GalaxyData.Query.Excel/GalaxyData.Query.Excel.csproj" />
     <Project Path="src/GalaxyData.Query.PostgreSql/GalaxyData.Query.PostgreSql.csproj" />
     <Project Path="src/GalaxyData.Query.Sqlite/GalaxyData.Query.Sqlite.csproj" />

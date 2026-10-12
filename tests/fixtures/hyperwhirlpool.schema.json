@@ -1,0 +1,120 @@
+{
+  "format": "hw-schema/1",
+  "model": { "seq": 12, "hash": "3f9a0c1d2e4b", "published_at": "2026-10-12T08:00:00.000Z" },
+  "domains": [
+    { "name": "web", "database": "{web}", "description": "Web analytics: devices, visits and what happens in them." },
+    { "name": "crm", "database": "{crm}" }
+  ],
+  "objects": [
+    {
+      "database": "{crm}",
+      "name": "contact",
+      "kind": "entity",
+      "declaration": "crm.contact",
+      "description": "A person the CRM knows.",
+      "key": ["contact_id"],
+      "time": "first_seen",
+      "columns": [
+        { "name": "contact_id", "type": "String", "role": "key" },
+        { "name": "first_seen", "type": "DateTime64(3, 'UTC')", "role": "time" },
+        { "name": "last_seen", "type": "DateTime64(3, 'UTC')", "role": "time" },
+        { "name": "events", "type": "UInt64", "role": "attribute", "aggregate": "count" },
+        { "name": "country", "type": "String", "role": "attribute", "aggregate": "latest", "description": "Country of residence, as last given." },
+        { "name": "lifecycle", "type": "String", "role": "classify", "description": "Where the person is on the way to graduating.",
+          "values": ["applicant", "student", "alumnus", "lead"] }
+      ],
+      "references": []
+    },
+    {
+      "database": "{web}",
+      "name": "device",
+      "kind": "entity",
+      "declaration": "web.device",
+      "description": "A browser on a computer or phone, as its cookie tells it apart.",
+      "key": ["device_id"],
+      "time": "first_seen",
+      "columns": [
+        { "name": "device_id", "type": "UUID", "role": "key" },
+        { "name": "first_seen", "type": "DateTime64(3, 'UTC')", "role": "time" },
+        { "name": "last_seen", "type": "DateTime64(3, 'UTC')", "role": "time" },
+        { "name": "events", "type": "UInt64", "role": "attribute", "aggregate": "count" },
+        { "name": "browser", "type": "LowCardinality(String)", "role": "attribute", "aggregate": "latest", "description": "The browser's name." }
+      ],
+      "references": []
+    },
+    {
+      "database": "{web}",
+      "name": "link_device_contact",
+      "kind": "link",
+      "declaration": "web.device_contact",
+      "description": "A device a CRM contact was seen on.",
+      "key": ["from_id", "to_id"],
+      "time": "first_seen",
+      "columns": [
+        { "name": "from_type", "type": "String", "role": "other" },
+        { "name": "from_id", "type": "String", "role": "key" },
+        { "name": "to_type", "type": "String", "role": "other" },
+        { "name": "to_id", "type": "String", "role": "key" },
+        { "name": "device_id", "type": "Nullable(UUID)", "role": "ref" },
+        { "name": "crm_contact_id", "type": "String", "role": "ref" },
+        { "name": "first_seen", "type": "DateTime64(3, 'UTC')", "role": "time" },
+        { "name": "last_seen", "type": "DateTime64(3, 'UTC')", "role": "time" },
+        { "name": "evidence", "type": "UInt64", "role": "other" }
+      ],
+      "references": [
+        { "name": "from_device", "kind": "link_from", "columns": ["device_id"], "database": "{web}", "object": "device", "ref_columns": ["device_id"] },
+        { "name": "to_crm_contact", "kind": "link_to", "columns": ["crm_contact_id"], "database": "{crm}", "object": "contact", "ref_columns": ["contact_id"] }
+      ]
+    },
+    {
+      "database": "{web}",
+      "name": "page_view_events",
+      "kind": "stream",
+      "declaration": "web.page_view",
+      "description": "A page shown in a browser.",
+      "key": ["event_id"],
+      "time": "ts",
+      "columns": [
+        { "name": "log_day", "type": "Date", "role": "internal" },
+        { "name": "event_id", "type": "UUID", "role": "key" },
+        { "name": "ts", "type": "DateTime64(3, 'UTC')", "role": "time" },
+        { "name": "session_id", "type": "UUID", "role": "ref" },
+        { "name": "device_id", "type": "UUID", "role": "ref" },
+        { "name": "crm_contact_id", "type": "String", "role": "ref" },
+        { "name": "ip", "type": "String", "role": "capture" },
+        { "name": "url", "type": "String", "role": "field", "description": "The page's address." },
+        { "name": "referrer", "type": "Nullable(String)", "role": "field" },
+        { "name": "viewport_w", "type": "Nullable(UInt16)", "role": "field", "description": "The window's width, in CSS pixels." },
+        { "name": "_errors", "type": "Array(String)", "role": "internal" }
+      ],
+      "references": [
+        { "name": "session", "kind": "subject", "columns": ["session_id"], "database": "{web}", "object": "session", "ref_columns": ["session_id"] },
+        { "name": "device", "kind": "ancestor", "columns": ["device_id"], "database": "{web}", "object": "device", "ref_columns": ["device_id"] },
+        { "name": "crm_contact", "kind": "ref", "columns": ["crm_contact_id"], "database": "{crm}", "object": "contact", "ref_columns": ["contact_id"] }
+      ]
+    },
+    {
+      "database": "{web}",
+      "name": "session",
+      "kind": "entity",
+      "declaration": "web.session",
+      "description": "A visit; it ends after 30 minutes without user activity.",
+      "key": ["session_id"],
+      "time": "first_seen",
+      "columns": [
+        { "name": "session_id", "type": "UUID", "role": "key" },
+        { "name": "device_id", "type": "UUID", "role": "ref" },
+        { "name": "first_seen", "type": "DateTime64(3, 'UTC')", "role": "time" },
+        { "name": "last_seen", "type": "DateTime64(3, 'UTC')", "role": "time" },
+        { "name": "events", "type": "UInt64", "role": "attribute", "aggregate": "count" },
+        { "name": "page_views", "type": "UInt64", "role": "attribute", "aggregate": "count", "description": "Pages viewed in the visit." },
+        { "name": "duration_ms", "type": "Nullable(Int64)", "role": "derive" },
+        { "name": "traffic_type", "type": "String", "role": "classify", "description": "Acquisition channel of the visit, from its entry page and referrer.",
+          "values": ["paid", "social", "search", "referral", "direct"] }
+      ],
+      "references": [
+        { "name": "device", "kind": "parent", "columns": ["device_id"], "database": "{web}", "object": "device", "ref_columns": ["device_id"] }
+      ]
+    }
+  ]
+}

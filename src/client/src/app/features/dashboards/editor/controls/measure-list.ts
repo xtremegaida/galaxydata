@@ -7,10 +7,43 @@ import { MatInput } from '@angular/material/input';
 import { MatSelect } from '@angular/material/select';
 import type { Measure } from '../../model/definition';
 import { rowCount } from '../../model/widget-defaults';
-import { EntityCatalog, type FieldUse } from '../entity-catalog';
+import { EntityCatalog, type EntityColumn, type FieldUse, fieldAllowed } from '../entity-catalog';
 import { type ChosenField, FieldPicker, humanize } from './field-picker';
 
 type Aggregate = Measure['aggregate'];
+
+/** How a source says a column's values are summed up, as a measure's aggregate. */
+const hinted: Readonly<Record<NonNullable<EntityColumn['aggregate']>, Aggregate>> = {
+  sum: 'sum',
+  avg: 'avg',
+  min: 'min',
+  max: 'max',
+  countDistinct: 'countDistinct',
+};
+
+/**
+ * The measures a source's entity suggests: one for each of its columns whose source says how its values are summed
+ * up (a count of events kept for each visit, added up), as it says, when the column is of a type that aggregate
+ * takes (the greatest of a yes-or-no isn't one).
+ */
+export function suggestedMeasures(columns: readonly EntityColumn[]): Measure[] {
+  return columns
+    .filter((c) => {
+      const use = c.aggregate
+        ? aggregates.find((a) => a.aggregate === hinted[c.aggregate!])?.use
+        : null;
+      return !c.hidden && !!use && fieldAllowed(c.type, use);
+    })
+    .map((c) => {
+      const aggregate = hinted[c.aggregate!];
+      return {
+        aggregate,
+        field: { path: [], column: c.name },
+        label: measureLabel(aggregate, c.label || humanize(c.name)),
+        format: null,
+      };
+    });
+}
 
 const aggregates: readonly { aggregate: Aggregate; label: string; use: FieldUse | null }[] = [
   { aggregate: 'count', label: 'Count of rows', use: null },
@@ -47,7 +80,7 @@ export function measureLabel(aggregate: Aggregate, fieldLabel: string | null): s
 /**
  * What a chart or table measures: one or more aggregates (counts of rows, of values, of distinct values; sums and
  * averages of numbers; the least and greatest of what is ordered), each of a field but rows' counts, and labelled
- * (from what it is, unless typed).
+ * (from what it is, unless typed). A measure that counts rows offers those its source suggests in its place.
  */
 @Component({
   selector: 'gd-measure-list',
@@ -75,6 +108,15 @@ export function measureLabel(aggregate: Aggregate, fieldLabel: string | null): s
             }
           </mat-select>
         </mat-form-field>
+        @if (measure.aggregate === 'count' && suggested().length > 0) {
+          <div class="suggested" role="group" aria-label="Suggested measures">
+            @for (suggestion of suggested(); track suggestion.field!.column) {
+              <button matButton type="button" (click)="suggest(i, suggestion)">
+                {{ suggestion.label }}
+              </button>
+            }
+          </div>
+        }
         @if (useOf(measure.aggregate); as use) {
           <gd-field-picker
             label="Of"
@@ -122,6 +164,11 @@ export function measureLabel(aggregate: Aggregate, fieldLabel: string | null): s
       font: var(--mat-sys-label-large);
       padding: 0 4px;
     }
+    .suggested {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
     .remove {
       position: absolute;
       top: -8px;
@@ -146,6 +193,13 @@ export class MeasureList {
     }),
   );
 
+  /** The measures the source's entity suggests (its own columns', not those it leads to). */
+  protected readonly suggested = computed(() => {
+    const name = this.entity();
+    const entity = name ? this.catalog.entity(name)() : null;
+    return entity ? suggestedMeasures(entity.columns) : [];
+  });
+
   protected useOf(aggregate: Aggregate): FieldUse | null {
     return aggregates.find((a) => a.aggregate === aggregate)?.use ?? null;
   }
@@ -168,6 +222,15 @@ export class MeasureList {
     this.change(index, {
       field: chosen.field,
       label: this.given(index) ? measureLabel(measure.aggregate, chosen.label) : measure.label,
+    });
+  }
+
+  /** A suggested measure in place of one, its label too unless one was typed. */
+  protected suggest(index: number, suggestion: Measure): void {
+    this.change(index, {
+      aggregate: suggestion.aggregate,
+      field: suggestion.field,
+      label: this.given(index) ? suggestion.label : this.measures()[index].label,
     });
   }
 

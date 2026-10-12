@@ -9388,6 +9388,15 @@
           "max"
         ]
       },
+      "AggregateHint": {
+        "enum": [
+          "sum",
+          "avg",
+          "min",
+          "max",
+          "countDistinct"
+        ]
+      },
       "BarColorBy": {
         "enum": [
           "measure",
@@ -10311,6 +10320,25 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "values": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "aggregate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AggregateHint"
+              }
             ]
           }
         }
@@ -12008,7 +12036,9 @@
           "comment",
           "canUpdate",
           "insert",
-          "readOnlyReason"
+          "readOnlyReason",
+          "values",
+          "aggregate"
         ],
         "type": "object",
         "properties": {
@@ -12069,6 +12099,25 @@
               "null",
               "string"
             ]
+          },
+          "values": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "aggregate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AggregateHint"
+              }
+            ]
           }
         }
       },
@@ -12086,6 +12135,7 @@
           "key",
           "uniqueKeys",
           "displayColumn",
+          "timeColumn",
           "columns",
           "navigations",
           "capabilities",
@@ -12155,6 +12205,12 @@
             }
           },
           "displayColumn": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "timeColumn": {
             "type": [
               "null",
               "string"
@@ -16216,6 +16272,12 @@
             "type": "boolean"
           },
           "comment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "timeColumn": {
             "type": [
               "null",
               "string"

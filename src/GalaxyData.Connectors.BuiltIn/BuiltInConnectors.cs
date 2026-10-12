@@ -1,6 +1,7 @@
 using GalaxyData.Query.ClickHouse;
 using GalaxyData.Query.DuckDb;
 using GalaxyData.Query.Excel;
+using GalaxyData.Query.HyperWhirlpool;
 using GalaxyData.Query.PostgreSql;
 using GalaxyData.Query.Sqlite;
 using GalaxyData.Query.SqlServer;
@@ -22,5 +23,6 @@ public static class BuiltInConnectors
       new DuckDbConnector(),
       new ExcelConnector(context),
       new ClickHouseConnector(),
+      new HyperWhirlpoolConnector(),
    ]);
 }

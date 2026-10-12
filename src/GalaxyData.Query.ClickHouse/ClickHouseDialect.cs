@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using GalaxyData.Query.Functions;
+using GalaxyData.Query.Planning;
 using GalaxyData.Query.Sql;
 using GalaxyData.Query.Types;
 
@@ -12,9 +13,10 @@ namespace GalaxyData.Query.ClickHouse;
 /// ClickHouse. Names and functions are case-sensitive, and backslashes escape in quoted names and strings. Types are
 /// non-nullable unless declared <c>Nullable(T)</c>, which casts write for values that may be null. Text functions
 /// count bytes, so the <c>UTF8</c> forms are used; <c>/</c> always gives a Float64; set operations name whether they
-/// keep duplicates. The sessions' settings (see <see cref="ClickHouseSourceProvider"/>) make outer joins give nulls
-/// and aggregates of no rows null, as SQL does. A subquery may read columns of the query it is in only to test
-/// whether rows exist: ClickHouse's subqueries that give values read null for no rows, where <c>count()</c> is 0.
+/// keep duplicates. Aggregates of no rows are null, as SQL's are, as they are written (<see cref="Aggregate"/>); the
+/// sessions' settings (see <see cref="ClickHouseSourceProvider"/>) make outer joins give nulls. A subquery may read
+/// columns of the query it is in only to test whether rows exist: ClickHouse's subqueries that give values read null
+/// for no rows, where <c>count()</c> is 0.
 /// </summary>
 public sealed class ClickHouseDialect : SqlDialect
 {
@@ -132,6 +134,30 @@ public sealed class ClickHouseDialect : SqlDialect
          ? new SqlBinary(SqlBinaryOp.Modulo, Cast(left, ScalarType.Decimal(38, 18)), Cast(right, ScalarType.Decimal(38, 18)))
          : new SqlBinary(SqlBinaryOp.Modulo, left, right);
    }
+
+   /// <summary>
+   /// Aggregates of no rows are null, as SQL's are: <c>sumOrNull</c>, <c>avgOrNull</c>, <c>minOrNull</c> and
+   /// <c>maxOrNull</c>, where ClickHouse's own give the type's zero (or nan); a sum of none is then 0, as the language
+   /// says, and counts are as they are. They are written so rather than made so by the setting that does it
+   /// (<c>aggregate_functions_null_for_empty</c>), which would also rewrite the aggregates of the views a query reads:
+   /// a view's <c>anyMerge</c> of an <c>any</c> state would be an <c>anyOrNullMerge</c>, which can't read it.
+   /// </summary>
+   protected override SqlExpr Aggregate(AggregateFunction function, SqlExpr? argument, ScalarType? argumentType) => function switch
+   {
+      AggregateFunction.Sum => new SqlFunctionCall("coalesce", new SqlAggregate("sumOrNull", argument), new SqlLiteral(0L, ScalarType.Int64)),
+      AggregateFunction.Avg => new SqlAggregate("avgOrNull", argument),
+      AggregateFunction.Min => new SqlAggregate("minOrNull", argument),
+      AggregateFunction.Max => new SqlAggregate("maxOrNull", argument),
+      _ => base.Aggregate(function, argument, argumentType),
+   };
+
+   /// <summary>
+   /// A view is read with the outer joins it was defined with. The sessions' outer joins give nulls by a setting
+   /// (<c>join_use_nulls</c>), which ClickHouse applies inside the views a statement reads too: a view whose own outer
+   /// join was made without it would give nulls its columns can't hold, and fail. A subquery's settings apply inside it
+   /// only, so the view is read in one with ClickHouse's default; the statement's own joins still give nulls.
+   /// </summary>
+   protected override string ViewReference(string view) => $"(SELECT * FROM {view} SETTINGS join_use_nulls = 0)";
 
    /// <summary>Bare <c>UNION</c> fails unless a setting says which; <c>INTERSECT</c> and <c>EXCEPT</c> would keep duplicates.</summary>
    protected override string SetOperator(SqlSetOperator op) => op switch

@@ -1331,6 +1331,8 @@ export interface components {
         };
         /** @enum {unknown} */
         Aggregate: "count" | "countValues" | "countDistinct" | "sum" | "avg" | "min" | "max";
+        /** @enum {unknown} */
+        AggregateHint: "sum" | "avg" | "min" | "max" | "countDistinct";
         /**
          * @default measure
          * @enum {unknown}
@@ -1542,6 +1544,8 @@ export interface components {
             collation?: null | string;
             readAs?: null | string;
             comment?: null | string;
+            values?: null | string[];
+            aggregate?: null | components["schemas"]["AggregateHint"];
         };
         ColumnSettingDto: {
             name: string;
@@ -1975,6 +1979,8 @@ export interface components {
             canUpdate: boolean;
             insert: components["schemas"]["InsertMode"];
             readOnlyReason: null | string;
+            values: null | string[];
+            aggregate: null | components["schemas"]["AggregateHint"];
         };
         EntityDto: {
             name: string;
@@ -1990,6 +1996,7 @@ export interface components {
             key: null | components["schemas"]["KeyDto"];
             uniqueKeys: components["schemas"]["KeyDto"][];
             displayColumn: null | string;
+            timeColumn: null | string;
             columns: components["schemas"]["EntityColumnDto"][];
             navigations: components["schemas"]["NavigationDto"][];
             capabilities: components["schemas"]["CapabilitiesDto"];
@@ -2927,6 +2934,7 @@ export interface components {
             rowCountEstimate?: null | number;
             hasTriggers?: boolean;
             comment?: null | string;
+            timeColumn?: null | string;
         };
         TestConnectionRequest: {
             kind: string;
@@ -3244,6 +3252,7 @@ export interface components {
 }
 export type AdminEventDto = components['schemas']['AdminEventDto'];
 export type Aggregate = components['schemas']['Aggregate'];
+export type AggregateHint = components['schemas']['AggregateHint'];
 export type BarColorBy = components['schemas']['BarColorBy'];
 export type BarOrientation = components['schemas']['BarOrientation'];
 export type BarStack = components['schemas']['BarStack'];

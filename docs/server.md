@@ -237,10 +237,16 @@ The kinds are those of the connectors the application comes with ([connectors.md
 | `duckdb` | a DuckDB database file | `Data Source`, and DuckDB's settings (`threads`, `memory_limit`) |
 | `excel` | a folder of `.xlsx` workbooks | `Folder` |
 | `clickhouse` | ClickHouse 26.3 or later, over HTTP | ClickHouse.Driver's: `Host`, `Port`, `Database`, `Username`, `Password`, `Protocol`, ..., and server settings prefixed `set_` |
+| `hyperwhirlpool` | a HyperWhirlpool warehouse, through its query service | ClickHouse.Driver's `Host`, `Port`, `Protocol`, `Path`, `Database` (the default domain) and `Password` (the query key), and `Compression`, `Timeout`, `SkipServerCertificateValidation` |
 
 A ClickHouse connection is its database (the connection's `Database`, or the login's default): its tables and views,
 with no keys or relations, which ClickHouse doesn't keep. Declare them in the overlay (a table's key, and relations)
 to follow links between its tables.
+
+A HyperWhirlpool connection is a warehouse's model, as its query service shows it with a query key (`rk_...`, from
+the warehouse manager's **Keys**): the public views of every domain, each domain a schema (`Database` names the one
+whose views are named without it), with the keys, references and descriptions of the warehouse's schema document. Its
+references become navigations, across domains too, which may find no row: the warehouse doesn't enforce them.
 
 **Settings.** A connection's settings are its provider's connection-string keywords and values, named as the
 provider names them.
@@ -260,16 +266,19 @@ provider names them.
 - is unique, ignoring case;
 - never changes.
 
-**Read-only.** Connections are read-only unless made otherwise, and folders of workbooks and ClickHouse connections
-always are.
+**Read-only.** Connections are read-only unless made otherwise, and folders of workbooks, ClickHouse and
+HyperWhirlpool connections always are.
 
 - **Opening files.** The application opens SQLite and DuckDB files read-only or read-write itself (so `Mode` and
   `ACCESS_MODE` aren't settings), and never makes a missing file.
 - **PostgreSQL** sessions start read-only (`default_transaction_read_only`).
 - **SQL Server** has no such setting: give a read-only connection a login that can't write.
 - **ClickHouse** statements run with `readonly=2`, and with the settings the language's meaning depends on (outer
-  joins give nulls, aggregates of no rows are null, times are UTC), which aren't settings of the connection. The
-  login must be allowed to change settings: one whose profile is `readonly=1` can't run queries.
+  joins give nulls, times are UTC, aggregates aren't rewritten), which aren't settings of the connection; views are
+  read as they were defined, which those settings don't change. The login must be allowed to change settings: one
+  whose profile is `readonly=1` can't run queries.
+- **HyperWhirlpool** statements run as ClickHouse's do, through the query service, which runs nothing but reads, as
+  its own reader: user names, roles, sessions and server settings aren't settings of the connection.
 - **Server-side files.** SQL Server's `AttachDbFilename` isn't a setting either, nor ClickHouse's sessions
   (`UseSession`, `SessionId`), which would make a source's statements wait for each other.
 
@@ -743,6 +752,14 @@ or tabs is written as it was. Tabs are only where widgets are shown: nothing a w
 - **Checked against the catalog as it is shown and run:** entities, columns, navigations and types may change after a
   save, so what doesn't fit is an issue of its widget (in the dashboard's answer and its widgets' rows), not a
   refusal to save.
+
+**What sources say of their columns.** A source may say more of its tables than their columns' types (a
+HyperWhirlpool warehouse's model does): the column its rows are dated by (an entity's `timeColumn`), the values a
+column is known to take (a column's `values`), and how its values add up over many rows (its `aggregate`: `sum`,
+`avg`, `min`, `max` or `countDistinct`). The catalog's entities carry them, and the editor uses them: a new line chart
+is drawn over its source's time column, by month; a measure that counts rows offers those its source's columns add up
+to (a visit's page views, summed) in its place; a condition on a column whose values are known picks them from a list;
+and a field's description (its comment) is its hint.
 
 **Copies and revisions.** Each dashboard has a working copy, which its owner edits and sees, and a published copy,
 which everyone else sees: publishing makes the working copy revision n + 1. The newest `Dashboards:KeepRevisions`

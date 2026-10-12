@@ -8,6 +8,7 @@ import type {
   PieConfig,
   TableConfig,
   TextConfig,
+  WidgetConfig,
 } from './definition';
 
 export type Listens = Schema<'Listens'>;
@@ -17,6 +18,27 @@ const all: Listens = { mode: 'all', widgets: [] };
 /** A dimension not yet chosen: its field is to be picked. */
 export function blankDimension(): Dimension {
   return { field: { path: [], column: '' }, bucket: null, label: '' };
+}
+
+/**
+ * A new line chart drawn over its source's time column (the one its rows are dated by, as the source says), by
+ * month, when the source has one and the chart has no field yet; any other widget as it is.
+ */
+export function overTime(
+  config: WidgetConfig,
+  time: { readonly column: string; readonly label: string } | null,
+): WidgetConfig {
+  if (config.kind !== 'line' || !time || config.dimension.field.column) {
+    return config;
+  }
+  return {
+    ...config,
+    dimension: {
+      field: { path: [], column: time.column },
+      bucket: config.dimension.bucket ?? 'month',
+      label: time.label,
+    },
+  };
 }
 
 /** Counting rows: a measure that needs no field. */

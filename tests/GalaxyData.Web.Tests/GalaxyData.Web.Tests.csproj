@@ -24,6 +24,7 @@
   <ItemGroup>
     <Compile Include="..\Shared\Golden.cs" LinkBase="Shared" />
     <Compile Include="..\Shared\TestServers.cs" LinkBase="Shared" />
+    <Compile Include="..\Shared\HyperWhirlpoolWarehouse.cs" LinkBase="Shared" />
     <Compile Include="..\Shared\Excel\XlsxBuilder.cs" LinkBase="Shared" />
     <None Include="..\fixtures\**\*.sql" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\**\*.json" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />

@@ -1,0 +1,422 @@
+{
+  "providerKind": "hyperwhirlpool",
+  "serverVersion": "HyperWhirlpool model 12 (3f9a0c1d2e4b), ClickHouse 26.8.1.1",
+  "defaultSchema": "web",
+  "tables": [
+    {
+      "schema": "crm",
+      "name": "contact",
+      "kind": "View",
+      "columns": [
+        {
+          "name": "contact_id",
+          "nativeType": "String",
+          "type": "string"
+        },
+        {
+          "name": "first_seen",
+          "ordinal": 1,
+          "nativeType": "DateTime64(3, 'UTC')",
+          "type": "datetimeoffset"
+        },
+        {
+          "name": "last_seen",
+          "ordinal": 2,
+          "nativeType": "DateTime64(3, 'UTC')",
+          "type": "datetimeoffset"
+        },
+        {
+          "name": "events",
+          "ordinal": 3,
+          "nativeType": "UInt64",
+          "type": "decimal(20,0)",
+          "aggregate": "Sum"
+        },
+        {
+          "name": "country",
+          "ordinal": 4,
+          "nativeType": "String",
+          "type": "string",
+          "comment": "Country of residence, as last given."
+        },
+        {
+          "name": "lifecycle",
+          "ordinal": 5,
+          "nativeType": "String",
+          "type": "string",
+          "comment": "Where the person is on the way to graduating.",
+          "values": [
+            "applicant",
+            "student",
+            "alumnus",
+            "lead"
+          ]
+        }
+      ],
+      "primaryKey": {
+        "columns": [
+          "contact_id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [],
+      "comment": "A person the CRM knows.",
+      "timeColumn": "first_seen"
+    },
+    {
+      "schema": "web",
+      "name": "device",
+      "kind": "View",
+      "columns": [
+        {
+          "name": "device_id",
+          "nativeType": "UUID",
+          "type": "guid"
+        },
+        {
+          "name": "first_seen",
+          "ordinal": 1,
+          "nativeType": "DateTime64(3, 'UTC')",
+          "type": "datetimeoffset"
+        },
+        {
+          "name": "last_seen",
+          "ordinal": 2,
+          "nativeType": "DateTime64(3, 'UTC')",
+          "type": "datetimeoffset"
+        },
+        {
+          "name": "events",
+          "ordinal": 3,
+          "nativeType": "UInt64",
+          "type": "decimal(20,0)",
+          "aggregate": "Sum"
+        },
+        {
+          "name": "browser",
+          "ordinal": 4,
+          "nativeType": "LowCardinality(String)",
+          "type": "string",
+          "comment": "The browser's name."
+        }
+      ],
+      "primaryKey": {
+        "columns": [
+          "device_id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [],
+      "comment": "A browser on a computer or phone, as its cookie tells it apart.",
+      "timeColumn": "first_seen"
+    },
+    {
+      "schema": "web",
+      "name": "link_device_contact",
+      "kind": "View",
+      "columns": [
+        {
+          "name": "from_type",
+          "nativeType": "String",
+          "type": "string"
+        },
+        {
+          "name": "from_id",
+          "ordinal": 1,
+          "nativeType": "String",
+          "type": "string"
+        },
+        {
+          "name": "to_type",
+          "ordinal": 2,
+          "nativeType": "String",
+          "type": "string"
+        },
+        {
+          "name": "to_id",
+          "ordinal": 3,
+          "nativeType": "String",
+          "type": "string"
+        },
+        {
+          "name": "device_id",
+          "ordinal": 4,
+          "nativeType": "Nullable(UUID)",
+          "type": "guid?"
+        },
+        {
+          "name": "crm_contact_id",
+          "ordinal": 5,
+          "nativeType": "String",
+          "type": "string"
+        },
+        {
+          "name": "first_seen",
+          "ordinal": 6,
+          "nativeType": "DateTime64(3, 'UTC')",
+          "type": "datetimeoffset"
+        },
+        {
+          "name": "last_seen",
+          "ordinal": 7,
+          "nativeType": "DateTime64(3, 'UTC')",
+          "type": "datetimeoffset"
+        },
+        {
+          "name": "evidence",
+          "ordinal": 8,
+          "nativeType": "UInt64",
+          "type": "decimal(20,0)"
+        }
+      ],
+      "primaryKey": {
+        "columns": [
+          "from_id",
+          "to_id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "name": "from_device",
+          "columns": [
+            "device_id"
+          ],
+          "refSchema": "web",
+          "refTable": "device",
+          "refColumns": [
+            "device_id"
+          ],
+          "isEnforced": false
+        },
+        {
+          "name": "to_crm_contact",
+          "columns": [
+            "crm_contact_id"
+          ],
+          "refSchema": "crm",
+          "refTable": "contact",
+          "refColumns": [
+            "contact_id"
+          ],
+          "isEnforced": false
+        }
+      ],
+      "comment": "A device a CRM contact was seen on.",
+      "timeColumn": "first_seen"
+    },
+    {
+      "schema": "web",
+      "name": "page_view_events",
+      "kind": "View",
+      "columns": [
+        {
+          "name": "log_day",
+          "nativeType": "Date",
+          "type": "date"
+        },
+        {
+          "name": "event_id",
+          "ordinal": 1,
+          "nativeType": "UUID",
+          "type": "guid"
+        },
+        {
+          "name": "ts",
+          "ordinal": 2,
+          "nativeType": "DateTime64(3, 'UTC')",
+          "type": "datetimeoffset"
+        },
+        {
+          "name": "session_id",
+          "ordinal": 3,
+          "nativeType": "UUID",
+          "type": "guid"
+        },
+        {
+          "name": "device_id",
+          "ordinal": 4,
+          "nativeType": "UUID",
+          "type": "guid"
+        },
+        {
+          "name": "crm_contact_id",
+          "ordinal": 5,
+          "nativeType": "String",
+          "type": "string"
+        },
+        {
+          "name": "ip",
+          "ordinal": 6,
+          "nativeType": "String",
+          "type": "string"
+        },
+        {
+          "name": "url",
+          "ordinal": 7,
+          "nativeType": "String",
+          "type": "string",
+          "comment": "The page's address."
+        },
+        {
+          "name": "referrer",
+          "ordinal": 8,
+          "nativeType": "Nullable(String)",
+          "type": "string?"
+        },
+        {
+          "name": "viewport_w",
+          "ordinal": 9,
+          "nativeType": "Nullable(UInt16)",
+          "type": "int32?",
+          "comment": "The window's width, in CSS pixels."
+        },
+        {
+          "name": "_errors",
+          "ordinal": 10,
+          "nativeType": "Array(String)",
+          "type": "unknown",
+          "readAs": "String"
+        }
+      ],
+      "primaryKey": {
+        "columns": [
+          "event_id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "name": "crm_contact",
+          "columns": [
+            "crm_contact_id"
+          ],
+          "refSchema": "crm",
+          "refTable": "contact",
+          "refColumns": [
+            "contact_id"
+          ],
+          "isEnforced": false
+        },
+        {
+          "name": "device",
+          "columns": [
+            "device_id"
+          ],
+          "refSchema": "web",
+          "refTable": "device",
+          "refColumns": [
+            "device_id"
+          ],
+          "isEnforced": false
+        },
+        {
+          "name": "session",
+          "columns": [
+            "session_id"
+          ],
+          "refSchema": "web",
+          "refTable": "session",
+          "refColumns": [
+            "session_id"
+          ],
+          "isEnforced": false
+        }
+      ],
+      "comment": "A page shown in a browser.",
+      "timeColumn": "ts"
+    },
+    {
+      "schema": "web",
+      "name": "session",
+      "kind": "View",
+      "columns": [
+        {
+          "name": "session_id",
+          "nativeType": "UUID",
+          "type": "guid"
+        },
+        {
+          "name": "device_id",
+          "ordinal": 1,
+          "nativeType": "UUID",
+          "type": "guid"
+        },
+        {
+          "name": "first_seen",
+          "ordinal": 2,
+          "nativeType": "DateTime64(3, 'UTC')",
+          "type": "datetimeoffset"
+        },
+        {
+          "name": "last_seen",
+          "ordinal": 3,
+          "nativeType": "DateTime64(3, 'UTC')",
+          "type": "datetimeoffset"
+        },
+        {
+          "name": "events",
+          "ordinal": 4,
+          "nativeType": "UInt64",
+          "type": "decimal(20,0)",
+          "aggregate": "Sum"
+        },
+        {
+          "name": "page_views",
+          "ordinal": 5,
+          "nativeType": "UInt64",
+          "type": "decimal(20,0)",
+          "comment": "Pages viewed in the visit.",
+          "aggregate": "Sum"
+        },
+        {
+          "name": "duration_ms",
+          "ordinal": 6,
+          "nativeType": "Nullable(Int64)",
+          "type": "int64?"
+        },
+        {
+          "name": "traffic_type",
+          "ordinal": 7,
+          "nativeType": "String",
+          "type": "string",
+          "comment": "Acquisition channel of the visit, from its entry page and referrer.",
+          "values": [
+            "paid",
+            "social",
+            "search",
+            "referral",
+            "direct"
+          ]
+        }
+      ],
+      "primaryKey": {
+        "columns": [
+          "session_id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "name": "device",
+          "columns": [
+            "device_id"
+          ],
+          "refSchema": "web",
+          "refTable": "device",
+          "refColumns": [
+            "device_id"
+          ],
+          "isEnforced": false
+        }
+      ],
+      "comment": "A visit; it ends after 30 minutes without user activity.",
+      "timeColumn": "first_seen"
+    }
+  ]
+}

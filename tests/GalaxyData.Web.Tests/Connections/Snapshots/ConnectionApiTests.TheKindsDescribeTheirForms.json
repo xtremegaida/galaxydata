@@ -898,5 +898,172 @@
       }
     ],
     "options": []
+  },
+  {
+    "id": "hyperwhirlpool",
+    "displayName": "HyperWhirlpool",
+    "supportsRaw": true,
+    "alwaysReadOnly": true,
+    "rawExample": "Host=query.hw.example.com;Port=443;Protocol=https;Database=web;Password=rk_...",
+    "groups": [
+      {
+        "key": "connection",
+        "label": "Connection",
+        "collapsed": false
+      },
+      {
+        "key": "security",
+        "label": "Security",
+        "collapsed": false
+      },
+      {
+        "key": "advanced",
+        "label": "Advanced",
+        "collapsed": true
+      }
+    ],
+    "fields": [
+      {
+        "key": "Host",
+        "label": "Host",
+        "type": "text",
+        "required": true,
+        "default": null,
+        "placeholder": "query.hw.example.com",
+        "help": "The warehouse\u0027s query service",
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Port",
+        "label": "Port",
+        "type": "number",
+        "required": false,
+        "default": "443",
+        "placeholder": null,
+        "help": "The port the query service listens on; 443 with HTTPS, or 80 with HTTP, if empty",
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": 1,
+        "max": 65535
+      },
+      {
+        "key": "Password",
+        "label": "Query key",
+        "type": "password",
+        "required": true,
+        "default": null,
+        "placeholder": "rk_...",
+        "help": "A query key from the warehouse\u0027s manager (Keys)",
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Database",
+        "label": "Default domain",
+        "type": "text",
+        "required": false,
+        "default": null,
+        "placeholder": "web",
+        "help": "The domain whose views are named without it; the views of the other domains are named with theirs",
+        "group": "connection",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Protocol",
+        "label": "Protocol",
+        "type": "select",
+        "required": false,
+        "default": "https",
+        "placeholder": null,
+        "help": null,
+        "group": "security",
+        "choices": [
+          {
+            "value": "http",
+            "label": "HTTP"
+          },
+          {
+            "value": "https",
+            "label": "HTTPS"
+          }
+        ],
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "SkipServerCertificateValidation",
+        "label": "Skip checking the server\u0027s certificate",
+        "type": "bool",
+        "required": false,
+        "default": "false",
+        "placeholder": null,
+        "help": "Accept a certificate no trusted authority signed (a server\u0027s own); the connection is still encrypted",
+        "group": "security",
+        "choices": null,
+        "visibleWhen": {
+          "field": "Protocol",
+          "values": [
+            "https"
+          ]
+        },
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Compression",
+        "label": "Compress what is sent",
+        "type": "bool",
+        "required": false,
+        "default": "true",
+        "placeholder": null,
+        "help": null,
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      },
+      {
+        "key": "Timeout",
+        "label": "Request timeout (s)",
+        "type": "number",
+        "required": false,
+        "default": "120",
+        "placeholder": null,
+        "help": null,
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": 1,
+        "max": null
+      },
+      {
+        "key": "Path",
+        "label": "Path",
+        "type": "text",
+        "required": false,
+        "default": null,
+        "placeholder": null,
+        "help": "The path of the query service, behind a proxy",
+        "group": "advanced",
+        "choices": null,
+        "visibleWhen": null,
+        "min": null,
+        "max": null
+      }
+    ],
+    "options": []
   }
 ]

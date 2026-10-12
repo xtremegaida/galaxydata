@@ -102,6 +102,7 @@ export function entityOf(changes: Partial<EntityDto> = {}): EntityDto {
     key: { name: null, columns: ['id'], isDeclared: false },
     uniqueKeys: [],
     displayColumn: 'status',
+    timeColumn: null,
     columns: [
       {
         name: 'id',
@@ -120,6 +121,8 @@ export function entityOf(changes: Partial<EntityDto> = {}): EntityDto {
         insert: 'optional',
         readOnlyReason:
           "'id' is part of the key, which can't change: delete the row and insert it again",
+        values: null,
+        aggregate: null,
       },
       {
         name: 'customer_id',
@@ -137,6 +140,8 @@ export function entityOf(changes: Partial<EntityDto> = {}): EntityDto {
         canUpdate: true,
         insert: 'required',
         readOnlyReason: null,
+        values: null,
+        aggregate: null,
       },
       {
         name: 'status',
@@ -154,6 +159,8 @@ export function entityOf(changes: Partial<EntityDto> = {}): EntityDto {
         canUpdate: true,
         insert: 'optional',
         readOnlyReason: null,
+        values: null,
+        aggregate: null,
       },
     ],
     navigations: [

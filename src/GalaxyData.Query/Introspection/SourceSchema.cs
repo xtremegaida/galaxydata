@@ -61,6 +61,12 @@ public sealed record TableSchema(string Schema, string Name, TableKind Kind, IRe
    public bool HasTriggers { get; init; }
 
    public string? Comment { get; init; }
+
+   /// <summary>
+   /// The column the rows are dated by (when an event happened, when an entity was first seen), when the source says
+   /// so: what a chart of the rows is drawn over unless another is chosen.
+   /// </summary>
+   public string? TimeColumn { get; init; }
 }
 
 public sealed record ColumnSchema(string Name, int Ordinal, string NativeType, ScalarType Type)
@@ -85,11 +91,33 @@ public sealed record ColumnSchema(string Name, int Ordinal, string NativeType, S
 
    public string? Comment { get; init; }
 
+   /// <summary>
+   /// The values the column is known to take, in the order the source gives them (the labels its rules choose
+   /// between), when the source says so; null when they are whatever the rows hold.
+   /// </summary>
+   public IReadOnlyList<string>? Values { get; init; }
+
+   /// <summary>
+   /// How the column's values are summed up over many rows (a count of events kept for each entity, by adding them),
+   /// when the source says so; null when it doesn't.
+   /// </summary>
+   public AggregateHint? Aggregate { get; init; }
+
    [JsonIgnore]
    public bool IsNullable => Type.Nullable;
 
    [JsonIgnore]
    public bool HasDefault => DefaultSql != null;
+}
+
+/// <summary>How a column's values are best summed up over many rows, as its source says.</summary>
+public enum AggregateHint : byte
+{
+   Sum,
+   Avg,
+   Min,
+   Max,
+   CountDistinct,
 }
 
 public sealed record KeySchema(string? Name, IReadOnlyList<string> Columns);

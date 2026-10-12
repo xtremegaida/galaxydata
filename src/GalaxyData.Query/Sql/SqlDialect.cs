@@ -294,6 +294,13 @@ public abstract class SqlDialect
       _ => new SqlAggregate(AggregateName("max"), argument),
    };
 
+   /// <summary>
+   /// How a statement reads a view, given its name as written: by default by its name. A database whose settings for
+   /// the statement would change what a view computes (ClickHouse's, which apply inside the views a statement reads)
+   /// reads it in a subquery with the settings it was defined under.
+   /// </summary>
+   protected internal virtual string ViewReference(string view) => view;
+
    /// <summary>The spelling of a function name in this dialect.</summary>
    protected internal virtual string AggregateName(string name) => name;
 

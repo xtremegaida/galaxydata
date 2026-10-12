@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>GalaxyData.Query.HyperWhirlpool</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="GalaxyData.Query.Tests" />
+    <InternalsVisibleTo Include="GalaxyData.Query.ContainerTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GalaxyData.Query.ClickHouse\GalaxyData.Query.ClickHouse.csproj" />
+  </ItemGroup>
+
+</Project>

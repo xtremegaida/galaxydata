@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
-using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -37,19 +36,9 @@ public sealed class ClickHouseConnector : Connector
 /// </summary>
 public sealed class ClickHouseKind : ConnectionKind
 {
-   public const string SkipCertificateValidation = "SkipServerCertificateValidation";
+   public const string SkipCertificateValidation = ClickHouseKeywords.SkipCertificateValidation;
 
-   private const string SettingPrefix = "set_";
-
-   /// <summary>The keywords ClickHouse.Driver takes, as it names them.</summary>
-   private static readonly string[] Keywords =
-   [
-      "Host", "Port", "Database", "Username", "Password", "Protocol", "Path", "Compression", "Timeout", SkipCertificateValidation, "UseSession",
-      "SessionId", "UseCustomDecimals", "UseFormDataParameters", "ReadStringsAsByteArrays", "ReadBufferSize", "Roles", "JsonReadMode",
-      "JsonWriteMode", "MapReadMode", "AcceptEncoding", "AllowDuplicateJsonKeys",
-   ];
-
-   private static readonly string[] Flags = ["Compression", SkipCertificateValidation, "UseSession", "UseCustomDecimals", "UseFormDataParameters", "ReadStringsAsByteArrays", "AllowDuplicateJsonKeys"];
+   private const string SettingPrefix = ClickHouseKeywords.SettingPrefix;
 
    public override string Id => ClickHouseSchemaIntrospector.ProviderKind;
 
@@ -101,32 +90,10 @@ public sealed class ClickHouseKind : ConnectionKind
    public override List<KeyValuePair<string, string>> Normalize(IEnumerable<KeyValuePair<string, string>> pairs)
    {
       ArgumentNullException.ThrowIfNull(pairs);
-      return base.Normalize(pairs.Select(Canonical));
+      return base.Normalize(pairs.Select(p => ClickHouseKeywords.Canonical(p, ClickHouseKeywords.All, settings: true, DisplayName)));
    }
 
    public override List<KeyValuePair<string, string>> Parse(string connectionString) => Normalize(base.Parse(connectionString));
-
-   private static KeyValuePair<string, string> Canonical(KeyValuePair<string, string> pair)
-   {
-      string key = pair.Key.Trim();
-      if (key.StartsWith(SettingPrefix, StringComparison.OrdinalIgnoreCase) && key.Length > SettingPrefix.Length)
-      {
-         return new(SettingPrefix + key[SettingPrefix.Length..], pair.Value);
-      }
-      string keyword = Keywords.FirstOrDefault(k => k.Equals(key, StringComparison.OrdinalIgnoreCase))
-         ?? throw new ArgumentException($"ClickHouse connections take no keyword '{key}' (a server setting is written set_{key})");
-      string value = pair.Value.Trim();
-      bool valid = keyword switch
-      {
-         "Port" => ushort.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out ushort port) && port > 0,
-         "Timeout" or "ReadBufferSize" => int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int number) && number > 0,
-         "Protocol" => value.Equals("http", StringComparison.OrdinalIgnoreCase) || value.Equals("https", StringComparison.OrdinalIgnoreCase),
-         _ when Flags.Contains(keyword) => bool.TryParse(value, out _),
-         _ => true,
-      };
-      if (!valid) { throw new ArgumentException($"'{pair.Value}' isn't a value {keyword} takes"); }
-      return new(keyword, keyword == "Protocol" ? value.ToLowerInvariant() : pair.Value);
-   }
 
    /// <summary>Always read-only, whatever the connection says: nothing a session runs writes.</summary>
    protected override void Restrict(DbConnectionStringBuilder builder, bool readOnly)

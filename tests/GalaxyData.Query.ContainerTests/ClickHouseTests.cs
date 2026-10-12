@@ -149,6 +149,44 @@ public sealed class ClickHouseTests(Servers servers)
       }
    }
 
+   /// <summary>
+   /// A view that merges aggregate states (over an AggregatingMergeTree table) reads as the database computes it, and
+   /// aggregates of no rows are still null: they are written so (<c>maxOrNull</c>), not made so by a setting, which
+   /// ClickHouse would apply inside the view too, making its <c>anyMerge</c> an <c>anyOrNullMerge</c> that can't read
+   /// its states. A view's own outer joins give nulls, as the session's do.
+   /// </summary>
+   [Fact]
+   public async Task ViewsThatMergeAggregateStatesAreRead()
+   {
+      ServerDatabase shop = await servers.FreshAsync(ServerKind.ClickHouse, then: """
+         CREATE TABLE visit_states (visitor_id UInt32, first_page AggregateFunction(any, String), pages AggregateFunction(count)) ENGINE = AggregatingMergeTree ORDER BY visitor_id;
+         INSERT INTO visit_states SELECT 1, anyState('home'), countState();
+         INSERT INTO visit_states SELECT 1, anyState('home'), countState();
+         INSERT INTO visit_states SELECT 2, anyState('apply'), countState();
+         CREATE VIEW visits AS SELECT visitor_id, anyMerge(first_page) AS first_page, countMerge(pages) AS pages FROM visit_states GROUP BY visitor_id;
+         CREATE VIEW visitor_pages AS SELECT c.id AS customer_id, v.pages AS pages FROM customers AS c LEFT JOIN visits AS v ON v.visitor_id = c.id;
+         """);
+      await using TestSources sources = await shop.SourcesAsync();
+      sources.Overlay = Keyed with
+      {
+         Entities = [.. Keyed.Entities, new OverlayEntitySettings("shop.visits") { Key = ["visitor_id"] }],
+         Relations = [.. Keyed.Relations, new OverlayRelation("shop.customers", ["id"], "shop.visits", ["visitor_id"]) { Name = "visit", InverseName = "customer" }],
+      };
+      QueryEngine engine = sources.Engine();
+      async Task<string> RunAsync(string query)
+      {
+         await using QueryResult result = await engine.ExecuteAsync(new QueryRequest(query), Token);
+         return TestSources.Format(await result.ToListAsync(Token), result.Schema).ReplaceLineEndings("\n").TrimEnd();
+      }
+      (await RunAsync("shop.visits.orderBy(visitor_id).select(visitor_id, first_page, pages)")).ShouldBe("1 | 'home' | 2\n2 | 'apply' | 1");
+      (await RunAsync("shop.visits.groupBy().select(n: count(), total: sum(pages), most: max(pages), least: min(first_page))")).ShouldBe("2 | 3 | 2 | 'apply'");
+      (await RunAsync("shop.visits.where(pages > 5).groupBy().select(n: count(), total: sum(pages), most: max(pages), mean: avg(pages))")).ShouldBe("0 | 0 | null | null");
+      // The view's own LEFT JOIN is as the view was defined (without join_use_nulls): a customer without visits has 0.
+      (await RunAsync("shop.visitor_pages.orderBy(customer_id).select(customer_id, pages)")).ShouldBe("1 | 2\n2 | 1\n3 | 0");
+      // The query's own outer join, to the view, gives null where there is no row.
+      (await RunAsync("shop.customers.orderBy(id).select(name, pages: visit.pages)")).ShouldBe("'Acme Ltd' | 2\n'Beta Corp' | 1\n'Gamma Inc' | null");
+   }
+
    /// <summary>The command line opens a ClickHouse source with its connection string, read-only.</summary>
    [Fact]
    public async Task TheCommandLineOpensAClickHouseSource()

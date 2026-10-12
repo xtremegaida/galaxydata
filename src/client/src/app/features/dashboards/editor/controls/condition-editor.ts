@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input, model } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, model } from '@angular/core';
 import { MatButton, MatIconButton } from '@angular/material/button';
 import { MatOption } from '@angular/material/core';
 import { MatFormField, MatHint, MatLabel } from '@angular/material/form-field';
@@ -6,6 +6,7 @@ import { MatIcon } from '@angular/material/icon';
 import { MatInput } from '@angular/material/input';
 import { MatSelect } from '@angular/material/select';
 import type { ConditionValue, FieldRef } from '../../model/definition';
+import { EntityCatalog } from '../entity-catalog';
 import { FieldPicker } from './field-picker';
 
 type Op = ConditionValue['op'];
@@ -64,6 +65,9 @@ export function withOp(value: ConditionValue, op: Op): ConditionValue {
   }
 }
 
+/** The ops whose values are picked from those a column is known to take, when it is. */
+const pickedOps: ReadonlySet<Op> = new Set<Op>(['eq', 'ne', 'in', 'notIn']);
+
 /** A list of values as typed: `,` between them. */
 function valuesOf(text: string): string[] {
   return text
@@ -74,7 +78,8 @@ function valuesOf(text: string): string[] {
 
 /**
  * A condition's value: its op (of those allowed), and the values it takes, typed as the field's values are written
- * (`2026-01-31`, `12.5`, `true`); lists with `,` between their values; periods relative to today.
+ * (`2026-01-31`, `12.5`, `true`); lists with `,` between their values; periods relative to today. When the field's
+ * values are known (the labels its source's rules choose between), one or a list of them is picked instead.
  */
 @Component({
   selector: 'gd-condition-value',
@@ -98,6 +103,15 @@ function valuesOf(text: string): string[] {
               <mat-select [value]="value().value" (valueChange)="set({ value: $event })">
                 <mat-option [value]="true">Yes</mat-option>
                 <mat-option [value]="false">No</mat-option>
+              </mat-select>
+            </mat-form-field>
+          } @else if (choices(); as choices) {
+            <mat-form-field subscriptSizing="dynamic">
+              <mat-label>Value</mat-label>
+              <mat-select [value]="value().value" (valueChange)="set({ value: $event })">
+                @for (choice of choices; track choice) {
+                  <mat-option [value]="choice">{{ choice }}</mat-option>
+                }
               </mat-select>
             </mat-form-field>
           } @else {
@@ -126,15 +140,30 @@ function valuesOf(text: string): string[] {
           </mat-form-field>
         }
         @case ('list') {
-          <mat-form-field subscriptSizing="dynamic">
-            <mat-label>Values</mat-label>
-            <input
-              matInput
-              [value]="(value().values ?? []).map(text).join(', ')"
-              (change)="set({ values: list($event) })"
-            />
-            <mat-hint>With , between them</mat-hint>
-          </mat-form-field>
+          @if (choices(); as choices) {
+            <mat-form-field subscriptSizing="dynamic">
+              <mat-label>Values</mat-label>
+              <mat-select
+                multiple
+                [value]="value().values ?? []"
+                (valueChange)="set({ values: $event })"
+              >
+                @for (choice of choices; track choice) {
+                  <mat-option [value]="choice">{{ choice }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+          } @else {
+            <mat-form-field subscriptSizing="dynamic">
+              <mat-label>Values</mat-label>
+              <input
+                matInput
+                [value]="(value().values ?? []).map(text).join(', ')"
+                (change)="set({ values: list($event) })"
+              />
+              <mat-hint>With , between them</mat-hint>
+            </mat-form-field>
+          }
         }
         @case ('period') {
           <div class="period">
@@ -192,6 +221,24 @@ export class ConditionValueEditor {
   readonly label = input('Condition');
   /** Whether the values are yes or no. */
   readonly boolean = input(false);
+  /** The values the field is known to take, when its source says; null when they are whatever the rows hold. */
+  readonly known = input<readonly string[] | null>(null);
+
+  /**
+   * The values to pick from, when the op is one that picks and the field's values are known: those, and any the
+   * condition has that aren't among them (typed before), so they can be seen and taken out.
+   */
+  protected readonly choices = computed(() => {
+    const known = this.known();
+    const value = this.value();
+    if (!known || known.length === 0 || !pickedOps.has(value.op)) {
+      return null;
+    }
+    const had = [value.value, ...(value.values ?? [])]
+      .filter((v) => v !== undefined && v !== null && v !== '')
+      .map(String);
+    return [...known, ...had.filter((v) => !known.includes(v))];
+  });
 
   protected readonly shape = computed(() => {
     switch (this.value().op) {
@@ -254,6 +301,7 @@ export class ConditionValueEditor {
         />
         <gd-condition-value
           label="Which"
+          [known]="knownOf(condition.field)"
           [value]="condition.value"
           (valueChange)="change(i, { value: $event })"
         />
@@ -295,8 +343,15 @@ export class ConditionValueEditor {
   `,
 })
 export class ConditionList {
+  private readonly catalog = inject(EntityCatalog);
+
   readonly entity = input.required<string | null>();
   readonly conditions = model.required<readonly { field: FieldRef; value: ConditionValue }[]>();
+
+  /** The values a condition's field is known to take, when its source says. */
+  protected knownOf(field: FieldRef): readonly string[] | null {
+    return this.catalog.columnOf(this.entity(), field)?.values ?? null;
+  }
 
   protected add(): void {
     this.conditions.set([

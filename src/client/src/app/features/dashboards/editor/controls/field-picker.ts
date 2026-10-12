@@ -38,6 +38,8 @@ interface Choice {
   readonly text: string;
   readonly shown: string;
   readonly detail: string;
+  /** What the column holds, as its source describes it. */
+  readonly description: string | null;
   readonly navigation: boolean;
 }
 
@@ -49,7 +51,8 @@ export function fieldText(field: FieldRef | null | undefined): string {
 /**
  * A field of a source's entity: one of its columns, or a column of an entity it leads to through navigations to one
  * row (`customer.country`), typed and suggested step by step (choosing a navigation goes on into its entity). Only
- * columns of the types `use` allows are suggested; hidden ones and navigations to many aren't.
+ * columns of the types `use` allows are suggested; hidden ones and navigations to many aren't. A column's description
+ * (its comment) is its option's title, and the field's hint once it is chosen.
  */
 @Component({
   selector: 'gd-field-picker',
@@ -77,7 +80,7 @@ export function fieldText(field: FieldRef | null | undefined): string {
       />
       <mat-autocomplete #choices="matAutocomplete" (optionSelected)="picked($event)">
         @for (choice of options(); track choice.text) {
-          <mat-option [value]="choice.text">
+          <mat-option [value]="choice.text" [attr.title]="choice.description">
             {{ choice.shown }} <span class="detail">{{ choice.detail }}</span>
           </mat-option>
         }
@@ -85,8 +88,8 @@ export function fieldText(field: FieldRef | null | undefined): string {
       @if (problem(); as problem) {
         <!-- A hint, not an error: Material shows errors of form controls only. -->
         <mat-hint class="problem" role="alert">{{ problem }}</mat-hint>
-      } @else if (hint()) {
-        <mat-hint>{{ hint() }}</mat-hint>
+      } @else if (hint() ?? description(); as hint) {
+        <mat-hint>{{ hint }}</mat-hint>
       }
     </mat-form-field>
   `,
@@ -150,6 +153,7 @@ export class FieldPicker {
         text: before + c.name,
         shown: before + c.name,
         detail: [c.label, c.type.text].filter(Boolean).join(' · '),
+        description: c.comment,
         navigation: false,
       }));
     const navigations = entity.navigations
@@ -158,10 +162,16 @@ export class FieldPicker {
         text: `${before}${n.name}.`,
         shown: `${before}${n.name}.`,
         detail: `to ${n.target}`,
+        description: null,
         navigation: true,
       }));
     return [...columns, ...navigations];
   });
+
+  /** The chosen field's description, as its source gives it. */
+  protected readonly description = computed(
+    () => this.catalog.columnOf(this.entity(), this.field())?.comment ?? null,
+  );
 
   protected readonly problem = computed(() => {
     const text = this.text();

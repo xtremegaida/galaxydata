@@ -35,6 +35,7 @@ import { chartPalette } from '../charts/series-colors';
 import { type Definition, palettesOf } from '../model/definition';
 import { addWidget } from '../model/definition-ops';
 import { PaletteLibrary } from '../palettes/palette-library';
+import { overTime } from '../model/widget-defaults';
 import { WIDGET_KINDS, type WidgetKind } from '../model/widget-registry';
 import { InlineHost } from '../state/dashboard-host';
 import { DashboardStore } from '../state/dashboard-store';
@@ -46,6 +47,7 @@ import {
   type IssuePlace,
   panels,
 } from './editor-store';
+import { humanize } from './controls/field-picker';
 import { EntityCatalog } from './entity-catalog';
 import { FiltersPanel } from './panels/filters-panel';
 import { IssuesPanel, LayoutPanel, RefreshPanel } from './panels/layout-panels';
@@ -357,6 +359,7 @@ export class DashboardEditor implements HasUnsavedChanges {
   private readonly dashboard = inject(DashboardStore);
   private readonly palettes = inject(PaletteLibrary);
   protected readonly kinds = inject(WIDGET_KINDS);
+  private readonly catalog = inject(EntityCatalog);
   private readonly nameField = viewChild<ElementRef<HTMLInputElement>>('name');
 
   protected readonly saving = signal(false);
@@ -399,6 +402,13 @@ export class DashboardEditor implements HasUnsavedChanges {
     });
     // The canvas shows the draft; its widgets ask for their slices' rows.
     effect(() => this.dashboard.definition.set(this.store.draft()));
+    // The sources' entities are read as they are added, so what they say of their columns (the time a new line
+    // chart is drawn over) is known when a widget is.
+    effect(() => {
+      for (const source of this.store.draft().sources) {
+        this.catalog.entity(source.entity)();
+      }
+    });
     // And are drawn with the palettes it names, as they are now (saved elsewhere, they follow).
     const named = computed(() => palettesOf(this.store.draft()), { equal: sameJson });
     effect(() => {
@@ -434,16 +444,25 @@ export class DashboardEditor implements HasUnsavedChanges {
   }
 
   protected add(kind: WidgetKind): void {
-    const source = this.store.draft().sources[0]?.id ?? null;
+    const first = this.store.draft().sources[0];
+    const source = first?.id ?? null;
+    const config = overTime(kind.defaults(source), this.timeOf(first?.entity ?? null));
     let made = '';
     this.store.apply(`Added a ${kind.label.toLowerCase()}`, (d) => {
-      const added = addWidget(d, kind.defaults(source), kind.defaultSize, null, this.store.tab());
+      const added = addWidget(d, config, kind.defaultSize, null, this.store.tab());
       made = added.id;
       return added.definition;
     });
     this.store.select(made);
     this.store.panel.set(0);
     this.announcer.announce(`Added ${this.store.nameOf(made)}`);
+  }
+
+  /** The column an entity's rows are dated by, as its source says, with its label; null when it says none (or isn't read yet). */
+  private timeOf(entity: string | null): { column: string; label: string } | null {
+    const read = entity ? this.catalog.entity(entity)() : null;
+    const column = read?.timeColumn ? read.columns.find((c) => c.name === read.timeColumn) : null;
+    return column ? { column: column.name, label: column.label || humanize(column.name) } : null;
   }
 
   protected goTo(place: IssuePlace): void {

@@ -128,6 +128,10 @@ public sealed class CatalogBuilder
             {
                entity.Key = new KeyDef(table.PrimaryKey.Name, keyColumns);
             }
+            if (table.TimeColumn != null && entity.FindColumn(table.TimeColumn) is { IsFound: true } time)
+            {
+               entity.TimeColumn = time.Item;
+            }
             foreach (KeySchema unique in table.UniqueKeys)
             {
                if (ResolveColumns(entity, unique.Columns) is { } columns) { entity.AddUniqueKey(new KeyDef(unique.Name, columns)); }
