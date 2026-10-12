@@ -66,6 +66,9 @@ public sealed partial class DefinitionRules(WidgetKinds kinds, DashboardSettings
 
    public const int MaxMeasures = 10;
 
+   /// <summary>The longest a tab's label may be.</summary>
+   public const int TabLabelLength = 60;
+
    /// <summary>
    /// The definition, checked, in its canonical form (cells by widget id, numbers as JSON writes them shortest); null
    /// when something is wrong, in <paramref name="errors"/> by field under <paramref name="prefix"/>.
@@ -90,7 +93,9 @@ public sealed partial class DefinitionRules(WidgetKinds kinds, DashboardSettings
       for (int i = 0; i < (definition.Filters?.Count ?? 0); i++) { Filter(check, definition.Filters![i], $"filters[{i}]"); }
       check.List(definition.Links, "links", settings.MaxSources, "links");
       if (definition.Links != null) { Links(check, definition.Links); }
-      for (int i = 0; i < (definition.Widgets?.Count ?? 0); i++) { Widget(check, definition.Widgets![i], $"widgets[{i}]"); }
+      bool tabbed = definition.Tabs is { Count: > 0 };
+      if (tabbed) { Tabs(check, definition.Tabs!); }
+      for (int i = 0; i < (definition.Widgets?.Count ?? 0); i++) { Widget(check, definition.Widgets![i], $"widgets[{i}]", tabbed); }
       Layout(check, definition.Layout, "layout");
       Refresh(check, definition.Refresh, "refresh");
       if (definition.Public == null) { check.Error("public", "Say what a public dashboard's viewers may see"); }
@@ -200,7 +205,24 @@ public sealed partial class DefinitionRules(WidgetKinds kinds, DashboardSettings
       }
    }
 
-   private void Widget(DefinitionCheck check, DashboardWidget? widget, string path)
+   /// <summary>Tabs of ids of the pattern, each once, with labels; as many as the settings allow.</summary>
+   private void Tabs(DefinitionCheck check, List<DashboardTab> tabs)
+   {
+      check.List(tabs, "tabs", settings.MaxTabs, "tabs");
+      for (int i = 0; i < tabs.Count; i++)
+      {
+         string path = $"tabs[{i}]";
+         if (tabs[i] is not { } tab)
+         {
+            check.Error(path, "A tab can't be null");
+            continue;
+         }
+         check.NewId(tab.Id, path + ".id", check.TabIds, "tab");
+         check.Label(tab.Label, path + ".label", required: true, max: TabLabelLength);
+      }
+   }
+
+   private void Widget(DefinitionCheck check, DashboardWidget? widget, string path, bool tabbed)
    {
       if (widget == null)
       {
@@ -208,6 +230,12 @@ public sealed partial class DefinitionRules(WidgetKinds kinds, DashboardSettings
          return;
       }
       if (widget.Title is { } title) { check.Label(title, path + ".title", required: false); }
+      if (!tabbed)
+      {
+         if (widget.Tab != null) { check.Error(path + ".tab", "The dashboard has no tabs"); }
+      }
+      else if (widget.Tab == null) { check.Error(path + ".tab", "Say which tab the widget is on"); }
+      else if (!check.TabIds.Contains(widget.Tab)) { check.Error(path + ".tab", $"There is no tab {widget.Tab}"); }
       if (widget.Config == null)
       {
          check.Error(path + ".config", "Say what the widget shows");
@@ -336,6 +364,8 @@ public sealed partial class DefinitionRules(WidgetKinds kinds, DashboardSettings
       return definition with
       {
          Layout = layout,
+         // No tabs are written as none, so a dashboard of one grid is always written the same.
+         Tabs = definition.Tabs is { Count: > 0 } tabs ? tabs : null,
          Filters = [.. definition.Filters.Select(f => f with { Value = Canonical(f.Value) })],
          Widgets = [.. definition.Widgets.Select(w => w with { Config = w.Config is DataWidgetConfig data ? Canonical(data) : w.Config })],
       };
@@ -371,6 +401,8 @@ public sealed class DefinitionCheck(DashboardSettings settings, Dictionary<strin
    public HashSet<string> WidgetIds { get; } = new(StringComparer.Ordinal);
 
    public HashSet<string> FilterIds { get; } = new(StringComparer.Ordinal);
+
+   public HashSet<string> TabIds { get; } = new(StringComparer.Ordinal);
 
    public void Error(string path, string message)
    {

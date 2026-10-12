@@ -11,6 +11,7 @@ import {
   reachedFrom,
 } from '../model/definition';
 import { selectionAfter } from '../model/selection';
+import { tabsOf, widgetsOn } from '../model/tabs';
 import type { SelectionAction } from '../model/widget-context';
 import type { EntityColor, PaletteView } from '../charts/series-colors';
 import type { DashboardHost } from './dashboard-host';
@@ -46,7 +47,8 @@ export function blankDefinition(): Definition {
 /**
  * A dashboard as a page shows it: its definition, the filters' values the viewer set and the slices chosen in its
  * widgets, which ask for their rows again when what reaches them changes (and only then), or when the dashboard is
- * refreshed. Each page provides its own.
+ * refreshed; with tabs, the tab shown, whose widgets alone ask (the others wait till theirs is). Each page provides
+ * its own.
  */
 @Injectable()
 export class DashboardStore {
@@ -64,6 +66,27 @@ export class DashboardStore {
   /** The slices chosen, by widget. */
   readonly selections = signal<Readonly<Record<string, Selection>>>({});
 
+  /** The tab the viewer chose (in the address, or the editor's); none chosen, the first is shown. */
+  readonly chosenTab = signal<string | null>(null);
+
+  /** The tab shown: the one chosen when the dashboard has it, else its first; null for a dashboard without tabs. */
+  readonly tab = computed(() => {
+    const tabs = tabsOf(this.definition());
+    return tabs.find((tab) => tab.id === this.chosenTab())?.id ?? tabs[0]?.id ?? null;
+  });
+
+  /** The widgets on the tab shown (every one, without tabs): the only ones asking for rows. */
+  readonly shown = computed<ReadonlySet<string>>(
+    () => new Set(widgetsOn(this.definition(), this.tab()).map((widget) => widget.id)),
+    { equal: (a, b) => a.size === b.size && [...a].every((id) => b.has(id)) },
+  );
+
+  /**
+   * Whether what the page's address says has been read (true where it has none): widgets aren't laid out before,
+   * so the tab it names is the first laid out, and the first tab's widgets ask for nothing they won't show.
+   */
+  readonly stateRead = signal(true);
+
   /** Goes up each time the dashboard is refreshed: widgets read their rows again, fresh. */
   readonly refreshes = signal(0);
 
@@ -78,14 +101,25 @@ export class DashboardStore {
   /** The widgets whose rows couldn't be read the last time they asked. */
   readonly failing = signal<ReadonlySet<string>>(new Set());
 
+  /** Of those, the ones shown: a widget on another tab doesn't ask again till it is shown. */
+  readonly failingShown = computed<ReadonlySet<string>>(() => {
+    const shown = this.shown();
+    return new Set([...this.failing()].filter((widget) => shown.has(widget)));
+  });
+
   /** What the server said is wrong with each widget (or may be), the last time it asked for its rows. */
   readonly issues = signal<ReadonlyMap<string, readonly DashboardIssue[]>>(new Map());
 
   /** What each chart coloured, and how, as it shows now (the editor's canvas reports them). */
   readonly colors = signal<ReadonlyMap<string, readonly EntityColor[]>>(new Map());
 
+  /** When the rows shown were read: the earliest of the shown widgets' (those on other tabs may be older). */
   readonly oldestRefresh = computed(() => {
-    const times = [...this.refreshedAt().values()].sort();
+    const shown = this.shown();
+    const times = [...this.refreshedAt()]
+      .filter(([widget]) => shown.has(widget))
+      .map(([, at]) => at)
+      .sort();
     return times[0] ?? null;
   });
 
@@ -118,6 +152,16 @@ export class DashboardStore {
       }
       this.failing.set(next);
     }
+  }
+
+  /** A widget gone from the dashboard: what was said of it goes too (one shown elsewhere now keeps its own). */
+  forget(widget: string): void {
+    if (this.definition().widgets.some((w) => w.id === widget)) {
+      return;
+    }
+    this.setLoading(widget, false);
+    this.setFailing(widget, false);
+    this.setRefreshedAt(widget, null);
   }
 
   /** A chart's colours as it shows them now; none, once it is gone. */

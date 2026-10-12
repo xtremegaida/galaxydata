@@ -92,6 +92,7 @@ parts (`GalaxyData__DataDirectory`).
 | `Dashboards:EmbedFrameAncestors` | `*` | The sites that may frame public dashboards, as `frame-ancestors` sources (`https://example.com`, `https://*.example.com`), or `*` for any. A dashboard may name fewer. |
 | `Dashboards:KeepRevisions` | `20` | The revisions kept of each dashboard, the newest (the published one whatever its age). |
 | `Dashboards:MaxWidgets`, `MaxSources`, `MaxFilters` | `50`, `20`, `30` | The most widgets, sources and filters a dashboard may have. |
+| `Dashboards:MaxTabs` | `20` | The most tabs a dashboard may be split into. |
 | `Dashboards:MaxDefinitionLength` | `262144` | The longest a dashboard's definition may be, as JSON, in characters. |
 | `Dashboards:MaxChartRows` | `10000` | The most rows (points, bars, slices) a chart shows. |
 | `Dashboards:MaxSelectionKeys`, `MaxPublicSelectionKeys` | `50`, `25` | The most slices chosen in a widget, signed in and through a public link. |
@@ -732,7 +733,10 @@ sources' entities; a forest), `filters` (on a source's field, of a kind: `values
 config's `kind` saying which), `refresh` (`manual`, or `interval` with `seconds`), `public` (`showData`), and
 `palette` (the palette its charts are drawn with; none, the built-in colours). Pie, bar and line charts may have a
 `palette` of their own, and bars `colorBy: category` (each bar its category's colour, with one measure and no
-series). Those are left out when unset, so a definition saved before palettes is written as it was.
+series). A dashboard may be split into `tabs` (`[{id, label}]`, in order, at most `Dashboards:MaxTabs`), each a grid
+of its own: every widget then names its `tab`, and its cells are in that tab's grid (the layout is otherwise as it
+was). Those are left out when unset (and no tabs, `[]`, are written as none), so a definition saved before palettes
+or tabs is written as it was. Tabs are only where widgets are shown: nothing a widget reads depends on them.
 
 - **Checked as it is saved:** its shape, ids (`[a-z0-9-]`, unique in their lists), what refers to what, each kind's
   rules and the limits (`Dashboards:*`): a 400 by the field's JSON path (`definition.widgets[2].config.measures[0]`).

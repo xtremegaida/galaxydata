@@ -5,7 +5,7 @@ import { sameJson } from '../api/same-json';
 /**
  * A dashboard's state in its address: the only place its grammar lives.
  *
- * `/dashboards/7?f.status=open,shipped&f.placed=last.3.month&s.by-city=!'Cape Town'&s.by-month=2026-01-01|open`
+ * `/dashboards/7?f.status=open,shipped&f.placed=last.3.month&s.by-city=!'Cape Town'&s.by-month=2026-01-01|open&tab=customers`
  *
  * - `f.<filter>`: the value of a filter the viewer may change, when it isn't the dashboard's own. By the filter's
  *   kind: values `a,b` (`!` first for those left out: `!a,b`); a range `from~to` (either side empty: from or up
@@ -14,6 +14,7 @@ import { sameJson } from '../api/same-json';
  *   it has one, doesn't hold).
  * - `s.<widget>`: the slices chosen in a widget, `,` between them (`!` first when they are left out instead); a
  *   slice of two parts (a series' bar) has `|` between them.
+ * - `tab`: the tab shown, by its id, when it isn't the first.
  *
  * Values keep their JSON types: bare `null`, `true`, `false` and numbers are those; anything else bare is text.
  * Text that would read as one of them, is empty, holds `,`, `|`, `~` or `'`, or starts with `!`, is quoted:
@@ -26,10 +27,14 @@ type Definition = Schema<'DashboardDefinition'>;
 type Filter = Schema<'DashboardFilter'>;
 type RelativeRange = Schema<'RelativeRange'>;
 
-/** What the address holds: the values of filters the viewer set (null: cleared), and the slices chosen by widget. */
+/**
+ * What the address holds: the values of filters the viewer set (null: cleared), the slices chosen by widget, and
+ * the tab shown (none said: the first).
+ */
 export interface DashboardUrlState {
   readonly filters: Readonly<Record<string, ConditionValue | null>>;
   readonly selections: Readonly<Record<string, SelectionState>>;
+  readonly tab?: string | null;
 }
 
 /** An address read: its state, and what in it couldn't be read (and was left out). */
@@ -40,18 +45,19 @@ export interface ReadDashboardState {
 
 const filterPrefix = 'f.';
 const selectionPrefix = 's.';
+const tabParam = 'tab';
 const literal = /^(null|true|false|-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?)$/;
 const modes: readonly RelativeRange['mode'][] = ['last', 'this', 'previous', 'toDate'];
 const units: readonly RelativeRange['unit'][] = ['day', 'week', 'month', 'quarter', 'year'];
 
-/** Whether a query parameter is one of a dashboard's state (a filter's or a widget's). */
+/** Whether a query parameter is one of a dashboard's state (a filter's, a widget's, or the tab shown). */
 export function isDashboardParam(name: string): boolean {
-  return name.startsWith(filterPrefix) || name.startsWith(selectionPrefix);
+  return name.startsWith(filterPrefix) || name.startsWith(selectionPrefix) || name === tabParam;
 }
 
 /**
  * The query parameters of a dashboard's state: the filters' values unlike their defaults (and that can be written:
- * ranges from, up to, or between), and the slices chosen.
+ * ranges from, up to, or between), the slices chosen, and the tab shown when it is there and isn't the first.
  */
 export function dashboardParams(definition: Definition, state: DashboardUrlState): Params {
   const params: Record<string, string> = {};
@@ -75,13 +81,17 @@ export function dashboardParams(definition: Definition, state: DashboardUrlState
         (selection.mode === 'exclude' ? '!' : '') + keys.map((key) => key.join('|')).join(',');
     }
   }
+  const tabs = definition.tabs ?? [];
+  if (state.tab && tabs.some((tab) => tab.id === state.tab) && tabs[0].id !== state.tab) {
+    params[tabParam] = state.tab;
+  }
   return params;
 }
 
 /**
  * A dashboard's state from its address. Filters that aren't there, the viewer may not change or aren't shown,
- * widgets that aren't there or don't choose slices, and values that can't be read are problems, and left out; of a
- * selection longer than `maxKeys`, its first are kept.
+ * widgets that aren't there or don't choose slices, tabs that aren't there, and values that can't be read are
+ * problems, and left out; of a selection longer than `maxKeys`, its first are kept.
  */
 export function readDashboardParams(
   definition: Definition,
@@ -91,12 +101,22 @@ export function readDashboardParams(
   const problems: string[] = [];
   const filters: Record<string, ConditionValue | null> = {};
   const selections: Record<string, SelectionState> = {};
+  let tab: string | null = null;
   for (const [name, raw] of Object.entries(params)) {
     if (!isDashboardParam(name)) {
       continue;
     }
     const text = Array.isArray(raw) ? String(raw.at(-1) ?? '') : String(raw ?? '');
-    if (name.startsWith(filterPrefix)) {
+    if (name === tabParam) {
+      const tabs = definition.tabs ?? [];
+      if (tabs.length === 0) {
+        problems.push('The dashboard has no tabs.');
+      } else if (!tabs.some((t) => t.id === text)) {
+        problems.push(`There's no tab ${text}.`);
+      } else {
+        tab = text;
+      }
+    } else if (name.startsWith(filterPrefix)) {
       const id = name.slice(filterPrefix.length);
       const filter = definition.filters.find((f) => f.id === id);
       if (!filter) {
@@ -135,7 +155,7 @@ export function readDashboardParams(
       }
     }
   }
-  return { state: { filters, selections }, problems };
+  return { state: tab === null ? { filters, selections } : { filters, selections, tab }, problems };
 }
 
 /** A filter's value as its kind writes it; null for one that can't be (a range above or below, not from or to). */

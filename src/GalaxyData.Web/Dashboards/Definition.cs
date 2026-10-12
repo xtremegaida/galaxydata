@@ -9,7 +9,8 @@ namespace GalaxyData.Web.Dashboards;
 /// it is saved (<see cref="DefinitionRules"/>); entities, columns and navigations are checked when it is shown, as the
 /// catalog changes after a save. <see cref="Palette"/>: the palette its charts are drawn with (none: the built-in
 /// colours), which a chart may name its own of; left out when there is none, so definitions saved before palettes
-/// are written as they were.
+/// are written as they were. <see cref="Tabs"/>: the grids it is split into, in order, each widget on one of them
+/// (<see cref="DashboardWidget.Tab"/>); left out for a dashboard of one grid, which is written as it was.
 /// </summary>
 public sealed record DashboardDefinition(
    int Schema,
@@ -20,7 +21,8 @@ public sealed record DashboardDefinition(
    List<DashboardWidget> Widgets,
    RefreshPolicy Refresh,
    PublicSettings Public,
-   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Palette = null)
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Palette = null,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] List<DashboardTab>? Tabs = null)
 {
    public const int CurrentSchema = 1;
 
@@ -30,9 +32,16 @@ public sealed record DashboardDefinition(
 }
 
 /// <summary>
+/// A tab of the dashboard's: a grid of its own, under its label. Its id is fixed when it is made (widgets name it,
+/// and so do addresses that open it); renaming it changes its label.
+/// </summary>
+public sealed record DashboardTab(string Id, string Label);
+
+/// <summary>
 /// The grid: rows of <see cref="RowHeight"/> pixels with <see cref="Gap"/> between cells, and width ranges
 /// (<see cref="Breakpoints"/>, ascending, the first from 0) with their numbers of columns. The widest is the one
-/// designed (<see cref="Items"/>, by widget id); narrower ones are derived from it, unless overridden.
+/// designed (<see cref="Items"/>, by widget id); narrower ones are derived from it, unless overridden. With tabs,
+/// each tab is a grid of its own: its widgets' cells are in its grid, whatever the others' are.
 /// </summary>
 public sealed record DashboardLayout(
    int RowHeight,
@@ -165,8 +174,15 @@ public sealed record RelativeRange(RelativeUnit Unit, int Count, RelativeMode Mo
 /// <summary>A condition of a widget's own, on a field of its source.</summary>
 public sealed record WidgetCondition(FieldRef Field, ConditionValue Value);
 
-/// <summary>A widget: its id (unique in the dashboard), its title (none: no title bar), and what it shows (<see cref="WidgetConfig"/>, by kind).</summary>
-public sealed record DashboardWidget(string Id, string? Title, WidgetConfig Config);
+/// <summary>
+/// A widget: its id (unique in the dashboard), its title (none: no title bar), what it shows (<see cref="WidgetConfig"/>,
+/// by kind), and the tab it is on (of a dashboard with tabs; left out otherwise).
+/// </summary>
+public sealed record DashboardWidget(
+   string Id,
+   string? Title,
+   WidgetConfig Config,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Tab = null);
 
 /// <summary>What a widget shows, by its kind. A kind is added here, with its rules and query (<c>IWidgetKind</c>), and in the client's registry.</summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]

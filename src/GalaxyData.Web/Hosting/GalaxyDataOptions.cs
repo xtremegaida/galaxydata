@@ -110,6 +110,10 @@ public sealed class DashboardSettings
    [Range(0, 200)]
    public int MaxFilters { get; set; } = 30;
 
+   /// <summary>The most tabs a dashboard may be split into.</summary>
+   [Range(1, 100)]
+   public int MaxTabs { get; set; } = 20;
+
    /// <summary>The longest a dashboard's definition may be, as JSON, in characters.</summary>
    [Range(1024, 16 * 1024 * 1024)]
    public int MaxDefinitionLength { get; set; } = 256 * 1024;

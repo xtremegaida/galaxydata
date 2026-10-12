@@ -7,6 +7,7 @@ export type Source = Schema<'DashboardSource'>;
 export type Filter = Schema<'DashboardFilter'>;
 export type Link = Schema<'DashboardLink'>;
 export type Layout = Schema<'DashboardLayout'>;
+export type Tab = Schema<'DashboardTab'>;
 export type Breakpoint = Schema<'Breakpoint'>;
 export type Placement = Schema<'Placement'>;
 export type ConditionValue = Schema<'ConditionValue'>;

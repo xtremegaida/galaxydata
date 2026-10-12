@@ -26,8 +26,8 @@ public sealed class PublicDashboardApiTests
    private static Listens All => Definitions.All;
 
    /// <summary>
-   /// A dashboard of the shop's orders: by state (a label unlike its column's), a pie of cities, a raw table, a visible
-   /// filter, and a hidden one leaving out Gamma Inc.
+   /// A dashboard of the shop's orders: by state (a label unlike its column's), a pie of cities (on a tab of its own),
+   /// a raw table, a visible filter, and a hidden one leaving out Gamma Inc.
    /// </summary>
    private static DashboardDefinition Definition()
    {
@@ -41,8 +41,8 @@ public sealed class PublicDashboardApiTests
       BarConfig broken = byState with { Dimension = new Dimension(new FieldRef([], "colour"), null, "Colour") };
       List<DashboardWidget> widgets =
       [
-         new("heading", null, new TextConfig("# Sales")), new("by-state", "By state", byState), new("towns", "Towns", cities), new("amounts", null, raw),
-         new("broken", null, broken),
+         new("heading", null, new TextConfig("# Sales"), "orders"), new("by-state", "By state", byState, "orders"), new("towns", "Towns", cities, "places"),
+         new("amounts", null, raw, "orders"), new("broken", null, broken, "orders"),
       ];
       return blank with
       {
@@ -55,6 +55,7 @@ public sealed class PublicDashboardApiTests
                false, false, true, []),
          ],
          Widgets = widgets,
+         Tabs = [new DashboardTab("orders", "Orders"), new DashboardTab("places", "Places")],
          Layout = DashboardLayout.Default() with { Items = widgets.Select((w, i) => (w.Id, new Placement(0, i, 12, 2))).ToDictionary(p => p.Id, p => p.Item2) },
          Refresh = new RefreshPolicy(RefreshMode.Interval, 31),
       };
@@ -107,6 +108,8 @@ public sealed class PublicDashboardApiTests
       (definition.GetProperty("sources").GetArrayLength(), definition.GetProperty("links").GetArrayLength()).ShouldBe((0, 0));
       definition.GetProperty("filters").EnumerateArray().Select(f => f.GetProperty("id").GetString()).ShouldBe(["state"], "the hidden filter stays on the server");
       definition.GetProperty("refresh").GetProperty("seconds").GetInt32().ShouldBe(31, "longer than answers are kept");
+      definition.GetProperty("tabs").EnumerateArray().Select(t => t.GetProperty("label").GetString()).ShouldBe(["Orders", "Places"], "its tabs, as the widgets' titles");
+      definition.GetProperty("widgets")[2].GetProperty("tab").GetString().ShouldBe("places");
       JsonElement bar = definition.GetProperty("widgets")[1].GetProperty("config");
       (bar.GetProperty("source").GetString(), bar.GetProperty("conditions").GetArrayLength(), bar.GetProperty("dimension").GetProperty("label").GetString())
          .ShouldBe((string.Empty, 0, "State"));

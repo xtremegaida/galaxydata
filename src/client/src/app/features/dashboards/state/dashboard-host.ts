@@ -2,6 +2,7 @@ import { Observable, defer, finalize } from 'rxjs';
 import type { ApiClient, Schema } from '../../../core/api/api-client';
 import type { DashboardState, Definition, WidgetData } from '../model/definition';
 import { sliceOf } from '../model/slice';
+import { untabbed } from '../model/tabs';
 
 export type WidgetPage = Schema<'WidgetPage'>;
 export type FilterValues = Schema<'FilterValuesDto'>;
@@ -166,7 +167,8 @@ export class InlineHost implements DashboardHost {
   values(filter: string, state: DashboardState, search: string | null): Observable<FilterValues> {
     return this.lanes.run(() =>
       this.api.post('/api/dashboards/filter-values', {
-        body: { slice: this.definition(), filter, state, search },
+        // The draft, as one grid: a tab's label being typed is nothing its values depend on.
+        body: { slice: untabbed(this.definition()), filter, state, search },
       }),
     );
   }

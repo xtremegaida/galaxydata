@@ -18,10 +18,12 @@ import {
 import {
   duplicateWidget,
   hideAt,
+  moveToTab,
   removeWidget,
   setFilterApplies,
   updateWidget,
 } from '../../model/definition-ops';
+import { tabOf, tabsOf } from '../../model/tabs';
 import { WIDGET_KINDS, kindOf } from '../../model/widget-registry';
 import { ChartColors } from '../controls/chart-colors';
 import { ConditionList } from '../controls/condition-editor';
@@ -31,7 +33,7 @@ import { KindSettingsHost } from './kind-settings-host';
 type Listens = DataConfig['listens'];
 
 /**
- * The settings of the widget chosen: its title; for widgets of data, their source, whether choosing their slices
+ * The settings of the widget chosen: its title and (with tabs) its tab; for widgets of data, their source, whether choosing their slices
  * filters others, which they listen to, which filters apply to them, and their own conditions; then their kind's
  * own (loaded as the kind's editor). Every change is a step of the history.
  */
@@ -69,6 +71,17 @@ type Listens = DataConfig['listens'];
             <mat-hint>Without one, the text stands on the page, unframed</mat-hint>
           }
         </mat-form-field>
+        @if (tabs().length > 0) {
+          <mat-form-field subscriptSizing="dynamic">
+            <mat-label>Tab</mat-label>
+            <mat-select [value]="tab()" (valueChange)="movedTo($event)">
+              @for (tab of tabs(); track tab.id; let i = $index) {
+                <mat-option [value]="tab.id">{{ tab.label.trim() || 'Tab ' + (i + 1) }}</mat-option>
+              }
+            </mat-select>
+            <mat-hint>Moved to another, it goes where it first fits there</mat-hint>
+          </mat-form-field>
+        }
         @if (data(); as config) {
           <mat-form-field subscriptSizing="dynamic">
             <mat-label>Source</mat-label>
@@ -310,6 +323,21 @@ export class WidgetPanel {
     );
   }
 
+  protected readonly tabs = computed(() => tabsOf(this.store.draft()));
+  protected readonly tab = computed(() => {
+    const widget = this.widget();
+    return widget ? tabOf(this.store.draft(), widget) : null;
+  });
+
+  protected movedTo(tab: string): void {
+    const id = this.widget()!.id;
+    const label =
+      this.tabs()
+        .find((t) => t.id === tab)
+        ?.label.trim() || tab;
+    this.store.apply(`Moved ${this.store.nameOf(id)} to ${label}`, (d) => moveToTab(d, id, tab));
+  }
+
   protected duplicate(): void {
     const id = this.widget()!.id;
     let made = id;
@@ -318,7 +346,7 @@ export class WidgetPanel {
       made = copied.id;
       return copied.definition;
     });
-    this.store.selected.set(made);
+    this.store.select(made);
   }
 
   protected remove(): void {

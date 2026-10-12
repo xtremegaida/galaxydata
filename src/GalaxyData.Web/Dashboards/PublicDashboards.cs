@@ -22,7 +22,8 @@ public sealed record PublicDashboard(int Id, string Name, string? Description, D
 /// <summary>
 /// A public dashboard as anyone with its link sees it: its name, and its published copy without what is the
 /// server's alone: no sources, links, conditions, fields or hidden filters (labels and display settings stay, as
-/// the widgets show them). A refresh interval is never shorter than the time public answers are kept. The palettes
+/// the widgets show them, and so do its tabs and the tab each widget is on). A refresh interval is never shorter
+/// than the time public answers are kept. The palettes
 /// it names, without their names, owners or overrides (whose labels may be of rows it doesn't show: its answers
 /// carry the overrides of their own labels instead).
 /// </summary>

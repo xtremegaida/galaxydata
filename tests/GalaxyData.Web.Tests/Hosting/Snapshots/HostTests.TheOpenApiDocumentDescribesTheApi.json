@@ -11168,6 +11168,15 @@
               "integer"
             ],
             "format": "int32"
+          },
+          "tabs": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/DashboardTab"
+            }
           }
         }
       },
@@ -11785,6 +11794,21 @@
           }
         }
       },
+      "DashboardTab": {
+        "required": [
+          "id",
+          "label"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
       "DashboardVersionRequest": {
         "required": [
           "version"
@@ -11816,6 +11840,12 @@
           },
           "config": {
             "$ref": "#/components/schemas/WidgetConfig"
+          },
+          "tab": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

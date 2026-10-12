@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 import { elementSize } from '../../../core/browser/element-size';
 import { type Definition, type Widget, configOf } from '../model/definition';
+import { widgetsOn } from '../model/tabs';
 import { WIDGET_KINDS, kindOf } from '../model/widget-registry';
 import { WIDGET_EDITING } from '../view/widget-editing';
 import { WidgetFrame } from '../view/widget-frame';
@@ -30,9 +31,10 @@ export interface PlacedWidget {
 }
 
 /**
- * The dashboard's grid: as many columns as the breakpoint its own width reaches (an embedded dashboard's is its
- * frame's), rows of the layout's height, the widgets in their cells as the breakpoint lays them out. A CSS grid,
- * so its height is its widgets', and its order the reading order (tabbing follows what is seen).
+ * The dashboard's grid (a tab's, with tabs): as many columns as the breakpoint its own width reaches (an embedded
+ * dashboard's is its frame's), rows of the layout's height, the widgets in their cells as the breakpoint lays them
+ * out. A CSS grid, so its height is its widgets', and its order the reading order (tabbing follows what is seen).
+ * A tab's grid not shown keeps its widgets (their rows and charts), which ask for nothing till it is.
  */
 @Component({
   selector: 'gd-dashboard-grid',
@@ -43,12 +45,15 @@ export interface PlacedWidget {
     '[style.--gd-row-height]': 'definition().layout.rowHeight + "px"',
     '[style.--gd-gap]': 'definition().layout.gap + "px"',
     '[attr.data-gd-breakpoint]': 'breakpoint().id',
+    '[attr.data-gd-grid]': 'tab()',
+    '[attr.data-gd-active]': 'active() ? "" : null',
   },
   template: `
     @for (placed of placed(); track placed.widget.id) {
       <gd-widget-frame
         [widget]="placed.widget"
         [editing]="editing !== null"
+        [shown]="active()"
         [style.grid-column]="placed.x + 1 + ' / span ' + placed.w"
         [style.grid-row]="placed.y + 1 + ' / span ' + placed.h"
         [attr.data-gd-cell]="placed.x + ',' + placed.y + ',' + placed.w + ',' + placed.h"
@@ -69,6 +74,10 @@ export class DashboardGrid {
   readonly definition = input.required<Definition>();
   /** A breakpoint to show whatever the width (the editor's); else the one the width reaches. */
   readonly forced = input<string | null>(null);
+  /** The tab whose widgets it lays out; null, every widget (a dashboard without tabs). */
+  readonly tab = input<string | null>(null);
+  /** Whether it is shown: its widgets ask for their rows only then. */
+  readonly active = input(true);
 
   private readonly kinds = inject(WIDGET_KINDS);
   /** The editor's, on its canvas. */
@@ -86,12 +95,14 @@ export class DashboardGrid {
 
   readonly columns = computed(() => this.breakpoint().columns);
 
+  private readonly widgets = computed(() => widgetsOn(this.definition(), this.tab()));
+
   /** Widgets' least sizes at the breakpoint, from their kinds' least widths. */
   readonly mins = computed<MinSizes>(() => {
     const breakpoint = this.breakpoint();
     const gap = this.definition().layout.gap;
     return Object.fromEntries(
-      this.definition().widgets.map((w) => [
+      this.widgets().map((w) => [
         w.id,
         {
           w: minColumns(kindOf(this.kinds, configOf(w))?.minWidthPx ?? 120, breakpoint, gap),
@@ -105,7 +116,7 @@ export class DashboardGrid {
     effectiveLayout(
       this.definition().layout,
       this.breakpoint().id,
-      this.definition().widgets.map((w) => w.id),
+      this.widgets().map((w) => w.id),
       this.mins(),
     ),
   );
@@ -113,9 +124,9 @@ export class DashboardGrid {
   readonly placed = computed<PlacedWidget[]>(() => {
     const laidOut = this.layout().cells;
     // While the editor moves a widget, its cells are the drop's; the order stays the layout's, so the widget's
-    // place in the page (and the keyboard's focus on it) holds till it is dropped.
-    const cells = this.editing?.preview() ?? laidOut;
-    const widgets = new Map(this.definition().widgets.map((w) => [w.id, w]));
+    // place in the page (and the keyboard's focus on it) holds till it is dropped. Only the shown tab's move.
+    const cells = (this.active() ? this.editing?.preview() : null) ?? laidOut;
+    const widgets = new Map(this.widgets().map((w) => [w.id, w]));
     return readingOrder(laidOut)
       .filter((id) => widgets.has(id) && id in cells)
       .map((id) => ({ widget: widgets.get(id)!, ...cells[id] }));

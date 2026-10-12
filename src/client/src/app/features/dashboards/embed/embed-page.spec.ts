@@ -4,7 +4,13 @@ import { TestBed } from '@angular/core/testing';
 import { MATERIAL_ANIMATIONS } from '@angular/material/core';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { publicOf, rowsOf, salesDefinition } from '../../../../testing/dashboards';
+import { Router } from '@angular/router';
+import {
+  publicOf,
+  rowsOf,
+  salesDefinition,
+  tabbedDefinition,
+} from '../../../../testing/dashboards';
 import { FakeECharts, fakeEChartsProviders } from '../../../../testing/echarts';
 import { eventually, requestTo, settle } from '../../../../testing/http';
 import { textOf, wordsOf } from '../../../../testing/pages';
@@ -181,6 +187,28 @@ describe('an embedded dashboard', () => {
     await answer();
     await eventually(harness, () => drawn(['#abcdef', '#333333']));
     expect(slices()).toEqual(['#abcdef', '#333333']);
+  });
+
+  it('opens the tab its address names, its widgets alone asking, and says the tab shown in it', async () => {
+    const harness = await RouterTestingHarness.create(`/embed/${token}?tab=customers`);
+    (await requestTo(http, `/api/public/dashboards/${token}`)).flush({
+      name: 'Sales',
+      description: null,
+      definition: publicOf(tabbedDefinition()),
+      palettes: [],
+    });
+    expect(Object.keys(await rows())).toEqual(['by-city']);
+    harness.detectChanges();
+    const page = harness.routeNativeElement as HTMLElement;
+    page.querySelector<HTMLElement>('[data-gd-tab="orders"]')!.click();
+    harness.detectChanges();
+    expect(Object.keys(await rows())).toEqual(['by-status']);
+    expect(TestBed.inject(Router).url).toBe(`/embed/${token}`);
+    page.querySelector<HTMLElement>('[data-gd-tab="customers"]')!.click();
+    harness.detectChanges();
+    expect(await rows()).toEqual({});
+    expect(TestBed.inject(Router).url).toBe(`/embed/${token}?tab=customers`);
+    http.expectNone('/api/auth/session');
   });
 
   it("says plainly when the dashboard isn't there, and asks no one to sign in", async () => {

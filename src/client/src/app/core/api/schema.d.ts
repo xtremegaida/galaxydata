@@ -1757,6 +1757,7 @@ export interface components {
             public: components["schemas"]["PublicSettings"];
             /** Format: int32 */
             palette?: null | number;
+            tabs?: null | components["schemas"]["DashboardTab"][];
         };
         DashboardDto: {
             /** Format: int32 */
@@ -1908,6 +1909,10 @@ export interface components {
             /** Format: int32 */
             version: number;
         };
+        DashboardTab: {
+            id: string;
+            label: string;
+        };
         DashboardVersionRequest: {
             /** Format: int32 */
             version: number;
@@ -1916,6 +1921,7 @@ export interface components {
             id: string;
             title: null | string;
             config: components["schemas"]["WidgetConfig"];
+            tab?: null | string;
         };
         DiagnosticDto: {
             code: string;
@@ -3302,6 +3308,7 @@ export type DashboardSharingRequest = components['schemas']['DashboardSharingReq
 export type DashboardSource = components['schemas']['DashboardSource'];
 export type DashboardState = components['schemas']['DashboardState'];
 export type DashboardSummaryDto = components['schemas']['DashboardSummaryDto'];
+export type DashboardTab = components['schemas']['DashboardTab'];
 export type DashboardVersionRequest = components['schemas']['DashboardVersionRequest'];
 export type DashboardWidget = components['schemas']['DashboardWidget'];
 export type DiagnosticDto = components['schemas']['DiagnosticDto'];

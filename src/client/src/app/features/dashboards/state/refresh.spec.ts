@@ -1,5 +1,6 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { tabbedDefinition } from '../../../../testing/dashboards';
 import { DashboardStore } from './dashboard-store';
 import { REFRESH_CLOCK, type RefreshPolicy, refreshOnTimer } from './refresh';
 
@@ -72,15 +73,29 @@ describe('refreshing on a timer', () => {
   });
 
   it('waits longer after rows that couldn’t be read', async () => {
-    store.setFailing('a', true);
+    store.definition.set(tabbedDefinition());
+    store.setFailing('by-status', true);
     TestBed.tick();
     await wait(30_000);
     expect(store.refreshes()).toBe(1);
-    store.setFailing('a', false);
-    store.setFailing('a', true);
+    store.setFailing('by-status', false);
+    store.setFailing('by-status', true);
     TestBed.tick();
     await wait(30_000);
     expect(store.refreshes()).toBe(1);
+    await wait(30_000);
+    expect(store.refreshes()).toBe(2);
+  });
+
+  it("doesn't wait longer for a widget on a tab not shown, which doesn't ask", async () => {
+    store.definition.set(tabbedDefinition());
+    store.setFailing('by-city', true);
+    TestBed.tick();
+    await wait(30_000);
+    expect(store.refreshes()).toBe(1);
+    store.setFailing('by-city', false);
+    store.setFailing('by-city', true);
+    TestBed.tick();
     await wait(30_000);
     expect(store.refreshes()).toBe(2);
   });

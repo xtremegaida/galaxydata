@@ -592,6 +592,89 @@ test('colours labels by a palette: its own colours in every chart, and only thos
   await share.getByRole('button', { name: 'Close' }).click();
 });
 
+test('splits it into tabs: only the tab shown reads its rows, another once it is shown', async () => {
+  await page.goto(`${dashboardUrl}/edit`);
+  await settings().getByRole('tab', { name: 'Layout' }).click();
+  await settings()
+    .getByRole('textbox', { name: 'The first tab, holding its widgets' })
+    .fill('Orders');
+  await settings().getByRole('button', { name: 'Split into tabs' }).click();
+  await settings().getByRole('textbox', { name: 'New tab' }).fill('Customers');
+  await settings().getByRole('button', { name: 'Add', exact: true }).click();
+  const canvasTabs = page.locator('gd-editor-canvas').getByRole('tab');
+  await expect(canvasTabs).toHaveText(['Orders', 'Customers']);
+  await expect(page.locator('gd-editor-canvas')).toContainText('This tab is empty');
+
+  // The table moved to the new tab, by its settings.
+  await canvasTabs.filter({ hasText: 'Orders' }).click();
+  await frameOf('table').locator('.cover').click();
+  await settings().getByRole('tab', { name: 'Layout' }).focus();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  await settings().getByRole('combobox', { name: 'Tab', exact: true }).click();
+  await page.getByRole('option', { name: 'Customers', exact: true }).click();
+  await expect(canvasTabs.filter({ hasText: 'Customers' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(frameOf('table')).toBeVisible();
+  await page.keyboard.press('ControlOrMeta+s');
+  await expect(page.getByText('Not saved')).toBeHidden();
+
+  await page.goto(dashboardUrl);
+  await page.getByRole('button', { name: 'Publish' }).click();
+  const publish = page.getByRole('dialog', { name: 'Publish Shop' });
+  // Its widgets are as they were, on tabs: what changed is where they are.
+  await expect(publish).toContainText('Changed its layout, its tabs.');
+  await expect(publish).not.toContainText('Orders by status');
+  await publish.getByRole('button', { name: 'Publish' }).click();
+  await expect(publish).toBeHidden();
+
+  // The rows each widget reads, from now.
+  const read: string[] = [];
+  const reads = (request: { url(): string; method(): string }) => {
+    const found = /\/widgets\/([\w-]+)\/data$/.exec(new URL(request.url()).pathname);
+    if (found && request.method() === 'POST') {
+      read.push(found[1]);
+    }
+  };
+  page.on('request', reads);
+  await page.reload();
+  await expect(widget('Orders by status').locator('canvas')).toBeVisible({ timeout: 30_000 });
+  await expect(widget('Customers by city').locator('canvas')).toBeVisible();
+  await page.getByRole('button', { name: 'Actions of Orders by status' }).click();
+  await page.getByRole('menuitem', { name: 'Show as table' }).click();
+  await widget('Orders by status').getByRole('button', { name: 'Add open' }).click();
+  await expect(page).toHaveURL(/[?&]s\.bar=open\b/);
+  await expect.poll(() => read.filter((w) => w === 'pie').length).toBe(2);
+  expect(read.filter((w) => w === 'table')).toEqual([]);
+
+  // Shown, the table reads its rows (with the slice chosen on the other tab); back and forth, nothing more.
+  const tabs = page.getByRole('tablist', { name: 'Tabs' }).getByRole('tab');
+  // Its rows: the customers with an open order.
+  const customers = widget('Orders by customer').getByRole('row', { name: /^Acme Ltd\b/ });
+  await tabs.filter({ hasText: 'Customers' }).click();
+  await expect(page).toHaveURL(/[?&]tab=customers\b/);
+  await expect(customers).toBeVisible({
+    timeout: 30_000,
+  });
+  await tabs.filter({ hasText: 'Orders' }).click();
+  await expect(widget('Orders by status')).toBeVisible();
+  await tabs.filter({ hasText: 'Customers' }).click();
+  await expect(widget('Orders by customer')).toBeVisible();
+  expect(read.filter((w) => w === 'table')).toHaveLength(1);
+
+  // The address keeps the tab: reloaded, it is shown, and the other's widgets read nothing.
+  read.length = 0;
+  await page.reload();
+  await expect(customers).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(tabs.filter({ hasText: 'Customers' })).toHaveAttribute('aria-selected', 'true');
+  expect(read).toEqual(['table']);
+  page.off('request', reads);
+});
+
 test('says nothing in the console', () => {
   expect(complaints).toEqual([]);
 });

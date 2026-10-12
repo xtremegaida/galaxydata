@@ -39,15 +39,18 @@ import { WIDGET_KINDS, type WidgetKind } from '../model/widget-registry';
 import { InlineHost } from '../state/dashboard-host';
 import { DashboardStore } from '../state/dashboard-store';
 import { EditorCanvas } from './editor-canvas';
-import { type DashboardDto, type EditorIssue, EditorStore, type IssuePlace } from './editor-store';
+import {
+  type DashboardDto,
+  type EditorIssue,
+  EditorStore,
+  type IssuePlace,
+  panels,
+} from './editor-store';
 import { EntityCatalog } from './entity-catalog';
 import { FiltersPanel } from './panels/filters-panel';
 import { IssuesPanel, LayoutPanel, RefreshPanel } from './panels/layout-panels';
 import { SourcesPanel } from './panels/sources-panel';
 import { WidgetPanel } from './panels/widget-panel';
-
-/** The side panel's tabs, in order. */
-const tabs = ['widget', 'sources', 'filters', 'layout', 'refresh', 'issues'] as const;
 
 /** A save that couldn't be: what to say, and whether it was someone else's change (to read it again, or copy). */
 interface SaveProblem {
@@ -68,7 +71,7 @@ function placeOf(field: string, sent: Definition): IssuePlace | null {
   if (field.startsWith('definition.filters')) {
     return { panel: 'filters' };
   }
-  if (field.startsWith('definition.layout')) {
+  if (field.startsWith('definition.layout') || field.startsWith('definition.tabs')) {
     return { panel: 'layout' };
   }
   if (field.startsWith('definition.refresh') || field === 'definition.palette') {
@@ -232,8 +235,8 @@ function placeOf(field: string, sent: Definition): IssuePlace | null {
           <aside class="side" aria-label="Settings">
             <mat-tab-group
               animationDuration="0ms"
-              [selectedIndex]="tab()"
-              (selectedIndexChange)="tab.set($event)"
+              [selectedIndex]="store.panel()"
+              (selectedIndexChange)="store.panel.set($event)"
               mat-stretch-tabs="false"
             >
               <mat-tab label="Widget"><gd-widget-panel class="tab" /></mat-tab>
@@ -356,7 +359,6 @@ export class DashboardEditor implements HasUnsavedChanges {
   protected readonly kinds = inject(WIDGET_KINDS);
   private readonly nameField = viewChild<ElementRef<HTMLInputElement>>('name');
 
-  protected readonly tab = signal(0);
   protected readonly saving = signal(false);
   protected readonly nameProblem = signal<string | null>(null);
   protected readonly saveProblem = signal<SaveProblem | null>(null);
@@ -435,21 +437,21 @@ export class DashboardEditor implements HasUnsavedChanges {
     const source = this.store.draft().sources[0]?.id ?? null;
     let made = '';
     this.store.apply(`Added a ${kind.label.toLowerCase()}`, (d) => {
-      const added = addWidget(d, kind.defaults(source), kind.defaultSize);
+      const added = addWidget(d, kind.defaults(source), kind.defaultSize, null, this.store.tab());
       made = added.id;
       return added.definition;
     });
-    this.store.selected.set(made);
-    this.tab.set(0);
+    this.store.select(made);
+    this.store.panel.set(0);
     this.announcer.announce(`Added ${this.store.nameOf(made)}`);
   }
 
   protected goTo(place: IssuePlace): void {
     if ('widget' in place) {
-      this.store.selected.set(place.widget);
-      this.tab.set(0);
+      this.store.select(place.widget);
+      this.store.panel.set(0);
     } else {
-      this.tab.set(tabs.indexOf(place.panel));
+      this.store.panel.set(panels.indexOf(place.panel));
     }
   }
 
@@ -557,7 +559,7 @@ export class DashboardEditor implements HasUnsavedChanges {
         conflict: false,
       });
       if (issues.length > 0) {
-        this.tab.set(tabs.indexOf('issues'));
+        this.store.panel.set(panels.indexOf('issues'));
       }
       return;
     }

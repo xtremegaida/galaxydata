@@ -21,11 +21,12 @@ import {
   isData,
   newId,
 } from './definition';
+import { cellsOn, gridsOf, onTab, perTab, stack, tabOf, tabsOf, widgetsOn } from './tabs';
 
 /**
  * Edits of a dashboard's definition, each a pure function giving a new one (the editor applies them, and undoes
  * them by keeping the ones before). Ids are kept unique; what refers to a widget, source or filter removed goes
- * with it.
+ * with it. With tabs, each tab is a grid of its own: an edit of a widget's cells lays out its tab's alone.
  */
 
 type RefreshPolicy = Definition['refresh'];
@@ -36,22 +37,26 @@ export function designedOf(definition: Definition): Breakpoint {
 }
 
 /**
- * A widget added: an id from its kind, placed where it first fits in the designed layout (its size, given for 12
- * columns, scaled to the designed ones), and in each laid out narrower one.
+ * A widget added: an id from its kind, on a tab (the first, when the one given isn't there; none without tabs),
+ * placed where it first fits in its tab's designed layout (its size, given for 12 columns, scaled to the designed
+ * ones), and in each laid out narrower one.
  */
 export function addWidget(
   definition: Definition,
   config: WidgetConfig,
   size: { w: number; h: number },
   title: string | null = null,
+  tab: string | null = null,
 ): { definition: Definition; id: string } {
   const id = newId(
     config.kind,
     definition.widgets.map((w) => w.id),
   );
+  const tabs = tabsOf(definition);
+  const on = tabs.length === 0 ? null : tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
   const designed = designedOf(definition);
   const scaled = { w: Math.max(1, Math.round((size.w * designed.columns) / 12)), h: size.h };
-  const cell = place(definition.layout.items, scaled, designed.columns);
+  const cell = place(cellsOn(definition, definition.layout.items, on), scaled, designed.columns);
   const overrides = Object.fromEntries(
     Object.entries(definition.layout.overrides).map(([bp, custom]) => [
       bp,
@@ -60,7 +65,7 @@ export function addWidget(
         items: {
           ...custom.items,
           [id]: place(
-            custom.items,
+            cellsOn(definition, custom.items, on),
             {
               w: Math.min(
                 custom.columns,
@@ -78,7 +83,7 @@ export function addWidget(
     id,
     definition: {
       ...definition,
-      widgets: [...definition.widgets, { id, title, config }],
+      widgets: [...definition.widgets, onTab({ id, title, config }, on)],
       layout: {
         ...definition.layout,
         items: { ...definition.layout.items, [id]: cell },
@@ -88,7 +93,7 @@ export function addWidget(
   };
 }
 
-/** A copy of a widget, placed after the first gap that fits it. */
+/** A copy of a widget, on its tab, placed after the first gap that fits it. */
 export function duplicateWidget(
   definition: Definition,
   id: string,
@@ -104,6 +109,7 @@ export function duplicateWidget(
     structuredClone(widget.config) as WidgetConfig,
     { w: Math.round((cell.w * 12) / designed.columns), h: cell.h },
     widget.title ? `${widget.title} (copy)` : null,
+    tabOf(definition, widget),
   );
 }
 
@@ -171,11 +177,17 @@ export function cellsAt(definition: Definition, breakpoint: string): Cells | nul
   return definition.layout.overrides[breakpoint]?.items ?? null;
 }
 
-/** The cells at a breakpoint replaced: the designed ones, or those of its override (which it must have). */
+/**
+ * The cells of the widgets given replaced at a breakpoint: the designed ones, or those of its override (which it
+ * must have); the others' (another tab's) as they were.
+ */
 export function withCells(definition: Definition, breakpoint: string, cells: Cells): Definition {
   const designed = designedOf(definition);
   if (breakpoint === designed.id) {
-    return { ...definition, layout: { ...definition.layout, items: cells } };
+    return {
+      ...definition,
+      layout: { ...definition.layout, items: { ...definition.layout.items, ...cells } },
+    };
   }
   const custom = definition.layout.overrides[breakpoint];
   if (!custom) {
@@ -185,7 +197,10 @@ export function withCells(definition: Definition, breakpoint: string, cells: Cel
     ...definition,
     layout: {
       ...definition.layout,
-      overrides: { ...definition.layout.overrides, [breakpoint]: { ...custom, items: cells } },
+      overrides: {
+        ...definition.layout.overrides,
+        [breakpoint]: { ...custom, items: { ...custom.items, ...cells } },
+      },
     },
   };
 }
@@ -197,14 +212,20 @@ function columnsAt(definition: Definition, breakpoint: string): number {
   );
 }
 
-/** A widget moved at a breakpoint laid out (the designed one, or one customized); others there make room. */
+/** The cells laid out at a breakpoint of a widget's tab (all of them, without tabs). */
+function tabCellsAt(definition: Definition, breakpoint: string, id: string): Cells | null {
+  const cells = cellsAt(definition, breakpoint);
+  return cells && cellsOn(definition, cells, tabOf(definition, id));
+}
+
+/** A widget moved at a breakpoint laid out (the designed one, or one customized); others on its tab make room. */
 export function moveWidget(
   definition: Definition,
   breakpoint: string,
   id: string,
   to: { x: number; y: number },
 ): Definition {
-  const cells = cellsAt(definition, breakpoint);
+  const cells = tabCellsAt(definition, breakpoint, id);
   return cells
     ? withCells(definition, breakpoint, moveTo(cells, id, to, columnsAt(definition, breakpoint)))
     : definition;
@@ -218,7 +239,7 @@ export function resizeWidget(
   size: { w: number; h: number },
   min?: { w: number; h: number },
 ): Definition {
-  const cells = cellsAt(definition, breakpoint);
+  const cells = tabCellsAt(definition, breakpoint, id);
   return cells
     ? withCells(
         definition,
@@ -228,7 +249,7 @@ export function resizeWidget(
     : definition;
 }
 
-/** A narrower breakpoint laid out by hand from now: its derived layout, kept as its own. */
+/** A narrower breakpoint laid out by hand from now: its derived layout (each tab's), kept as its own. */
 export function customize(
   definition: Definition,
   breakpoint: string,
@@ -242,12 +263,18 @@ export function customize(
   ) {
     return definition;
   }
-  const { cells } = effectiveLayout(
-    definition.layout,
-    breakpoint,
-    definition.widgets.map((w) => w.id),
-    mins,
-  );
+  const cells = Object.assign(
+    {},
+    ...gridsOf(definition).map(
+      (tab) =>
+        effectiveLayout(
+          definition.layout,
+          breakpoint,
+          widgetsOn(definition, tab).map((w) => w.id),
+          mins,
+        ).cells,
+    ),
+  ) as Record<string, Placement>;
   return {
     ...definition,
     layout: {
@@ -309,11 +336,14 @@ export function setBreakpoints(
   const ids = new Set(breakpoints.map((b) => b.id));
   const designedBefore = designedOf(definition);
   const designedAfter = breakpoints.at(-1)!;
-  // The designed layout keeps its cells, scaled when its columns change (and compact, as stored layouts are).
+  // The designed layout keeps its cells, scaled when its columns change (and compact, as stored layouts are), tab
+  // by tab.
   const items: Cells =
     designedAfter.columns === designedBefore.columns
       ? definition.layout.items
-      : compact(derive(definition.layout.items, designedBefore.columns, designedAfter.columns));
+      : perTab(definition, definition.layout.items, (cells) =>
+          compact(derive(cells, designedBefore.columns, designedAfter.columns)),
+        );
   return {
     ...definition,
     layout: {
@@ -482,6 +512,168 @@ export function setFilterApplies(
 
 export function setRefresh(definition: Definition, refresh: RefreshPolicy): Definition {
   return { ...definition, refresh };
+}
+
+/** The tabs replaced, every widget on one of them (or none, without tabs: the key left out, as for one grid). */
+function withTabs(definition: Definition, tabs: Definition['tabs']): Definition {
+  const next: Definition = { ...definition };
+  if (tabs && tabs.length > 0) {
+    next.tabs = tabs;
+  } else {
+    delete next.tabs;
+  }
+  return next;
+}
+
+/** The cells of the designed layout and of each laid out by hand, changed alike (with their columns). */
+function everyLayout(
+  definition: Definition,
+  change: (cells: Cells, columns: number) => Cells,
+): Definition {
+  return {
+    ...definition,
+    layout: {
+      ...definition.layout,
+      items: change(definition.layout.items, designedOf(definition).columns),
+      overrides: Object.fromEntries(
+        Object.entries(definition.layout.overrides).map(([bp, custom]) => [
+          bp,
+          { ...custom, items: change(custom.items, custom.columns) },
+        ]),
+      ),
+    },
+  };
+}
+
+/** Tabs from now: one, of the label given, holding every widget where it is. */
+export function useTabs(
+  definition: Definition,
+  label: string,
+): { definition: Definition; id: string } {
+  const tabs = tabsOf(definition);
+  if (tabs.length > 0) {
+    return { definition, id: tabs[0].id };
+  }
+  const id = newId(label || 'tab', []);
+  return {
+    id,
+    definition: {
+      ...withTabs(definition, [{ id, label }]),
+      widgets: definition.widgets.map((widget) => onTab(widget, id)),
+    },
+  };
+}
+
+/** A tab added, last: its id from its label, kept when it is renamed. Without tabs, the first, holding every widget. */
+export function addTab(
+  definition: Definition,
+  label: string,
+): { definition: Definition; id: string } {
+  const tabs = tabsOf(definition);
+  if (tabs.length === 0) {
+    return useTabs(definition, label);
+  }
+  const id = newId(
+    label || 'tab',
+    tabs.map((tab) => tab.id),
+  );
+  return { id, definition: withTabs(definition, [...tabs, { id, label }]) };
+}
+
+export function renameTab(definition: Definition, id: string, label: string): Definition {
+  return withTabs(
+    definition,
+    tabsOf(definition).map((tab) => (tab.id === id ? { ...tab, label } : tab)),
+  );
+}
+
+/** A tab moved among the others: `by` places earlier (negative) or later. */
+export function moveTab(definition: Definition, id: string, by: number): Definition {
+  const tabs = [...tabsOf(definition)];
+  const at = tabs.findIndex((tab) => tab.id === id);
+  const to = Math.max(0, Math.min(tabs.length - 1, at + by));
+  if (at < 0 || to === at) {
+    return definition;
+  }
+  const [moved] = tabs.splice(at, 1);
+  tabs.splice(to, 0, moved);
+  return withTabs(definition, tabs);
+}
+
+/** A widget moved to another tab: placed where it first fits in that tab's grid, at every breakpoint laid out. */
+export function moveToTab(definition: Definition, id: string, tab: string): Definition {
+  const from = tabOf(definition, id);
+  if (from === null || from === tab || !tabsOf(definition).some((t) => t.id === tab)) {
+    return definition;
+  }
+  const moved: Definition = {
+    ...definition,
+    widgets: definition.widgets.map((widget) => (widget.id === id ? onTab(widget, tab) : widget)),
+  };
+  return everyLayout(moved, (cells, columns) => {
+    const cell = cells[id];
+    if (!cell) {
+      return cells;
+    }
+    const rest = Object.fromEntries(Object.entries(cells).filter(([other]) => other !== id));
+    return { ...rest, [id]: place(cellsOn(moved, rest, tab), cell, columns) };
+  });
+}
+
+/**
+ * A tab removed: its widgets with it, or moved to the tab before it (else after), below that tab's widgets as they
+ * were arranged. The only tab removed, the dashboard has no tabs (its widgets stay).
+ */
+export function removeTab(
+  definition: Definition,
+  id: string,
+  widgets: 'remove' | 'move',
+): Definition {
+  const tabs = tabsOf(definition);
+  const at = tabs.findIndex((tab) => tab.id === id);
+  if (at < 0) {
+    return definition;
+  }
+  if (tabs.length === 1) {
+    return dropTabs(definition);
+  }
+  const others = tabs.filter((tab) => tab.id !== id);
+  const on = widgetsOn(definition, id).map((widget) => widget.id);
+  if (widgets === 'remove') {
+    return withTabs(
+      on.reduce((d, widget) => removeWidget(d, widget), definition),
+      others,
+    );
+  }
+  const into = (tabs[at - 1] ?? tabs[at + 1]).id;
+  const stacked = everyLayout(definition, (cells) => ({
+    ...cells,
+    ...stack([cellsOn(definition, cells, into), cellsOn(definition, cells, id)]),
+  }));
+  return withTabs(
+    {
+      ...stacked,
+      widgets: definition.widgets.map((widget) =>
+        on.includes(widget.id) ? onTab(widget, into) : widget,
+      ),
+    },
+    others,
+  );
+}
+
+/** No tabs from now: their grids one below the other, in their order, as one. */
+export function dropTabs(definition: Definition): Definition {
+  const tabs = tabsOf(definition);
+  if (tabs.length === 0) {
+    return definition;
+  }
+  const stacked = everyLayout(definition, (cells) =>
+    stack(tabs.map((tab) => cellsOn(definition, cells, tab.id))),
+  );
+  return withTabs(
+    { ...stacked, widgets: definition.widgets.map((widget) => onTab(widget, null)) },
+    null,
+  );
 }
 
 /** A placement's text, as screen readers hear a widget's place. */

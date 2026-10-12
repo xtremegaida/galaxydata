@@ -26,8 +26,9 @@ export function refreshOnTimer(store: DashboardStore, policy: Signal<RefreshPoli
   let last = now();
   let seen = 0;
   let failures = 0;
+  // Widgets on tabs not shown don't ask again till they are: their failures don't stretch the wait.
   effect(() => {
-    failures = store.failing().size > 0 ? failures + 1 : 0;
+    failures = store.failingShown().size > 0 ? failures + 1 : 0;
   });
   effect((onCleanup) => {
     // Each refresh (by hand or by the timer) starts the wait anew.
@@ -40,7 +41,7 @@ export function refreshOnTimer(store: DashboardStore, policy: Signal<RefreshPoli
     if (refresh?.mode !== 'interval' || !refresh.seconds || !visible() || store.anyLoading()) {
       return;
     }
-    store.failing();
+    store.failingShown();
     const every = refresh.seconds * 1000;
     const wait = Math.min(
       every * 2 ** Math.max(untracked(() => failures) - 1, 0),

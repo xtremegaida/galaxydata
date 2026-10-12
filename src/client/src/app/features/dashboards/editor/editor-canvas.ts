@@ -7,10 +7,13 @@ import {
   ElementRef,
   afterNextRender,
   computed,
+  effect,
   inject,
   signal,
   untracked,
 } from '@angular/core';
+import { MatIconButton } from '@angular/material/button';
+import { MatIcon } from '@angular/material/icon';
 import {
   type Cells,
   type Placement,
@@ -21,6 +24,7 @@ import {
 } from '../layout/grid-layout';
 import { configOf } from '../model/definition';
 import { placementText, withCells } from '../model/definition-ops';
+import { widgetsOn } from '../model/tabs';
 import { WIDGET_KINDS, kindOf } from '../model/widget-registry';
 import { DashboardView } from '../view/dashboard-view';
 import { WIDGET_EDITING, type WidgetEditing } from '../view/widget-editing';
@@ -44,22 +48,38 @@ let drags = 0;
  * as they are), its widgets chosen by clicking them, moved by their handles and resized by their corners, by
  * pointer (the drop where the preview showed it; Escape puts it back) or keyboard (Enter or Space on a handle,
  * arrows to move, Shift and arrows to resize, Enter to drop, Escape to put it back, each step said). A move is one
- * step of the history. At a narrower breakpoint not laid out by hand, nothing moves till it is customized.
+ * step of the history. At a narrower breakpoint not laid out by hand, nothing moves till it is customized. With
+ * tabs, it shows one at a time (chosen by their bar, which has a button for another), and edits that one's grid.
  */
 @Component({
   selector: 'gd-editor-canvas',
-  imports: [DashboardView],
+  imports: [DashboardView, MatIcon, MatIconButton],
   providers: [{ provide: WIDGET_EDITING, useExisting: EditorCanvas }],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '[class.narrower]': '!store.designed()' },
   template: `
     <div class="page" [style.max-width]="width()">
-      @if (store.draft().widgets.length === 0) {
+      <gd-dashboard-view [breakpoint]="store.breakpoint().id">
+        <button
+          gdTabsEnd
+          matIconButton
+          type="button"
+          aria-label="Add a tab"
+          title="Add a tab"
+          (click)="store.wantTab()"
+        >
+          <mat-icon>add</mat-icon>
+        </button>
+      </gd-dashboard-view>
+      @if (widgets().length === 0) {
         <p class="empty">
-          A blank dashboard is a blank page: add a widget (a heading is a text widget).
+          @if (store.tab() === null) {
+            A blank dashboard is a blank page: add a widget (a heading is a text widget).
+          } @else {
+            This tab is empty: add a widget, or move one here (its settings' Tab).
+          }
         </p>
       }
-      <gd-dashboard-view [breakpoint]="store.breakpoint().id" />
     </div>
   `,
   styles: `
@@ -121,13 +141,16 @@ export class EditorCanvas implements WidgetEditing {
     return `${Math.max(width, 240)}px`;
   });
 
-  /** The cells at the breakpoint shown, as laid out (what moves start from). */
+  /** The widgets on the tab shown (every one, without tabs): those its moves are among. */
+  protected readonly widgets = computed(() => widgetsOn(this.store.draft(), this.store.tab()));
+
+  /** The cells at the breakpoint shown, as laid out (what moves start from): the tab shown's. */
   private readonly cells = computed<Cells>(() => {
     const definition = this.store.draft();
     return effectiveLayout(
       definition.layout,
       this.store.breakpoint().id,
-      definition.widgets.map((w) => w.id),
+      this.widgets().map((w) => w.id),
       this.mins(),
     ).cells;
   });
@@ -136,7 +159,7 @@ export class EditorCanvas implements WidgetEditing {
     const definition = this.store.draft();
     const breakpoint = this.store.breakpoint();
     return Object.fromEntries(
-      definition.widgets.map((w) => [
+      this.widgets().map((w) => [
         w.id,
         {
           w: minColumns(
@@ -165,6 +188,16 @@ export class EditorCanvas implements WidgetEditing {
       this.document.addEventListener('pointercancel', up);
       this.document.addEventListener('keydown', keys);
     });
+    // Another tab shown: what was being moved on the one before is put back.
+    effect(() => {
+      this.store.tab();
+      untracked(() => {
+        if (this.drag || this.moving()) {
+          this.cancelDrag();
+          this.moving.set(null);
+        }
+      });
+    });
     inject(DestroyRef).onDestroy(() => {
       this.document.removeEventListener('pointermove', move);
       this.document.removeEventListener('pointerup', up);
@@ -181,7 +214,7 @@ export class EditorCanvas implements WidgetEditing {
   }
 
   select(id: string): void {
-    this.store.selected.set(id);
+    this.store.select(id);
   }
 
   startMove(id: string, event: PointerEvent): void {
@@ -327,7 +360,7 @@ export class EditorCanvas implements WidgetEditing {
     this.preview.set(null);
   }
 
-  /** The cells dropped are the layout's: one step of the history. The keyboard stays on the widget's handle. */
+  /** The cells dropped are the layout's (the tab shown's; others' stay): one step of the history. The keyboard stays on the widget's handle. */
   private commit(id: string, cells: Cells, label: string, key: string): void {
     const breakpoint = this.store.breakpoint().id;
     this.store.apply(label, (definition) => withCells(definition, breakpoint, cells), key);
@@ -344,9 +377,11 @@ export class EditorCanvas implements WidgetEditing {
     }
   }
 
-  /** The cell under the pointer, in the grid's columns and rows; null off it. */
+  /** The cell under the pointer, in the shown grid's columns and rows; null off it. */
   private cellAt(event: PointerEvent): { x: number; y: number } | null {
-    const grid = (this.element.nativeElement as HTMLElement).querySelector('gd-dashboard-grid');
+    const grid = (this.element.nativeElement as HTMLElement).querySelector(
+      'gd-dashboard-grid[data-gd-active]',
+    );
     if (!grid) {
       return null;
     }

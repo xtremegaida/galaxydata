@@ -1,5 +1,12 @@
 import { TestBed } from '@angular/core/testing';
-import { dashboardOf, rowsOf, salesDefinition, widgetDataUrl } from '../../../testing/dashboards';
+import { Router } from '@angular/router';
+import {
+  dashboardOf,
+  rowsOf,
+  salesDefinition,
+  tabbedDefinition,
+  widgetDataUrl,
+} from '../../../testing/dashboards';
 import { FakeECharts, fakeEChartsProviders } from '../../../testing/echarts';
 import { eventually, requestTo, settle } from '../../../testing/http';
 import { openPage, pageProviders, textOf } from '../../../testing/pages';
@@ -243,5 +250,153 @@ describe('a dashboard', () => {
     inline.forEach((r) => r.flush(rowsOf('Status', [])));
     await settle();
     expect(textOf(page.querySelector('.badge'))).toBe('Your working copy');
+  });
+});
+
+describe('a dashboard with tabs', () => {
+  let charts: FakeECharts;
+
+  beforeEach(() => {
+    FakeResizeObserver.install();
+    charts = new FakeECharts();
+    TestBed.configureTestingModule({
+      providers: [
+        pageProviders([{ path: 'dashboards', children: dashboardRoutes }]),
+        fakeEChartsProviders(charts),
+      ],
+    });
+  });
+
+  afterEach(() => {
+    FakeResizeObserver.uninstall();
+    TestBed.resetTestingModule();
+  });
+
+  const orders = rowsOf('Status', [
+    ['open', '2'],
+    ['shipped', '1'],
+  ]);
+  const cities = rowsOf('City', [['Cape Town', '1']]);
+
+  /** Opens the dashboard at an address, answering it (its widgets' rows are the test's). */
+  async function open(address = '/dashboards/1') {
+    const page = await openPage(address);
+    (await requestTo(page.http, '/api/dashboards/1')).flush(dashboardOf(tabbedDefinition()));
+    await settle();
+    page.harness.detectChanges();
+    return page;
+  }
+
+  /** Shows a tab, as a viewer clicks it. */
+  async function show(page: Awaited<ReturnType<typeof open>>, tab: string): Promise<void> {
+    page.page.querySelector<HTMLElement>(`[data-gd-tab="${tab}"]`)!.click();
+    await settle();
+    page.harness.detectChanges();
+  }
+
+  /** The bar chart, drawn. */
+  async function bars(page: Awaited<ReturnType<typeof open>>) {
+    await eventually(page.harness, () => charts.charts.some((c) => c.options.length > 0));
+    return charts.chartIn(page.page.querySelector('[data-gd-cell="0,1,6,6"]')!)!;
+  }
+
+  it("shows its first tab, asking only for its widgets' rows; another asks once it is shown", async () => {
+    const page = await open();
+    expect([...page.page.querySelectorAll('[data-gd-tab]')].map((t) => textOf(t))).toEqual([
+      'Orders',
+      'Customers',
+    ]);
+    expect(page.page.querySelector('[data-gd-tab="orders"]')?.getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    (await requestTo(page.http, widgetDataUrl(1, 'by-status'), 'POST')).flush(orders);
+    await settle();
+    page.http.expectNone(widgetDataUrl(1, 'by-city'));
+    expect(page.page.querySelectorAll('gd-dashboard-grid')).toHaveLength(1);
+
+    await show(page, 'customers');
+    (await requestTo(page.http, widgetDataUrl(1, 'by-city'), 'POST')).flush(cities);
+    await settle();
+    expect(TestBed.inject(Router).url).toBe('/dashboards/1?tab=customers');
+    const grids = [...page.page.querySelectorAll('gd-dashboard-grid')];
+    expect(grids.map((g) => [g.getAttribute('data-gd-grid'), g.hasAttribute('inert')])).toEqual([
+      ['orders', true],
+      ['customers', false],
+    ]);
+    // Back and forth, nothing changed: nothing is asked again.
+    await show(page, 'orders');
+    await show(page, 'customers');
+    page.http.expectNone((r) => r.url.includes('/widgets/'));
+    expect(TestBed.inject(Router).url).toBe('/dashboards/1?tab=customers');
+    await show(page, 'orders');
+    expect(TestBed.inject(Router).url).toBe('/dashboards/1');
+  });
+
+  it('asks nothing on a tab not shown as slices are chosen, and once when it is shown', async () => {
+    const page = await open();
+    (await requestTo(page.http, widgetDataUrl(1, 'by-status'), 'POST')).flush(orders);
+    await show(page, 'customers');
+    (await requestTo(page.http, widgetDataUrl(1, 'by-city'), 'POST')).flush(cities);
+    await show(page, 'orders');
+    const chart = await bars(page);
+    chart.emit('click', { key: ['open'] });
+    await settle();
+    chart.emit('click', { key: ['shipped'] }, { ctrlKey: true });
+    await settle();
+    page.http.expectNone((r) => r.url.includes('/widgets/'));
+    await show(page, 'customers');
+    const city = await requestTo(page.http, widgetDataUrl(1, 'by-city'), 'POST');
+    expect(city.request.body).toMatchObject({
+      state: { selections: { 'by-status': { mode: 'include', keys: [['open'], ['shipped']] } } },
+      refresh: false,
+    });
+    city.flush(cities);
+    await settle();
+    page.http.expectNone((r) => r.url.includes('/widgets/'));
+  });
+
+  it("reads a tab's widgets fresh when it is shown after a refresh, and only then", async () => {
+    const page = await open();
+    (await requestTo(page.http, widgetDataUrl(1, 'by-status'), 'POST')).flush(orders);
+    await show(page, 'customers');
+    (await requestTo(page.http, widgetDataUrl(1, 'by-city'), 'POST')).flush(cities);
+    await show(page, 'orders');
+    [...page.page.querySelectorAll<HTMLButtonElement>('button')]
+      .find((b) => textOf(b).endsWith('Refresh'))!
+      .click();
+    await settle();
+    const status = await requestTo(page.http, widgetDataUrl(1, 'by-status'), 'POST');
+    expect(status.request.body.refresh).toBe(true);
+    status.flush(orders);
+    await settle();
+    page.http.expectNone(widgetDataUrl(1, 'by-city'));
+    await show(page, 'customers');
+    const city = await requestTo(page.http, widgetDataUrl(1, 'by-city'), 'POST');
+    expect(city.request.body.refresh).toBe(true);
+    city.flush(cities);
+  });
+
+  it('stops reading the rows of a tab hidden while they are read, and reads them when it is shown', async () => {
+    const page = await open();
+    (await requestTo(page.http, widgetDataUrl(1, 'by-status'), 'POST')).flush(orders);
+    await show(page, 'customers');
+    const first = await requestTo(page.http, widgetDataUrl(1, 'by-city'), 'POST');
+    await show(page, 'orders');
+    expect(first.cancelled).toBe(true);
+    await show(page, 'customers');
+    const again = await requestTo(page.http, widgetDataUrl(1, 'by-city'), 'POST');
+    expect(again.request.body.refresh).toBe(false);
+    again.flush(cities);
+  });
+
+  it('opens the tab its address names, asking for nothing of the others', async () => {
+    const page = await open('/dashboards/1?tab=customers');
+    (await requestTo(page.http, widgetDataUrl(1, 'by-city'), 'POST')).flush(cities);
+    await settle();
+    page.http.expectNone(widgetDataUrl(1, 'by-status'));
+    expect(
+      page.page.querySelector('[data-gd-tab="customers"]')?.getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(page.page.querySelectorAll('gd-dashboard-grid')).toHaveLength(1);
   });
 });

@@ -1,7 +1,12 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { dashboardOf, rowsOf, salesDefinition } from '../../../../testing/dashboards';
+import {
+  dashboardOf,
+  rowsOf,
+  salesDefinition,
+  tabbedDefinition,
+} from '../../../../testing/dashboards';
 import { FakeECharts, fakeEChartsProviders } from '../../../../testing/echarts';
 import { eventually, requestTo, settle } from '../../../../testing/http';
 import { openPage, pageProviders, textOf, wordsOf } from '../../../../testing/pages';
@@ -562,5 +567,146 @@ describe('the dashboard editor', () => {
     (await requestTo(page.http, '/api/dashboards/7')).flush(
       dashboardOf(post.request.body.definition, { id: 7, name: 'Board', version: 1 }),
     );
+  });
+
+  /** Shows a panel of the side's, by its tab's label. */
+  async function panel(page: HTMLElement, harness: { detectChanges(): void }, label: string) {
+    [...page.querySelectorAll<HTMLElement>('.side [role=tab]')]
+      .find((t) => wordsOf(t) === label)!
+      .click();
+    harness.detectChanges();
+    await settle();
+    harness.detectChanges();
+  }
+
+  /** Types into a field, as a person does. */
+  function type(input: HTMLInputElement, text: string): void {
+    input.value = text;
+    input.dispatchEvent(new Event('input'));
+  }
+
+  it('splits a dashboard into tabs, adds, renames, moves and removes them, each a step undone', async () => {
+    const { page, store, harness } = await open();
+    await panel(page, harness, 'Layout');
+    const layout = () => page.querySelector('gd-layout-panel')!;
+    button(layout(), 'Split into tabs').click();
+    harness.detectChanges();
+    expect(store.draft().tabs).toEqual([{ id: 'overview', label: 'Overview' }]);
+    expect(store.draft().widgets.every((w) => w.tab === 'overview')).toBe(true);
+    await settle();
+    harness.detectChanges();
+    expect(
+      [...page.querySelectorAll('gd-editor-canvas [data-gd-tab]')].map((t) => textOf(t)),
+    ).toEqual(['Overview']);
+
+    const fields = () => [...layout().querySelectorAll<HTMLInputElement>('input')];
+    type(
+      fields().find((f) => f.closest('.new-tab'))!,
+      'Customers',
+    );
+    harness.detectChanges();
+    button(layout(), 'Add').click();
+    harness.detectChanges();
+    await settle();
+    harness.detectChanges();
+    expect(store.draft().tabs?.map((t) => t.id)).toEqual(['overview', 'customers']);
+    expect(store.tab()).toBe('customers');
+    expect(textOf(page.querySelector('gd-editor-canvas .empty'))).toContain('This tab is empty');
+
+    type(fields()[1], 'People');
+    harness.detectChanges();
+    expect(store.draft().tabs?.[1]).toEqual({ id: 'customers', label: 'People' });
+    expect(store.history.undoLabel()).toBe('Renamed a tab');
+    layout().querySelector<HTMLButtonElement>('[aria-label="Move People earlier"]')!.click();
+    harness.detectChanges();
+    expect(store.draft().tabs?.map((t) => t.id)).toEqual(['customers', 'overview']);
+    store.undo();
+    harness.detectChanges();
+    expect(store.draft().tabs?.map((t) => t.id)).toEqual(['overview', 'customers']);
+    layout().querySelector<HTMLButtonElement>('[aria-label="Remove People"]')!.click();
+    harness.detectChanges();
+    expect(store.draft().tabs?.map((t) => t.id)).toEqual(['overview']);
+    button(layout(), 'Stop using tabs').click();
+    harness.detectChanges();
+    expect('tabs' in store.draft()).toBe(false);
+    expect(store.draft().widgets.some((w) => 'tab' in w)).toBe(false);
+    expect(store.draft()).toEqual(salesDefinition());
+  });
+
+  it('previews the tab shown alone, adds widgets to it, and moves one to another by its Tab', async () => {
+    const { page, store, harness, http, first } = await open(tabbedDefinition());
+    expect(first.map((body) => body['widget'])).toEqual(['by-status']);
+    page.querySelector<HTMLElement>('gd-editor-canvas [data-gd-tab="customers"]')!.click();
+    harness.detectChanges();
+    expect((await previews(http)).map((body) => body['widget'])).toEqual(['by-city']);
+    button(page.querySelector('.add-widgets')!, 'Text').click();
+    harness.detectChanges();
+    const made = store.selected()!;
+    expect(store.draft().widgets.find((w) => w.id === made)?.tab).toBe('customers');
+    expect(store.draft().layout.items[made]).toEqual({ x: 0, y: 6, w: 12, h: 2 });
+
+    store.select('by-city');
+    harness.detectChanges();
+    await settle();
+    const field = [...page.querySelectorAll('gd-widget-panel mat-form-field')].find(
+      (f) => textOf(f.querySelector('mat-label')) === 'Tab',
+    )!;
+    field.querySelector<HTMLElement>('.mat-mdc-select-trigger')!.click();
+    harness.detectChanges();
+    await settle();
+    [...document.querySelectorAll<HTMLElement>('mat-option')]
+      .find((o) => textOf(o) === 'Orders')!
+      .click();
+    harness.detectChanges();
+    expect(store.draft().widgets.find((w) => w.id === 'by-city')?.tab).toBe('orders');
+    expect(store.draft().layout.items['by-city']).toEqual({ x: 6, y: 1, w: 6, h: 6 });
+    expect(store.history.undoLabel()).toBe('Moved Customers by city to Orders');
+    // The canvas follows it; shown elsewhere, it is let go of.
+    expect([store.tab(), store.selected()]).toEqual(['orders', 'by-city']);
+    page.querySelector<HTMLElement>('gd-editor-canvas [data-gd-tab="customers"]')!.click();
+    harness.detectChanges();
+    await settle();
+    expect(store.selected()).toBeNull();
+    store.select('by-status');
+    expect(store.tab()).toBe('orders');
+  });
+
+  it("moves a widget on the tab shown, the other tabs' cells as they were", async () => {
+    const { page, store, harness, http } = await open(tabbedDefinition());
+    page.querySelector<HTMLElement>('gd-editor-canvas [data-gd-tab="customers"]')!.click();
+    harness.detectChanges();
+    await previews(http);
+    harness.detectChanges();
+    const handle = page.querySelector<HTMLButtonElement>('[data-gd-move="by-city"]')!;
+    press('Enter', {}, handle);
+    press('ArrowRight', {}, handle);
+    press('ArrowDown', { shiftKey: true }, handle);
+    press('Enter', {}, handle);
+    harness.detectChanges();
+    expect(store.draft().layout.items).toEqual({
+      title: { x: 0, y: 0, w: 12, h: 1 },
+      'by-status': { x: 0, y: 1, w: 6, h: 6 },
+      'by-city': { x: 1, y: 0, w: 6, h: 7 },
+    });
+  });
+
+  it('asks for a new tab from the canvas in the Layout panel, and places refusals of tabs there', async () => {
+    const { page, store, harness } = await open(tabbedDefinition());
+    page.querySelector<HTMLButtonElement>('gd-editor-canvas [aria-label="Add a tab"]')!.click();
+    harness.detectChanges();
+    await settle(5);
+    harness.detectChanges();
+    expect(store.panel()).toBe(3);
+    expect((document.activeElement as HTMLElement | null)?.closest('.new-tab')).not.toBeNull();
+    store.apply('Renamed a tab', (d) => ({
+      ...d,
+      tabs: d.tabs!.map((t) => (t.id === 'orders' ? { ...t, label: ' ' } : t)),
+    }));
+    expect(store.issues()).toContainEqual({
+      severity: 'error',
+      message: 'Tab 1 has no label: give it one.',
+      place: { panel: 'layout' },
+      field: 'tabs[0].label',
+    });
   });
 });

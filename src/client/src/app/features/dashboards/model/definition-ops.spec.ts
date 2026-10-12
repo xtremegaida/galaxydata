@@ -1,4 +1,6 @@
-import { salesDefinition } from '../../../../testing/dashboards';
+import fc from 'fast-check';
+import { salesDefinition, tabbedDefinition } from '../../../../testing/dashboards';
+import { type Cells, collides } from '../layout/grid-layout';
 import { History } from '../editor/history';
 import { rowCount, tableDefaults, textDefaults } from './widget-defaults';
 import type { Definition } from './definition';
@@ -6,21 +8,31 @@ import {
   addFilter,
   addLink,
   addSource,
+  addTab,
   addWidget,
   customize,
+  designedOf,
+  dropTabs,
   duplicateWidget,
   hideAt,
+  moveTab,
+  moveToTab,
   moveWidget,
   removeSource,
+  removeTab,
   removeWidget,
   renameNewFilter,
+  renameTab,
   resetBreakpoint,
+  resizeWidget,
   setBreakpoints,
   setFilterApplies,
   sourceUsedBy,
   updateFilter,
+  useTabs,
   wouldCycle,
 } from './definition-ops';
+import { cellsOn, tabOf } from './tabs';
 import { changesBetween } from './changes';
 import { sliceOf } from './slice';
 
@@ -282,5 +294,180 @@ describe('what publishing says changed', () => {
       'Changed Customers by city.',
     ]);
     expect(changesBetween(before, { ...before })).toEqual(['Nothing: it is as published.']);
+  });
+});
+
+describe("a dashboard's tabs", () => {
+  /** Whether no two cells overlap, and every one is within the columns. */
+  function laidOut(cells: Cells, columns: number): boolean {
+    const all = Object.values(cells);
+    return (
+      all.every((c) => c.x >= 0 && c.y >= 0 && c.w >= 1 && c.x + c.w <= columns) &&
+      all.every((a, i) => all.slice(i + 1).every((b) => !collides(a, b)))
+    );
+  }
+
+  it('starts with one tab holding every widget where it was, and stops as it was', () => {
+    const sales = salesDefinition();
+    const { definition, id } = useTabs(sales, 'Overview');
+    expect(id).toBe('overview');
+    expect(definition.tabs).toEqual([{ id: 'overview', label: 'Overview' }]);
+    expect(definition.widgets.map((w) => w.tab)).toEqual(['overview', 'overview', 'overview']);
+    expect(definition.layout).toEqual(sales.layout);
+    const dropped = dropTabs(definition);
+    expect(dropped).toEqual(sales);
+    expect('tabs' in dropped).toBe(false);
+    expect(dropped.widgets.some((w) => 'tab' in w)).toBe(false);
+  });
+
+  it('adds tabs with ids from their labels, kept when they are renamed, and moves them', () => {
+    const { definition, id } = addTab(tabbedDefinition(), 'Orders');
+    expect(id).toBe('orders-2');
+    const renamed = renameTab(definition, id, 'Returns');
+    expect(renamed.tabs?.at(-1)).toEqual({ id: 'orders-2', label: 'Returns' });
+    expect(moveTab(renamed, 'orders-2', -2).tabs?.map((t) => t.id)).toEqual([
+      'orders-2',
+      'orders',
+      'customers',
+    ]);
+    expect(moveTab(renamed, 'orders', -1)).toBe(renamed);
+    const first = addTab(salesDefinition(), 'First').definition;
+    expect(first.widgets.every((w) => w.tab === 'first')).toBe(true);
+  });
+
+  it("adds a widget to a tab's grid, the first when none is said, and copies it on its tab", () => {
+    const tabbed = tabbedDefinition();
+    const added = addWidget(tabbed, textDefaults(), { w: 6, h: 2 }, null, 'customers');
+    expect(added.definition.widgets.at(-1)?.tab).toBe('customers');
+    expect(added.definition.layout.items[added.id]).toEqual({ x: 6, y: 0, w: 6, h: 2 });
+    const first = addWidget(tabbed, textDefaults(), { w: 6, h: 2 });
+    expect(first.definition.widgets.at(-1)?.tab).toBe('orders');
+    expect(first.definition.layout.items[first.id]).toEqual({ x: 6, y: 1, w: 6, h: 2 });
+    const plain = addWidget(salesDefinition(), textDefaults(), { w: 6, h: 2 }).definition;
+    expect('tab' in plain.widgets[3]).toBe(false);
+    const copy = duplicateWidget(tabbed, 'by-city');
+    expect(copy.definition.widgets.at(-1)?.tab).toBe('customers');
+    expect(copy.definition.layout.items[copy.id]).toEqual({ x: 6, y: 0, w: 6, h: 6 });
+  });
+
+  it("moves and resizes a widget among its own tab's alone, whatever the other tabs' cells", () => {
+    const tabbed = tabbedDefinition();
+    const designed = designedOf(tabbed);
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            id: fc.constantFrom('title', 'by-status', 'by-city'),
+            resize: fc.boolean(),
+            x: fc.integer({ min: 0, max: 13 }),
+            y: fc.integer({ min: 0, max: 12 }),
+          }),
+          { maxLength: 8 },
+        ),
+        (edits) => {
+          let definition = tabbed;
+          for (const edit of edits) {
+            const before = definition;
+            definition = edit.resize
+              ? resizeWidget(definition, designed.id, edit.id, { w: edit.x + 1, h: edit.y + 1 })
+              : moveWidget(definition, designed.id, edit.id, { x: edit.x, y: edit.y });
+            const other = tabOf(definition, edit.id) === 'orders' ? 'customers' : 'orders';
+            expect(cellsOn(definition, definition.layout.items, other)).toEqual(
+              cellsOn(before, before.layout.items, other),
+            );
+          }
+          for (const tab of ['orders', 'customers']) {
+            expect(laidOut(cellsOn(definition, definition.layout.items, tab), 12)).toBe(true);
+          }
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  it('lays narrower breakpoints out tab by tab: derived, customized, and with new columns', () => {
+    const tabbed = tabbedDefinition();
+    const customized = customize(tabbed, 'medium');
+    expect(customized.layout.overrides['medium'].items).toEqual({
+      title: { x: 0, y: 0, w: 6, h: 1 },
+      'by-status': { x: 0, y: 1, w: 3, h: 6 },
+      'by-city': { x: 0, y: 0, w: 3, h: 6 },
+    });
+    const breakpoints = tabbed.layout.breakpoints.map((b) =>
+      b.id === 'wide' ? { ...b, columns: 6 } : b,
+    );
+    expect(setBreakpoints(tabbed, breakpoints).layout.items).toEqual({
+      title: { x: 0, y: 0, w: 6, h: 1 },
+      'by-status': { x: 0, y: 1, w: 3, h: 6 },
+      'by-city': { x: 0, y: 0, w: 3, h: 6 },
+    });
+  });
+
+  it("moves a widget to another tab's grid, where it first fits, at every breakpoint laid out", () => {
+    const tabbed = customize(tabbedDefinition(), 'medium');
+    const moved = moveToTab(tabbed, 'by-status', 'customers');
+    expect(tabOf(moved, 'by-status')).toBe('customers');
+    expect(moved.layout.items['by-status']).toEqual({ x: 6, y: 0, w: 6, h: 6 });
+    expect(moved.layout.overrides['medium'].items['by-status']).toEqual({
+      x: 3,
+      y: 0,
+      w: 3,
+      h: 6,
+    });
+    expect(moveToTab(tabbed, 'by-status', 'orders')).toBe(tabbed);
+    expect(moveToTab(tabbed, 'by-status', 'nowhere')).toBe(tabbed);
+  });
+
+  it('removes a tab with its widgets, or moves them below the next one; the last, and tabs go', () => {
+    const tabbed = customize(tabbedDefinition(), 'medium');
+    const removed = removeTab(tabbed, 'customers', 'remove');
+    expect(removed.tabs?.map((t) => t.id)).toEqual(['orders']);
+    expect(removed.widgets.map((w) => w.id)).toEqual(['title', 'by-status']);
+    expect(removed.layout.overrides['medium'].items['by-city']).toBeUndefined();
+    const merged = removeTab(tabbed, 'customers', 'move');
+    expect(merged.widgets.map((w) => w.tab)).toEqual(['orders', 'orders', 'orders']);
+    expect(merged.layout.items['by-city']).toEqual({ x: 0, y: 7, w: 6, h: 6 });
+    expect(merged.layout.overrides['medium'].items['by-city']).toEqual({
+      x: 0,
+      y: 7,
+      w: 3,
+      h: 6,
+    });
+    const first = removeTab(tabbed, 'orders', 'move');
+    expect(first.widgets.map((w) => w.tab)).toEqual(['customers', 'customers', 'customers']);
+    expect(first.layout.items['title']).toEqual({ x: 0, y: 6, w: 12, h: 1 });
+    const last = removeTab(removed, 'orders', 'remove');
+    expect('tabs' in last).toBe(false);
+    expect(last.widgets.map((w) => w.id)).toEqual(['title', 'by-status']);
+  });
+
+  it('stops using tabs with their grids one below the other, in their order', () => {
+    const tabbed = moveTab(tabbedDefinition(), 'customers', -1);
+    const one = dropTabs(tabbed);
+    expect('tabs' in one).toBe(false);
+    expect(one.layout.items).toEqual({
+      'by-city': { x: 0, y: 0, w: 6, h: 6 },
+      title: { x: 0, y: 6, w: 12, h: 1 },
+      'by-status': { x: 0, y: 7, w: 6, h: 6 },
+    });
+  });
+
+  it("leaves tabs out of widgets' slices, and says when they changed", () => {
+    const tabbed = tabbedDefinition();
+    const slice = sliceOf(tabbed, 'by-city');
+    expect('tabs' in slice).toBe(false);
+    expect(slice.widgets.some((w) => 'tab' in w)).toBe(false);
+    expect(sliceOf(renameTab(tabbed, 'customers', 'People'), 'by-city')).toEqual(slice);
+    expect(changesBetween(tabbed, renameTab(tabbed, 'customers', 'People'))).toEqual([
+      'Changed its tabs.',
+    ]);
+    // Split into tabs, its widgets are where they were, on a tab: the tabs changed, not they.
+    expect(changesBetween(salesDefinition(), useTabs(salesDefinition(), 'All').definition)).toEqual(
+      ['Changed its tabs.'],
+    );
+    expect(changesBetween(tabbed, moveToTab(tabbed, 'by-city', 'orders'))).toEqual([
+      'Moved Customers by city to Orders.',
+      'Changed its layout.',
+    ]);
   });
 });

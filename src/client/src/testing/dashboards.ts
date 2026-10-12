@@ -47,6 +47,24 @@ export function salesDefinition(extra: Partial<Definition> = {}): Definition {
   };
 }
 
+/** The sales dashboard split into tabs: Orders (the title and the bar chart), and Customers (the pie, alone). */
+export function tabbedDefinition(extra: Partial<Definition> = {}): Definition {
+  const sales = salesDefinition();
+  return {
+    ...sales,
+    tabs: [
+      { id: 'orders', label: 'Orders' },
+      { id: 'customers', label: 'Customers' },
+    ],
+    widgets: sales.widgets.map((w) => ({ ...w, tab: w.id === 'by-city' ? 'customers' : 'orders' })),
+    layout: {
+      ...sales.layout,
+      items: { ...sales.layout.items, 'by-city': { x: 0, y: 0, w: 6, h: 6 } },
+    },
+    ...extra,
+  };
+}
+
 /** A dashboard as the API gives it: published, and (for its owner) its working copy. */
 export function dashboardOf(
   definition: Definition = salesDefinition(),

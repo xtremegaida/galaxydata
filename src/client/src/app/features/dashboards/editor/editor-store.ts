@@ -1,5 +1,5 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import type { Schema } from '../../../core/api/api-client';
 import { sameJson } from '../../../core/api/same-json';
 import { designedOf } from '../model/definition-ops';
@@ -15,6 +15,7 @@ import { WIDGET_KINDS, kindOf } from '../model/widget-registry';
 import { DashboardStore, blankDefinition } from '../state/dashboard-store';
 import { History } from './history';
 import { missingOf } from '../model/complete';
+import { maxTabs, tabOf, tabsOf } from '../model/tabs';
 import { PaletteLibrary } from '../palettes/palette-library';
 
 export type DashboardDto = Schema<'DashboardDto'>;
@@ -27,6 +28,9 @@ export interface Saved {
   readonly description: string | null;
   readonly definition: Definition;
 }
+
+/** The side panel's tabs, in order. */
+export const panels = ['widget', 'sources', 'filters', 'layout', 'refresh', 'issues'] as const;
 
 /** Where an issue is in the editor, to go to it: a widget's settings, or a panel. */
 export type IssuePlace =
@@ -42,8 +46,8 @@ export interface EditorIssue {
 
 /**
  * A dashboard being edited: what was saved, the draft (every edit a step of its history, undone and redone by
- * name), the widget chosen, the breakpoint shown, and what is wrong (the server's, as it last said, and the
- * editor's own). The editor page provides it.
+ * name), the widget chosen, the breakpoint and the tab shown, the side panel shown, and what is wrong (the
+ * server's, as it last said, and the editor's own). The editor page provides it.
  */
 @Injectable()
 export class EditorStore {
@@ -69,8 +73,21 @@ export class EditorStore {
   /** Whether clicking slices on the canvas chooses them, to try the dashboard out. */
   readonly interacting = signal(false);
 
-  /** The widget whose settings are shown, if any. */
+  /** The widget whose settings are shown, if any (on the tab shown: `select` shows its tab). */
   readonly selected = signal<string | null>(null);
+
+  /** The side panel shown, by its place in `panels`. */
+  readonly panel = signal(0);
+
+  /** Goes up each time a new tab is asked for on the canvas: the Layout panel's new tab's label is focused. */
+  readonly tabWanted = signal(0);
+
+  /** The tab the canvas shows: the one chosen if the draft has it, else its first; none without tabs. */
+  readonly tab = computed(() => {
+    const tabs = tabsOf(this.draft());
+    const chosen = this.dashboard.chosenTab();
+    return tabs.find((tab) => tab.id === chosen)?.id ?? tabs[0]?.id ?? null;
+  });
   /** The breakpoint the canvas shows: the designed one unless another is chosen. */
   readonly shown = signal<string | null>(null);
   readonly breakpoint = computed(() => {
@@ -180,6 +197,25 @@ export class EditorStore {
         });
       }
     }
+    const tabs = tabsOf(definition);
+    tabs.forEach((tab, i) => {
+      if (!tab.label.trim()) {
+        issues.push({
+          severity: 'error',
+          message: `Tab ${i + 1} has no label: give it one.`,
+          place: { panel: 'layout' },
+          field: `tabs[${i}].label`,
+        });
+      }
+    });
+    if (tabs.length > maxTabs) {
+      issues.push({
+        severity: 'error',
+        message: `A dashboard has ${maxTabs} tabs at most.`,
+        place: { panel: 'layout' },
+        field: 'tabs',
+      });
+    }
     for (const filter of definition.filters.filter((f) => !f.field.column)) {
       issues.push({
         severity: 'warning',
@@ -219,6 +255,48 @@ export class EditorStore {
       (a, b) => (a.severity === 'error' ? 0 : 1) - (b.severity === 'error' ? 0 : 1),
     );
   });
+
+  constructor() {
+    // Another tab shown (by its bar on the canvas): a widget chosen on the one before is let go of.
+    effect(() => {
+      const tab = this.tab();
+      untracked(() => {
+        const selected = this.selected();
+        if (selected && tabOf(this.draft(), selected) !== tab) {
+          this.selected.set(null);
+        }
+      });
+    });
+  }
+
+  /** Chooses a widget (or none), showing the tab it is on. */
+  select(id: string | null): void {
+    this.selected.set(id);
+    if (id !== null) {
+      this.showTabOf(id);
+    }
+  }
+
+  /** The asks for a new tab answered (its label focused in the Layout panel). */
+  tabsAnswered = 0;
+
+  /** Shows a tab on the canvas (the widget chosen is let go of, unless it is on it). */
+  showTab(tab: string): void {
+    this.dashboard.chosenTab.set(tab);
+  }
+
+  /** Asks for a new tab: the Layout panel is shown, at its new tab's label. */
+  wantTab(): void {
+    this.panel.set(panels.indexOf('layout'));
+    this.tabWanted.update((n) => n + 1);
+  }
+
+  private showTabOf(id: string): void {
+    const tab = tabOf(this.draft(), id);
+    if (tab !== null && tab !== this.tab()) {
+      this.dashboard.chosenTab.set(tab);
+    }
+  }
 
   /** A widget as the editor names it: its title, or its kind and id. */
   nameOf(id: string): string {
@@ -318,11 +396,13 @@ export class EditorStore {
     }
   }
 
-  /** The widget chosen, if it is still there. */
+  /** The widget chosen, if it is still there, and its tab shown (moved to another, the canvas follows it). */
   private keepSelection(): void {
     const selected = this.selected();
     if (selected && !this.draft().widgets.some((w) => w.id === selected)) {
       this.selected.set(null);
+    } else if (selected) {
+      this.showTabOf(selected);
     }
     const shown = this.shown();
     if (shown && !this.draft().layout.breakpoints.some((b) => b.id === shown)) {

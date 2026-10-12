@@ -61,6 +61,10 @@ const definition = {
   ],
   refresh: { mode: 'manual', seconds: null },
   public: { showData: true },
+  tabs: [
+    { id: 'orders', label: 'Orders' },
+    { id: 'customers', label: 'Customers' },
+  ],
 } as unknown as Definition;
 
 /** The address of a state, as the browser shows it. */
@@ -165,13 +169,39 @@ describe('dashboard addresses', () => {
   });
 
   it("knows its parameters from the page's", () => {
-    expect(['f.status', 's.by-status', 'copy', 'theme', 'f'].map(isDashboardParam)).toEqual([
+    expect(['f.status', 's.by-status', 'tab', 'copy', 'theme', 'f'].map(isDashboardParam)).toEqual([
+      true,
       true,
       true,
       false,
       false,
       false,
     ]);
+  });
+
+  it('says the tab shown when it is not the first, and leaves out tabs that are not there', () => {
+    expect(dashboardParams(definition, { filters: {}, selections: {}, tab: 'customers' })).toEqual({
+      tab: 'customers',
+    });
+    for (const tab of ['orders', 'gone', null]) {
+      expect(dashboardParams(definition, { filters: {}, selections: {}, tab })).toEqual({});
+    }
+    expect(read('/dashboards/7?tab=customers').state).toEqual({
+      filters: {},
+      selections: {},
+      tab: 'customers',
+    });
+    expect(read('/dashboards/7?tab=orders').state.tab).toBe('orders');
+    expect(read('/dashboards/7?tab=gone')).toEqual({
+      state: { filters: {}, selections: {} },
+      problems: ["There's no tab gone."],
+    });
+    const oneGrid = { ...definition, tabs: undefined };
+    expect(
+      readDashboardParams(oneGrid, serializer.parse('/dashboards/7?tab=orders').queryParams, 50)
+        .problems,
+    ).toEqual(['The dashboard has no tabs.']);
+    expect(dashboardParams(oneGrid, { filters: {}, selections: {}, tab: 'orders' })).toEqual({});
   });
 
   it('reads what it writes, whatever the values', () => {
@@ -295,7 +325,10 @@ function states(): fc.Arbitrary<DashboardUrlState> {
     { requiredKeys: [] },
   );
   return fc
-    .record({ filters, selections: choosing })
+    .record(
+      { filters, selections: choosing, tab: fc.constant('customers') },
+      { requiredKeys: ['filters', 'selections'] },
+    )
     .filter(({ filters }) =>
       Object.entries(filters).every(
         ([id, value]) =>

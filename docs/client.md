@@ -517,6 +517,13 @@ the server keeps and checks).
   widest the one designed; narrower ones derived from it (widths scaled, placed in reading order) unless laid out
   by hand. Its order is the reading order, so tabbing follows what is seen. `grid-layout.ts` is the layout's pure
   functions (moves, resizes, placing, deriving), property-tested.
+- **Tabs** (`model/tabs.ts`): a dashboard may be split into tabs, each a grid of its own under the filters and
+  chips (which are the whole dashboard's: a slice chosen on one tab filters the widgets listening on every other).
+  Only the tab shown asks for rows. A tab is laid out once it is first shown and kept when another is (collapsed,
+  `inert`, as wide as it was: its widgets keep their rows and charts); its widgets ask again when it is shown, once,
+  and only if what reaches them changed meanwhile (read fresh if the dashboard was refreshed); hidden while still
+  reading, they stop (the shown tab's requests don't wait behind theirs). "Read at" and the timer's waits are the
+  shown widgets'. A dashboard without tabs is one grid, as ever.
 - **Widgets** (`model/widget-registry.ts`, `WIDGET_KINDS`): a kind is its label, icon, default and least sizes,
   defaults, and two components loaded when needed, its view and its settings' editor. Text (Markdown, `marked`, its
   HTML escaped, links in new tabs, headings a level down, images of this site only); pie, bar and line charts
@@ -540,7 +547,9 @@ the server keeps and checks).
 - **The address** (`core/dashboards/dashboard-url.ts`, the only place it is read and written) keeps filters' values
   (`f.status=open,shipped`, `f.total=10~100`, `f.placed=last.3.month`) and slices chosen (`s.by-city=Cape Town`,
   `!` first for left out, `|` between a series' parts), written in place; values keep their types (bare `null`,
-  numbers and booleans; text that would read as one, quoted). What it can't read is said and left out.
+  numbers and booleans; text that would read as one, quoted), and the tab shown (`tab=customers`, left out for the
+  first). What it can't read is said and left out, and nothing is laid out till it is read (so `?tab=` asks for its
+  tab's rows alone).
 - **Popups:** a widget's Data (its rows; signed in, the rows they were worked out from, in the query results'
   grid) and View query (its GDQ, its parameters, its SQL and plan, Open in the query editor).
 - **Refreshing:** by hand, or on the dashboard's timer while the page is shown (not while it is hidden or reading;
@@ -548,14 +557,20 @@ the server keeps and checks).
 
 **The editor** (`editor/`, `/dashboards/new` and `/dashboards/<id>/edit`): the dashboard as viewers see it on a
 canvas, at each breakpoint (narrower ones as wide as they are); the widgets to add; panels for the widget chosen,
-the sources and their links (paths of navigations the catalog suggests), the filters, the layout (breakpoints, rows'
-height, gaps, a narrower width laid out by hand or derived again), the dashboard's own (its refresh, its charts'
-palette), and the issues (the editor's, the server's for the dashboard and each widget's preview, a save's by field,
-each with Go to).
+the sources and their links (paths of navigations the catalog suggests), the filters, the layout (tabs, breakpoints,
+rows' height, gaps, a narrower width laid out by hand or derived again), the dashboard's own (its refresh, its
+charts' palette), and the issues (the editor's, the server's for the dashboard and each widget's preview, a save's by
+field, each with Go to).
 
 - **Widgets** are chosen by a click (Try it, to choose slices instead), moved by their handles and resized by their
   corners, by pointer or keyboard: Enter or Space on a handle, arrows to move, Shift and arrows to resize, Enter to
   drop, Escape to put back, each step said.
+- **Tabs** (the Layout panel): Split into tabs (its widgets in the first), a new tab by its label (its id, from the
+  label, is kept when it is renamed: addresses name it), labels, moved earlier or later, removed (its widgets moved
+  to the tab before, or removed too), or Stop using tabs (their grids one below the other). The canvas shows one tab
+  at a time, by its bar (its + asks for a new one), and edits that tab's grid alone; widgets are added to it, moved
+  to another by their settings' Tab, and Go to shows a widget's tab. Every edit of tabs (`definition-ops.ts`) lays
+  out one tab's cells alone (`perTab`), property-tested.
 - **Fields** are picked by name (`customer.country`: columns, and navigations to one row stepped into), by the types
   their use takes (numbers to sum, periods for dates).
 - **Previews:** each widget's rows, of its slice of the definition (what its rows depend on), asked for as edits
@@ -589,7 +604,8 @@ stopped after asking).
 (nothing in it asks who is signed in: `sessionInterceptor` handles only `/api/` requests but `/api/public/`, and the
 view never injects `AuthStore`, which lint keeps so). `?theme=light` or `dark`, else the system's, whatever the
 application's choice (`embedScheme`, at startup). Its address keeps its state as the dashboard's page does
-(written in place: a frame's history is its parent's). Framed, it posts its height to its parent as it changes
+(written in place: a frame's history is its parent's), the tab shown too, so a parent may frame a tab with
+`?tab=<id>`. Framed, it posts its height (the tab shown's) to its parent as it changes
 (`{type: 'galaxydata.dashboard.size', version: 1, height}`); the parent's side is the snippet in
 [server.md](server.md#dashboards), which checks `event.origin`. What it can't show it says, never asking anyone to
 sign in.
@@ -923,10 +939,13 @@ its own: the client's `npm ci`, which publishing runs, doesn't install it). In o
     frame grows to the height it says, nothing but `/api/public/` is asked for, its link opens a tab, and no frame
     logs an error or a content security policy's refusal; its link stopped, the frame says it isn't there;
 16. colours labels by a palette: made from the application's colours, with colours of their own for `open` and
-    `Cape Town`; chosen as the dashboard's charts' palette, the bars coloured by their categories; published, the
+    `Johannesburg`; chosen as the dashboard's charts' palette, the bars coloured by their categories; published, the
     bar chart's and the pie's tables show those colours; public, each chart's rows carry only their own labels'
     colours;
-17. and the browser's console said nothing all along (no errors, nothing the content security policy refused).
+17. splits it into tabs, Orders and Customers (the table moved there by its settings' Tab), and publishes it: the
+    table reads nothing while the Orders tab is shown (a slice chosen there included), once when its tab is shown,
+    and nothing more going back and forth; reloaded, the address keeps the tab, and only its widgets read;
+18. and the browser's console said nothing all along (no errors, nothing the content security policy refused).
 
 **Running it**, in `tests/e2e`:
 

@@ -7,6 +7,7 @@ import {
   isData,
   reachedFrom,
 } from './definition';
+import { untabbed } from './tabs';
 import { barDefaults, lineDefaults, pieDefaults, tableDefaults } from './widget-defaults';
 
 /**
@@ -15,8 +16,9 @@ import { barDefaults, lineDefaults, pieDefaults, tableDefaults } from './widget-
  * widgets it listens to on those sources that something is chosen in (`chosen`; all, when not said), what their
  * slices are of (their dimensions, nothing more). Cells are stacked, breakpoints kept and overrides left out, so
  * moving widgets or changing another's title or colours changes no slice; palettes (the dashboard's, and the
- * widget's) and what a bar chart is coloured by are left out too, as they are its colours, not its rows. The
- * editor's previews send it, and are asked for again when it changes, and only then.
+ * widget's) and what a bar chart is coloured by are left out too, as they are its colours, not its rows, and so are
+ * the tabs (where it is shown isn't what it shows). The editor's previews send it, and are asked for again when it
+ * changes, and only then.
  */
 export function sliceOf(
   definition: Definition,
@@ -89,14 +91,13 @@ function withWidgets(
   links: Definition['links'],
   filters: Definition['filters'],
 ): Definition {
-  const rest: Definition = { ...definition };
+  const rest: Definition = untabbed({ ...definition, widgets });
   delete rest.palette;
   return {
     ...rest,
     sources,
     links,
     filters,
-    widgets,
     layout: {
       ...definition.layout,
       items: Object.fromEntries(widgets.map((w, i) => [w.id, { x: 0, y: i, w: 1, h: 1 }])),

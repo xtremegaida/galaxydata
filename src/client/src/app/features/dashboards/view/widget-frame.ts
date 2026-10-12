@@ -9,6 +9,7 @@ import {
   effect,
   inject,
   input,
+  linkedSignal,
   resource,
   untracked,
 } from '@angular/core';
@@ -18,11 +19,12 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatIcon } from '@angular/material/icon';
 import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
 import { MatProgressBar } from '@angular/material/progress-bar';
-import { EMPTY, switchMap, tap, timer } from 'rxjs';
+import { EMPTY, finalize, of, switchMap, tap, timer } from 'rxjs';
 import { problemMessage, problemOf } from '../../../core/api/problem';
 import { Message } from '../../../core/ui/message';
 import {
   type DashboardIssue,
+  type DashboardState,
   type DataConfig,
   type Widget,
   configOf,
@@ -37,6 +39,23 @@ import { missingOf } from '../model/complete';
 import { WIDGET_EDITING } from './widget-editing';
 
 let frames = 0;
+
+/** What a widget's rows are asked for with: what reaches it, the refreshes so far, its page, and the host's basis. */
+interface RowsRequest {
+  readonly id: string;
+  readonly inputs: DashboardState;
+  readonly refreshes: number;
+  readonly offset: number;
+  readonly basis: unknown;
+}
+
+/**
+ * What a widget hidden while it read its rows asks for: nothing (what it was reading stops, as a resource asked for
+ * nothing would let it go on). Its rows shown stay; shown again, it asks anew.
+ */
+interface Paused {
+  readonly paused: true;
+}
 
 /**
  * A widget on the grid: its title, its rows (read again when what reaches it changes, or the dashboard is
@@ -302,6 +321,8 @@ export class WidgetFrame {
   readonly widget = input.required<Widget>();
   /** Whether the dashboard is being edited. */
   readonly editing = input(false);
+  /** Whether its tab is the one shown: on another, it asks for nothing till it is. */
+  readonly shown = input(true);
 
   protected readonly context = inject(WidgetContext);
   protected readonly store = inject(DashboardStore);
@@ -312,8 +333,10 @@ export class WidgetFrame {
   private readonly waits = inject(DASHBOARD_WAITS);
   /** The editor's, on its canvas. */
   protected readonly edit = inject(WIDGET_EDITING, { optional: true });
-  /** The rows last asked for: asked again with the same, or after a refresh, they are read fresh. */
-  private asked: { readonly params: object; readonly refreshes: number } | null = null;
+  /** What the rows last read were asked with: asked again with the same, or after a refresh since, they are read fresh. */
+  private answered: { readonly params: object; readonly refreshes: number } | null = null;
+  /** Whether its rows are being read now: as the request goes, not as the page last showed it. */
+  private reading = false;
   protected readonly titleId = `gd-widget-${++frames}`;
 
   protected readonly config = computed(() => configOf(this.widget()));
@@ -360,8 +383,8 @@ export class WidgetFrame {
     loader: ({ params }) => params.view(),
   });
 
-  /** What the rows are asked for with: equal as JSON, they aren't asked for again. */
-  private readonly request = computed(
+  /** What the rows would be asked for with now: equal as JSON, they aren't asked for again. */
+  private readonly live = computed<RowsRequest | undefined>(
     () => {
       const host = this.store.host();
       const id = this.widget().id;
@@ -378,6 +401,28 @@ export class WidgetFrame {
     { equal: sameJson },
   );
 
+  /**
+   * What the rows are asked for with: what reaches the widget now while its tab is shown. While another is, what it
+   * last asked for (so nothing is asked, whatever changes); or nothing once hidden while still reading, which stops
+   * it (the shown tab's requests don't wait behind it). Shown again, it asks once, if what reaches it changed.
+   */
+  private readonly request = linkedSignal<
+    { shown: boolean; live: RowsRequest | undefined },
+    RowsRequest | Paused | undefined
+  >({
+    source: () => ({ shown: this.shown(), live: this.live() }),
+    computation: ({ shown, live }, previous) => {
+      if (shown) {
+        return live;
+      }
+      if (previous?.value && this.reading) {
+        return { paused: true };
+      }
+      return previous?.value;
+    },
+    equal: sameJson,
+  });
+
   protected readonly data = rxResource({
     params: () => this.request(),
     stream: ({ params }) => {
@@ -385,20 +430,30 @@ export class WidgetFrame {
       if (!host) {
         return EMPTY;
       }
+      if ('paused' in params) {
+        return of(null);
+      }
       const config = untracked(() => this.config());
       const page =
         config.kind === 'table'
           ? { offset: params.offset, limit: config.pageSize, count: false }
           : null;
-      // Fresh when the dashboard was refreshed since, or the same rows are asked for again; not for others.
-      const asked = this.asked;
-      const fresh = !!asked && (params === asked.params || params.refreshes !== asked.refreshes);
-      this.asked = { params, refreshes: params.refreshes };
+      // Fresh when the dashboard was refreshed since the rows shown were read (a tab shown again after one, too),
+      // or the same rows are asked for again; not for others.
+      const answered = this.answered;
+      const fresh =
+        !!answered && (params === answered.params || params.refreshes !== answered.refreshes);
       const read = () =>
         host.data(params.id, params.inputs, page, fresh).pipe(
           tap({
-            next: (data) => this.store.setIssues(params.id, data.issues ?? []),
+            next: (data) => {
+              this.reading = false;
+              this.answered = { params, refreshes: params.refreshes };
+              this.store.setIssues(params.id, data.issues ?? []);
+            },
             error: (error: unknown) => {
+              this.reading = false;
+              this.answered = { params, refreshes: params.refreshes };
               const issues = problemOf(error).body?.['issues'];
               this.store.setIssues(
                 params.id,
@@ -408,7 +463,10 @@ export class WidgetFrame {
           }),
         );
       // The editor's previews wait for edits to pause.
-      return host.kind === 'editor' ? timer(this.waits.preview).pipe(switchMap(read)) : read();
+      this.reading = true;
+      return (
+        host.kind === 'editor' ? timer(this.waits.preview).pipe(switchMap(read)) : read()
+      ).pipe(finalize(() => (this.reading = false)));
     },
     equal: sameJson,
   });
@@ -514,6 +572,7 @@ export class WidgetFrame {
       });
       inject(DestroyRef).onDestroy(() => this.store.setColors(this.widget().id, null));
     }
+    inject(DestroyRef).onDestroy(() => this.store.forget(this.widget().id));
     effect(() => this.context.editing.set(this.editing()));
     // On the canvas, slices are chosen only to try the dashboard out.
     effect(() => this.context.choosing.set(!this.edit || this.edit.interacting()));

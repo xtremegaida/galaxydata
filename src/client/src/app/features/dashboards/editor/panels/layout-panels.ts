@@ -1,28 +1,40 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   computed,
+  effect,
   inject,
   output,
   signal,
+  untracked,
+  viewChild,
 } from '@angular/core';
 import { MatButton, MatIconButton } from '@angular/material/button';
 import { MatFormField, MatHint, MatLabel } from '@angular/material/form-field';
 import { MatIcon } from '@angular/material/icon';
 import { MatInput } from '@angular/material/input';
+import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
 import { MatRadioButton, MatRadioGroup } from '@angular/material/radio';
 import { configOf } from '../../model/definition';
 import {
+  addTab,
   customize,
   designedOf,
+  dropTabs,
   hideAt,
+  moveTab,
   moveWidget,
+  removeTab,
+  renameTab,
   resetBreakpoint,
   resizeWidget,
   setBreakpoints,
   setLayoutSizes,
   setRefresh,
+  useTabs,
 } from '../../model/definition-ops';
+import { maxTabs, tabOf, tabsOf, widgetsOn } from '../../model/tabs';
 import type { Breakpoint } from '../../model/definition';
 import { effectiveLayout, minColumns } from '../../layout/grid-layout';
 import { WIDGET_KINDS, kindOf } from '../../model/widget-registry';
@@ -57,19 +69,161 @@ const panelStyles = `
     font: var(--mat-sys-body-small);
     color: var(--mat-sys-on-surface-variant);
   }
+  .tab-row,
+  .new-tab {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    gap: 4px;
+    align-items: center;
+  }
+  .new-tab {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
 `;
 
 /**
- * The grid: its breakpoints (from 0, ascending, the widest the one designed; 1 to 24 columns each), its rows'
+ * The grid: its tabs (each a grid of its own: split into them, added, renamed, moved and removed, or the dashboard
+ * one grid again), its breakpoints (from 0, ascending, the widest the one designed; 1 to 24 columns each), its rows'
  * height and gaps; at a narrower breakpoint, whether it follows the designed layout or is laid out by hand (and
  * the widgets hidden there); the chosen widget's cell, typed.
  */
 @Component({
   selector: 'gd-layout-panel',
-  imports: [MatButton, MatFormField, MatHint, MatIcon, MatIconButton, MatInput, MatLabel],
+  imports: [
+    MatButton,
+    MatFormField,
+    MatHint,
+    MatIcon,
+    MatIconButton,
+    MatInput,
+    MatLabel,
+    MatMenu,
+    MatMenuItem,
+    MatMenuTrigger,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="panel">
+      <h3>Tabs</h3>
+      @if (tabs().length === 0) {
+        <p class="aside">
+          One grid. Split it into tabs, each a grid of its own: only the tab shown reads its rows.
+        </p>
+        <div class="new-tab">
+          <mat-form-field subscriptSizing="dynamic">
+            <mat-label>The first tab, holding its widgets</mat-label>
+            <input
+              matInput
+              autocomplete="off"
+              [value]="firstLabel()"
+              (input)="firstLabel.set(text($event))"
+              (keydown.enter)="split()"
+            />
+          </mat-form-field>
+          <button
+            matButton="tonal"
+            type="button"
+            [disabled]="!firstLabel().trim()"
+            (click)="split()"
+          >
+            Split into tabs
+          </button>
+        </div>
+      } @else {
+        @for (tab of tabs(); track tab.id; let i = $index, last = $last) {
+          <div class="tab-row">
+            <mat-form-field subscriptSizing="dynamic">
+              <mat-label>Tab {{ i + 1 }}{{ tab.id === store.tab() ? ', shown' : '' }}</mat-label>
+              <input
+                matInput
+                autocomplete="off"
+                [value]="tab.label"
+                (input)="renamed(tab.id, $event)"
+              />
+              @if (!tab.label.trim()) {
+                <mat-hint role="alert">Give it a label</mat-hint>
+              }
+            </mat-form-field>
+            <button
+              matIconButton
+              type="button"
+              [disabled]="i === 0"
+              [attr.aria-label]="'Move ' + nameOf(tab, i) + ' earlier'"
+              (click)="moved(tab.id, -1)"
+            >
+              <mat-icon>arrow_upward</mat-icon>
+            </button>
+            <button
+              matIconButton
+              type="button"
+              [disabled]="last"
+              [attr.aria-label]="'Move ' + nameOf(tab, i) + ' later'"
+              (click)="moved(tab.id, 1)"
+            >
+              <mat-icon>arrow_downward</mat-icon>
+            </button>
+            @if (tabs().length > 1 && widgetsOf(tab.id) > 0) {
+              <button
+                matIconButton
+                type="button"
+                [attr.aria-label]="'Remove ' + nameOf(tab, i)"
+                [matMenuTriggerFor]="removing"
+              >
+                <mat-icon>delete</mat-icon>
+              </button>
+              <mat-menu #removing="matMenu">
+                <button mat-menu-item type="button" (click)="removed(tab.id, 'move')">
+                  Move its widgets to {{ neighbourOf(i) }}
+                </button>
+                <button mat-menu-item type="button" (click)="removed(tab.id, 'remove')">
+                  Remove its widgets too
+                </button>
+              </mat-menu>
+            } @else {
+              <button
+                matIconButton
+                type="button"
+                [attr.aria-label]="
+                  tabs().length === 1 ? 'Stop using tabs' : 'Remove ' + nameOf(tab, i)
+                "
+                (click)="removed(tab.id, 'move')"
+              >
+                <mat-icon>delete</mat-icon>
+              </button>
+            }
+          </div>
+        }
+        <div class="new-tab">
+          <mat-form-field subscriptSizing="dynamic">
+            <mat-label>New tab</mat-label>
+            <input
+              #newTab
+              matInput
+              autocomplete="off"
+              [value]="newLabel()"
+              (input)="newLabel.set(text($event))"
+              (keydown.enter)="added()"
+            />
+            @if (tabs().length >= maxTabs) {
+              <mat-hint>A dashboard has {{ maxTabs }} tabs at most</mat-hint>
+            }
+          </mat-form-field>
+          <button
+            matButton
+            type="button"
+            [disabled]="!newLabel().trim() || tabs().length >= maxTabs"
+            (click)="added()"
+          >
+            <mat-icon>add</mat-icon>
+            Add
+          </button>
+        </div>
+        <button matButton type="button" (click)="stop()">
+          <mat-icon>tab_unselected</mat-icon>
+          Stop using tabs
+        </button>
+        <p class="aside">Stopped, the tabs' grids are put one below the other, in their order.</p>
+      }
       <h3>At {{ store.breakpoint().label }}</h3>
       @if (store.designed()) {
         <p class="aside">
@@ -236,13 +390,24 @@ export class LayoutPanel {
   protected readonly store = inject(EditorStore);
   private readonly kinds = inject(WIDGET_KINDS);
 
+  protected readonly maxTabs = maxTabs;
   protected readonly designed = computed(() => designedOf(this.store.draft()));
   protected readonly breakpoints = computed(() => this.store.draft().layout.breakpoints);
-  protected readonly hidden = computed(
-    () => this.store.draft().layout.overrides[this.store.breakpoint().id]?.hidden ?? [],
-  );
+  protected readonly tabs = computed(() => tabsOf(this.store.draft()));
+  /** The widgets hidden at the breakpoint shown, of the tab shown. */
+  protected readonly hidden = computed(() => {
+    const definition = this.store.draft();
+    return (definition.layout.overrides[this.store.breakpoint().id]?.hidden ?? []).filter(
+      (id) => tabOf(definition, id) === this.store.tab(),
+    );
+  });
 
-  /** The chosen widget's cell at the breakpoint shown. */
+  /** The label the first tab is given, splitting the dashboard into tabs; and a new tab's. */
+  protected readonly firstLabel = signal('Overview');
+  protected readonly newLabel = signal('');
+  private readonly newTab = viewChild<ElementRef<HTMLInputElement>>('newTab');
+
+  /** The chosen widget's cell at the breakpoint shown, as its tab is laid out. */
   protected readonly cell = computed(() => {
     const id = this.store.selected();
     const definition = this.store.draft();
@@ -253,10 +418,84 @@ export class LayoutPanel {
       effectiveLayout(
         definition.layout,
         this.store.breakpoint().id,
-        definition.widgets.map((w) => w.id),
+        widgetsOn(definition, tabOf(definition, id)).map((w) => w.id),
       ).cells[id] ?? null
     );
   });
+
+  constructor() {
+    // A new tab asked for on the canvas: its label is to be written here.
+    effect(() => {
+      const wanted = this.store.tabWanted();
+      const field = this.newTab();
+      if (wanted > this.store.tabsAnswered && field) {
+        this.store.tabsAnswered = wanted;
+        untracked(() => setTimeout(() => field.nativeElement.focus()));
+      }
+    });
+  }
+
+  protected nameOf(tab: { label: string }, index: number): string {
+    return tab.label.trim() || `tab ${index + 1}`;
+  }
+
+  /** How many widgets are on a tab. */
+  protected widgetsOf(tab: string): number {
+    return widgetsOn(this.store.draft(), tab).length;
+  }
+
+  /** The tab a removed one's widgets go to: the one before it, else the one after. */
+  protected neighbourOf(index: number): string {
+    const tabs = this.tabs();
+    const other = index > 0 ? index - 1 : index + 1;
+    return this.nameOf(tabs[other], other);
+  }
+
+  protected split(): void {
+    const label = this.firstLabel().trim();
+    if (label) {
+      this.store.apply('Split into tabs', (d) => useTabs(d, label).definition);
+    }
+  }
+
+  protected added(): void {
+    const label = this.newLabel().trim();
+    if (!label || this.tabs().length >= maxTabs) {
+      return;
+    }
+    let made = '';
+    this.store.apply(`Added the tab ${label}`, (d) => {
+      const tab = addTab(d, label);
+      made = tab.id;
+      return tab.definition;
+    });
+    this.newLabel.set('');
+    this.store.showTab(made);
+  }
+
+  protected renamed(tab: string, event: Event): void {
+    const label = this.text(event);
+    this.store.apply('Renamed a tab', (d) => renameTab(d, tab, label), `tab:${tab}`);
+  }
+
+  protected moved(tab: string, by: number): void {
+    this.store.apply('Moved a tab', (d) => moveTab(d, tab, by));
+  }
+
+  protected removed(tab: string, widgets: 'remove' | 'move'): void {
+    const only = this.tabs().length === 1;
+    const name = this.nameOf(
+      this.tabs().find((t) => t.id === tab)!,
+      this.tabs().findIndex((t) => t.id === tab),
+    );
+    this.store.apply(only ? 'Stopped using tabs' : `Removed the tab ${name}`, (d) =>
+      removeTab(d, tab, widgets),
+    );
+  }
+
+  protected stop(): void {
+    this.store.apply('Stopped using tabs', (d) => dropTabs(d));
+  }
 
   /** What is wrong with the breakpoints typed, if anything: they're kept only when right. */
   protected readonly problem = signal<string | null>(null);

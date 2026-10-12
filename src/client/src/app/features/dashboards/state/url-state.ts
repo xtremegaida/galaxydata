@@ -12,8 +12,8 @@ import type { Definition } from '../model/definition';
 import type { DashboardStore } from './dashboard-store';
 
 /**
- * Keeps a dashboard's state (its filters' values, the slices chosen) in its page's address, so a reload, a link
- * or going back keeps it. The address is read when it changes (the page opens, back or forward, a link), and
+ * Keeps a dashboard's state (its filters' values, the slices chosen, the tab shown) in its page's address, so a
+ * reload, a link or going back keeps it. The address is read when it changes (the page opens, back or forward, a link), and
  * written as the viewer changes the state, replacing the address (an embed's history is its parent's, and every
  * click would be a step back). Once the page has its dashboard (the store, a host): what is read is written back
  * the same, so nothing loops. Made in an injection context; gives what in the address couldn't be read.
@@ -28,6 +28,8 @@ export function bindUrlState(store: DashboardStore, maxKeys: number): Signal<rea
   let seenState: DashboardUrlState | null = null;
   // Addresses being written: the address seen meanwhile may be the one before.
   let writing = 0;
+  // Nothing is laid out till the address is read: the tab it names is the first shown.
+  store.stateRead.set(false);
 
   const write = (all: Params, next: Params) => {
     seenUrl = next;
@@ -44,7 +46,12 @@ export function bindUrlState(store: DashboardStore, maxKeys: number): Signal<rea
     const host = store.host();
     const definition = store.definition();
     const all = params();
-    const state: DashboardUrlState = { filters: store.filters(), selections: store.selections() };
+    const tab = store.chosenTab();
+    const state: DashboardUrlState = {
+      filters: store.filters(),
+      selections: store.selections(),
+      ...(tab === null ? {} : { tab }),
+    };
     if (!host) {
       return;
     }
@@ -64,6 +71,8 @@ export function bindUrlState(store: DashboardStore, maxKeys: number): Signal<rea
         seenState = read.state;
         store.filters.set(read.state.filters);
         store.selections.set(read.state.selections);
+        store.chosenTab.set(read.state.tab ?? null);
+        store.stateRead.set(true);
         // What is left out, and values that are the defaults, go from the address.
         const written = dashboardParams(definition, read.state);
         if (!sameJson(written, url)) {

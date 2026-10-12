@@ -207,4 +207,47 @@ public sealed class DefinitionRulesTests
       Fields(With(null, bar with { ColorBy = BarColorBy.Category, Measures = [.. bar.Measures, revenue] }, pie)).ShouldBe(["definition.widgets[1].config.colorBy"]);
       Fields(With(null, bar with { ColorBy = BarColorBy.Category, Series = bar.Dimension }, pie)).ShouldBe(["definition.widgets[1].config.colorBy"]);
    }
+
+   [Fact]
+   public void TabsHaveIdsAndLabelsAndEachWidgetIsOnOne()
+   {
+      DashboardDefinition sales = Definitions.Sales();
+      DashboardDefinition Tabbed(List<DashboardTab>? tabs, params string?[] on) => sales with
+      {
+         Tabs = tabs,
+         Widgets = [.. sales.Widgets.Select((w, i) => w with { Tab = on[i] })],
+      };
+      List<DashboardTab> two = [new("orders", "Orders"), new("customers", "Customers")];
+
+      (DashboardDefinition? tabbed, Dictionary<string, string[]> errors) = Check(Tabbed(two, "orders", "orders", "customers"));
+      errors.ShouldBeEmpty();
+      string json = DefinitionJson.Write(tabbed!);
+      json.ShouldContain("\"tabs\":[{\"id\":\"orders\",\"label\":\"Orders\"},{\"id\":\"customers\",\"label\":\"Customers\"}]");
+      json.ShouldContain("\"tab\":\"customers\"");
+      DefinitionJson.Write(DefinitionJson.Read(json)).ShouldBe(json, "written as it reads back");
+      Check(Tabbed([new("only", "Only")], "only", "only", "only")).Errors.ShouldBeEmpty("one tab, and tabs with no widgets, are allowed");
+
+      Fields(Tabbed(two, "orders", null, "nowhere")).ShouldBe(["definition.widgets[1].tab", "definition.widgets[2].tab"]);
+      Check(Tabbed(two, "orders", null, "nowhere")).Errors["definition.widgets[2].tab"].ShouldBe(["There is no tab nowhere"]);
+      Fields(Tabbed(null, "orders", null, null)).ShouldBe(["definition.widgets[0].tab"]);
+      Check(Tabbed(null, "orders", null, null)).Errors["definition.widgets[0].tab"].ShouldBe(["The dashboard has no tabs"]);
+      Fields(Tabbed([new("Orders!", " "), new("orders", "Orders"), new("orders", new string('x', 61)), null!], "orders", "orders", "orders"))
+         .ShouldBe(["definition.tabs[0].id", "definition.tabs[0].label", "definition.tabs[2].id", "definition.tabs[2].label", "definition.tabs[3]"]);
+      DefinitionRules few = new(new WidgetKinds(WidgetKinds.BuiltIn()), new DashboardSettings { MaxTabs = 1 });
+      Fields(Tabbed(two, "orders", "orders", "orders"), few).ShouldBe(["definition.tabs"]);
+   }
+
+   [Fact]
+   public void ADashboardWithoutTabsIsWrittenAsItWas()
+   {
+      DashboardDefinition sales = Check(Definitions.Sales()).Checked!;
+      string json = DefinitionJson.Write(sales);
+      json.ShouldNotContain("\"tabs\"");
+      json.ShouldNotContain("\"tab\"");
+      DashboardDefinition none = Check(Definitions.Sales() with { Tabs = [] }).Checked!;
+      none.Tabs.ShouldBeNull("no tabs are written as none");
+      DefinitionJson.Hash(DefinitionJson.Write(none)).ShouldBe(DefinitionJson.Hash(json));
+      Fields(Definitions.Sales() with { Tabs = [], Widgets = [.. Definitions.Sales().Widgets.Select(w => w with { Tab = "orders" })] })
+         .ShouldBe(["definition.widgets[0].tab", "definition.widgets[1].tab", "definition.widgets[2].tab"]);
+   }
 }
