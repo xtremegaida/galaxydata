@@ -14,6 +14,7 @@
       "description": "A person the CRM knows.",
       "key": ["contact_id"],
       "time": "first_seen",
+      "time_end": "last_seen",
       "columns": [
         { "name": "contact_id", "type": "String", "role": "key" },
         { "name": "first_seen", "type": "DateTime64(3, 'UTC')", "role": "time" },
@@ -33,6 +34,7 @@
       "description": "A browser on a computer or phone, as its cookie tells it apart.",
       "key": ["device_id"],
       "time": "first_seen",
+      "time_end": "last_seen",
       "columns": [
         { "name": "device_id", "type": "UUID", "role": "key" },
         { "name": "first_seen", "type": "DateTime64(3, 'UTC')", "role": "time" },
@@ -50,6 +52,7 @@
       "description": "A device a CRM contact was seen on.",
       "key": ["from_id", "to_id"],
       "time": "first_seen",
+      "time_end": "last_seen",
       "columns": [
         { "name": "from_type", "type": "String", "role": "other" },
         { "name": "from_id", "type": "String", "role": "key" },
@@ -88,7 +91,7 @@
         { "name": "_errors", "type": "Array(String)", "role": "internal" }
       ],
       "references": [
-        { "name": "session", "kind": "subject", "columns": ["session_id"], "database": "{web}", "object": "session", "ref_columns": ["session_id"] },
+        { "name": "session", "kind": "subject", "columns": ["session_id"], "database": "{web}", "object": "session", "ref_columns": ["session_id"], "within": true },
         { "name": "device", "kind": "ancestor", "columns": ["device_id"], "database": "{web}", "object": "device", "ref_columns": ["device_id"] },
         { "name": "crm_contact", "kind": "ref", "columns": ["crm_contact_id"], "database": "{crm}", "object": "contact", "ref_columns": ["contact_id"] }
       ]
@@ -101,6 +104,7 @@
       "description": "A visit; it ends after 30 minutes without user activity.",
       "key": ["session_id"],
       "time": "first_seen",
+      "time_end": "last_seen",
       "columns": [
         { "name": "session_id", "type": "UUID", "role": "key" },
         { "name": "device_id", "type": "UUID", "role": "ref" },

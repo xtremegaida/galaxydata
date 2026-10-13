@@ -75,6 +75,9 @@ engine), and no database driver.
    no values for is `Unknown`, with `ReadAs` naming the type the source's SQL reads it as (text, usually). Where the
    source says more, give it: a table's `TimeColumn` (what its rows are dated by), a column's `Values` (those it is
    known to take, in order) and `Aggregate` (how its values add up over many rows). The dashboard editor uses them.
+   A table's `TimeEndColumn` (where a row's time span ends) and a foreign key's `IsWithinTimeSpan` (each row's time
+   falls within the span of the row it refers to) let the optimizer bound the rows a navigation joins by the dates
+   its rows are filtered to: page views of a month are of sessions seen in that month.
 
 5. **The kind of connection.** Derive `ConnectionKind`: `Id` (the provider's kind), `DisplayName`, `Icon`, `Fields`
    and `Options` (the form, its keys the driver's keywords as its connection string builder writes them), `NewBuilder`,
@@ -136,6 +139,11 @@ engine), and no database driver.
   their display values) would build the table from all of those, which can take more memory than a query may have.
   So the page is written on the right (`FROM customers AS c RIGHT JOIN (… LIMIT 51) AS d ON …`), each join after
   the first around the joins before it in a derived table.
+- **A join of a large view needs a bound, or disk.** The same hash table, for a chart's events joined to the sessions
+  they belong to, holds every session there is. Where the source says an event falls within its session's span
+  (`IsWithinTimeSpan`), the chart's dates bound the sessions joined (`… ON e.session_id = s.session_id AND
+  s.last_seen >= @p0 AND s.first_seen < @p1`): a month's, not all of them. Joins that are still too large take
+  ClickHouse's `max_bytes_before_external_join`, which the login's profile or the connection (`set_…`) can give.
 - **What runs in the merge engine.** A subquery may read columns of the query it is in only to test whether rows
   exist (`EXISTS`): ClickHouse's subqueries that give values read null where they find no rows (a count of none is
   null), so `first()` of a navigation, and counts and sums over one, run in the merge engine, over the rows they read.
@@ -174,6 +182,10 @@ SQL (`ClickHouseDialect`), and sends and reads values as its provider does, as t
   classified column's labels, its `Values`; an attribute the model counts or sums from events adds up (`Sum`), and one
   it takes the least or greatest of stays so (`Min`, `Max`). Other attributes (the first or latest value, whether there
   was any, a count of distinct values) say nothing of how they add up.
+- **Time spans.** A view's `time_end` is its `TimeEndColumn`, and a reference marked `within` (to a bounded entity,
+  from the events it is built from or its child entities) is `IsWithinTimeSpan`: a chart's dates bound the entity's
+  rows it joins (see ClickHouse, above). The query service sends `max_bytes_before_external_join` itself, so joins
+  that are still too large go through disk.
 - **Read-only.** The kind is always read-only, without changes; the provider refuses to write.
 - **Settings.** Only those the query service needs: where it is (`Host`, `Port`, `Protocol`, `Path`; HTTPS on 443,
   or 80 over HTTP, unless given, not ClickHouse.Driver's HTTP on 8123), the query key (`Password`) and the default

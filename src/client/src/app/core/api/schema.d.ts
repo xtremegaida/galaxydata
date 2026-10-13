@@ -2120,6 +2120,7 @@ export interface components {
             refTable: string;
             refColumns: string[];
             isEnforced?: boolean;
+            isWithinTimeSpan?: boolean;
             onDelete?: null | string;
             onUpdate?: null | string;
         };
@@ -2935,6 +2936,7 @@ export interface components {
             hasTriggers?: boolean;
             comment?: null | string;
             timeColumn?: null | string;
+            timeEndColumn?: null | string;
         };
         TestConnectionRequest: {
             kind: string;

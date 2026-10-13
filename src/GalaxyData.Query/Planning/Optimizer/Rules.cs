@@ -447,6 +447,141 @@ internal sealed class PushFilterIntoJoin : IRewriteRule
    }
 }
 
+/// <summary>
+/// A navigation whose rows' time falls within the time span of the row it finds (an event happens while its session
+/// lasts: <see cref="Catalog.RelationDef.IsWithinTimeSpan"/>) finds rows whose span reaches the times the rows are
+/// filtered to: <c>v.first_seen >= x</c> gives <c>s.last_seen >= x</c>, and <c>v.first_seen &lt; y</c> gives
+/// <c>s.first_seen &lt; y</c>; page views of a month are of sessions seen in that month. A database then joins only
+/// those, not every row of the target (a hash join's table holds a month's sessions, not every session there is).
+/// Every row the join found still passes, so it stays the navigation it was.
+/// </summary>
+internal sealed class BoundJoinedTimeSpans : IRewriteRule
+{
+   public string Name => "bound joined time spans";
+
+   public PlanNode? Apply(PlanNode node) => node switch
+   {
+      // Before the filter goes into the join, which a condition on the target's columns makes a join of another kind.
+      FilterNode { Input: JoinNode join } filter when Bound(join, PlanAnalysis.Conjuncts(filter.Predicate)) is { } bounded =>
+         new FilterNode(bounded, filter.Predicate),
+      JoinNode join => Bound(join, Conditions(join.Left)),
+      _ => null,
+   };
+
+   /// <summary>The join with the bounds that conditions on its rows' time put on its target's span; null when there are none to add.</summary>
+   private static JoinNode? Bound(JoinNode join, List<PlanExpr> conditions)
+   {
+      if (join.Kind is not (JoinKind.Inner or JoinKind.Left) || conditions.Count == 0 ||
+          join.Navigation is not { IsInverse: false, Relation.IsWithinTimeSpan: true } navigation ||
+          navigation.Owner.TimeColumn is not { } time || navigation.Target is not { TimeColumn: { } start, TimeEndColumn: { } end } ||
+          Rows(join) is not ({ } owner, { } target) || !ReferenceEquals(owner.Entity, navigation.Owner) || !ReferenceEquals(target.Entity, navigation.Target))
+      {
+         return null;
+      }
+      PlanColumn rowTime = owner[time], spanStart = target[start], spanEnd = target[end];
+      HashSet<PlanColumn> right = [.. join.Right.Output];
+      if (!right.Contains(spanStart) || !right.Contains(spanEnd)) { return null; }
+      HashSet<string> present = [.. Conditions(join.Right).Select(PlanPrinter.Expr)];
+      List<PlanExpr> bounds = [];
+      foreach (PlanExpr condition in conditions)
+      {
+         foreach ((BinaryOp op, bool after, PlanExpr value) in Limits(condition, rowTime))
+         {
+            // A row after x is of a span that ends after x; a row before y, of one that starts before y.
+            PlanColumn column = after ? spanEnd : spanStart;
+            PlanBinary bound = new(op, new PlanColumnRef(column, column.Type), value, ScalarType.Boolean.WithNullable(column.Type.Nullable || value.Type.Nullable));
+            if (present.Add(PlanPrinter.Expr(bound))) { bounds.Add(bound); }
+         }
+      }
+      return bounds.Count == 0
+         ? null
+         : new JoinNode(join.Kind, join.Left, new FilterNode(join.Right, PlanAnalysis.Conjunction(bounds)!), join.Condition, join.Navigation);
+   }
+
+   /// <summary>The rows the join's condition matches: the owner's on the left, the target's on the right.</summary>
+   private static (RowOrigin? Owner, RowOrigin? Target) Rows(JoinNode join)
+   {
+      if (join.Condition == null) { return (null, null); }
+      HashSet<PlanColumn> left = [.. join.Left.Output];
+      foreach (PlanExpr part in PlanAnalysis.Conjuncts(join.Condition))
+      {
+         if (part is PlanBinary { Op: BinaryOp.Equal, Left: PlanColumnRef a, Right: PlanColumnRef b })
+         {
+            return left.Contains(a.Column) ? (a.Column.Origin, b.Column.Origin) : (b.Column.Origin, a.Column.Origin);
+         }
+      }
+      return (null, null);
+   }
+
+   /// <summary>
+   /// The conditions every row of a plan meets: its filters', down through the operators that keep their input's rows
+   /// as they are (projections, sorts, limits, and joins on their left side).
+   /// </summary>
+   private static List<PlanExpr> Conditions(PlanNode node)
+   {
+      List<PlanExpr> conditions = [];
+      while (true)
+      {
+         switch (node)
+         {
+            case FilterNode filter:
+               conditions.AddRange(PlanAnalysis.Conjuncts(filter.Predicate));
+               node = filter.Input;
+               break;
+            case JoinNode { Kind: JoinKind.Inner or JoinKind.Left or JoinKind.Semi or JoinKind.Anti } join:
+               node = join.Left;
+               break;
+            case ProjectNode project:
+               node = project.Input;
+               break;
+            case SortNode sort:
+               node = sort.Input;
+               break;
+            case LimitNode limit:
+               node = limit.Input;
+               break;
+            default:
+               return conditions;
+         }
+      }
+   }
+
+   /// <summary>
+   /// The limits a condition puts on a row's time, each a comparison with a value that the row's time is after
+   /// (<c>After</c>) or before.
+   /// </summary>
+   private static IEnumerable<(BinaryOp Op, bool After, PlanExpr Value)> Limits(PlanExpr condition, PlanColumn time)
+   {
+      bool IsTime(PlanExpr expr) => expr is PlanColumnRef reference && RowOrigin.Provides(reference.Column, time);
+      return condition switch
+      {
+         PlanBinary { Left: var column, Right: var value } binary when IsTime(column) && PlanRewriter.IsConstant(value) => Compared(binary.Op, value),
+         PlanBinary { Left: var value, Right: var column } binary when IsTime(column) && PlanRewriter.IsConstant(value) => Compared(Mirrored(binary.Op), value),
+         PlanFunction { Function.Id: FunctionId.Between, Arguments: [var column, var low, var high] } when IsTime(column) && PlanRewriter.IsConstant(low) && PlanRewriter.IsConstant(high) =>
+            [(BinaryOp.GreaterOrEqual, true, low), (BinaryOp.LessOrEqual, false, high)],
+         _ => [],
+      };
+   }
+
+   private static IEnumerable<(BinaryOp Op, bool After, PlanExpr Value)> Compared(BinaryOp op, PlanExpr value) => op switch
+   {
+      BinaryOp.Greater or BinaryOp.GreaterOrEqual => [(op, true, value)],
+      BinaryOp.Less or BinaryOp.LessOrEqual => [(op, false, value)],
+      BinaryOp.Equal => [(BinaryOp.GreaterOrEqual, true, value), (BinaryOp.LessOrEqual, false, value)],
+      _ => [],
+   };
+
+   /// <summary>The comparison with its operands the other way round: <c>x &lt; t</c> is <c>t > x</c>.</summary>
+   private static BinaryOp Mirrored(BinaryOp op) => op switch
+   {
+      BinaryOp.Less => BinaryOp.Greater,
+      BinaryOp.LessOrEqual => BinaryOp.GreaterOrEqual,
+      BinaryOp.Greater => BinaryOp.Less,
+      BinaryOp.GreaterOrEqual => BinaryOp.LessOrEqual,
+      _ => op,
+   };
+}
+
 /// <summary>A filter moves below a projection, with the projected expressions in place of the columns.</summary>
 internal sealed class PushFilterThroughProject : IRewriteRule
 {

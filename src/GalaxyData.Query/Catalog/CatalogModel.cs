@@ -97,6 +97,12 @@ public abstract class EntityDef : CatalogItem
    /// <summary>The column the rows are dated by, when the source says (<see cref="TableSchema.TimeColumn"/>).</summary>
    public ColumnDef? TimeColumn { get; internal set; }
 
+   /// <summary>
+   /// The column a row's time span ends at, from <see cref="TimeColumn"/>, when the source says
+   /// (<see cref="TableSchema.TimeEndColumn"/>).
+   /// </summary>
+   public ColumnDef? TimeEndColumn { get; internal set; }
+
    public bool Hidden { get; internal set; }
 
    /// <summary>The overlay's settings for it, whether or not all of them could be applied.</summary>
@@ -373,6 +379,14 @@ public sealed class RelationDef
    public IReadOnlyList<ColumnDef> ToColumns { get; }
 
    public bool IsEnforced { get; }
+
+   /// <summary>
+   /// Each dependent row's time (<see cref="From"/>'s <see cref="EntityDef.TimeColumn"/>) falls within the time span of
+   /// the principal row it refers to (<see cref="To"/>'s <see cref="EntityDef.TimeColumn"/> to its
+   /// <see cref="EntityDef.TimeEndColumn"/>), as the source says (<see cref="ForeignKeySchema.IsWithinTimeSpan"/>): a
+   /// filter on the dependent rows' time bounds the principal rows they can refer to.
+   /// </summary>
+   public bool IsWithinTimeSpan { get; internal set; }
 
    /// <summary>The overlay's relation it is, for one the overlay adds.</summary>
    public OverlayItemRef? OverlayItem { get; internal set; }

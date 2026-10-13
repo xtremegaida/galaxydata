@@ -56,7 +56,13 @@ public sealed class HyperWhirlpoolSchemaTests
       QueryCatalog catalog = new CatalogBuilder().AddSource(source, Schema()).Build();
       EntityDef session = catalog.FindEntity(EntityName.Parse("hw.session")).ShouldNotBeNull();
       session.TimeColumn.ShouldNotBeNull().Name.ShouldBe("first_seen");
-      catalog.FindEntity(EntityName.Parse("hw.page_view_events")).ShouldNotBeNull().TimeColumn!.Name.ShouldBe("ts");
+      session.TimeEndColumn.ShouldNotBeNull().Name.ShouldBe("last_seen");
+      EntityDef events = catalog.FindEntity(EntityName.Parse("hw.page_view_events")).ShouldNotBeNull();
+      events.TimeColumn!.Name.ShouldBe("ts");
+      events.TimeEndColumn.ShouldBeNull();
+      // An event falls within its session's span; a device's view is a snapshot, and a contact isn't built from the events.
+      events.Navigations.Where(n => n.Relation.IsWithinTimeSpan).Select(n => n.Name).ShouldBe(["session"]);
+      session.FindNavigation("device").Item!.Relation.IsWithinTimeSpan.ShouldBeFalse();
       session.FindColumn("traffic_type").Item!.Values.ShouldBe(["paid", "social", "search", "referral", "direct"]);
       session.Columns.Where(c => c.Aggregate != null).Select(c => $"{c.Name} {c.Aggregate}").ShouldBe(["events Sum", "page_views Sum"]);
       // The latest value of an attribute doesn't add up; a derived value says nothing.

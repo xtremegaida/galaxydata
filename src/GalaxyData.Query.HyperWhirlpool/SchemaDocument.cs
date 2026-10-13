@@ -83,15 +83,17 @@ internal sealed record SchemaDocument(string Format, ModelVersion Model, IReadOn
       }).ToList();
       HashSet<string> names = columns.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
       IReadOnlyList<string> key = entry.Key ?? [];
+      string? time = entry.Time != null && names.Contains(entry.Time) ? entry.Time : null;
       return new TableSchema(entry.Database, entry.Name, TableKind.View, columns)
       {
          PrimaryKey = key.Count > 0 && key.All(names.Contains) ? new KeySchema(null, key) : null,
          ForeignKeys = (entry.References ?? [])
             .OrderBy(r => r.Name, StringComparer.Ordinal)
-            .Select(r => new ForeignKeySchema(r.Name, r.Columns, r.Database, r.Object, r.RefColumns) { IsEnforced = false })
+            .Select(r => new ForeignKeySchema(r.Name, r.Columns, r.Database, r.Object, r.RefColumns) { IsEnforced = false, IsWithinTimeSpan = r.Within == true })
             .ToList(),
          Comment = entry.Description,
-         TimeColumn = entry.Time != null && names.Contains(entry.Time) ? entry.Time : null,
+         TimeColumn = time,
+         TimeEndColumn = time != null && entry.TimeEnd != null && names.Contains(entry.TimeEnd) ? entry.TimeEnd : null,
       };
    }
 
@@ -121,12 +123,19 @@ internal sealed record ModelVersion(long Seq, string Hash, DateTimeOffset? Publi
 /// <summary>A domain of the model, and the ClickHouse database its views are in.</summary>
 internal sealed record DomainEntry(string Name, string Database, string? Description = null);
 
-/// <summary>A public view: what one row of it is (<see cref="Kind"/>), its columns, key and references, and the column its rows are dated by.</summary>
+/// <summary>
+/// A public view: what one row of it is (<see cref="Kind"/>), its columns, key and references, the column its rows are
+/// dated by, and the one a row's time span ends at.
+/// </summary>
 internal sealed record ObjectEntry(string Database, string Name, string Kind, IReadOnlyList<ColumnEntry> Columns, string? Declaration = null, string? Description = null,
-                                   IReadOnlyList<string>? Key = null, string? Time = null, IReadOnlyList<ReferenceEntry>? References = null);
+                                   IReadOnlyList<string>? Key = null, string? Time = null, IReadOnlyList<ReferenceEntry>? References = null, string? TimeEnd = null);
 
 /// <summary>A column: its ClickHouse type, what it holds (<see cref="Role"/>), and for attributes and classified columns, how they come about.</summary>
 internal sealed record ColumnEntry(string Name, string Type, string? Role = null, string? Description = null, string? Aggregate = null, IReadOnlyList<string>? Values = null);
 
-/// <summary>Columns of an object that hold the key of another.</summary>
-internal sealed record ReferenceEntry(string Name, IReadOnlyList<string> Columns, string Database, string Object, IReadOnlyList<string> RefColumns, string? Kind = null);
+/// <summary>
+/// Columns of an object that hold the key of another; <see cref="Within"/> when the referring row's time falls within
+/// the time span of the row it refers to.
+/// </summary>
+internal sealed record ReferenceEntry(string Name, IReadOnlyList<string> Columns, string Database, string Object, IReadOnlyList<string> RefColumns, string? Kind = null,
+                                      bool? Within = null);

@@ -67,6 +67,12 @@ public sealed record TableSchema(string Schema, string Name, TableKind Kind, IRe
    /// so: what a chart of the rows is drawn over unless another is chosen.
    /// </summary>
    public string? TimeColumn { get; init; }
+
+   /// <summary>
+   /// The column a row's time span ends at (when an entity was last seen), when its rows span time from
+   /// <see cref="TimeColumn"/> and the source says so.
+   /// </summary>
+   public string? TimeEndColumn { get; init; }
 }
 
 public sealed record ColumnSchema(string Name, int Ordinal, string NativeType, ScalarType Type)
@@ -137,6 +143,13 @@ public sealed record ForeignKeySchema(
    /// <remarks>Always written: its default is true, so omitting false would read back as true.</remarks>
    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
    public bool IsEnforced { get; init; } = true;
+
+   /// <summary>
+   /// Each row's time (its table's <see cref="TableSchema.TimeColumn"/>) falls within the time span of the row it refers
+   /// to (the referenced table's <see cref="TableSchema.TimeColumn"/> to its <see cref="TableSchema.TimeEndColumn"/>),
+   /// as the source says: an event happens while its session lasts. Nothing checks it.
+   /// </summary>
+   public bool IsWithinTimeSpan { get; init; }
 
    public string? OnDelete { get; init; }
 

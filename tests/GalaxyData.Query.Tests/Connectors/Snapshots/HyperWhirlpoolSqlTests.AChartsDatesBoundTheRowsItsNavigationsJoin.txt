@@ -1,0 +1,45 @@
+### hw.page_view_events.where(r0 => (r0.ts >= $f1 and r0.ts < $f2)).groupBy(d0: startOfMonth(ts), s0: session.traffic_type).select(d0, s0, m0: count()).orderBy(d0, s0).take(1001)
+SELECT d.d0, d.s0, count(*) AS m0
+FROM (
+   SELECT CAST(toStartOfMonth(p.ts) AS Nullable(Date32)) AS d0, s.traffic_type AS s0
+   FROM (SELECT * FROM page_view_events SETTINGS join_use_nulls = 0) AS p
+   LEFT JOIN (SELECT * FROM session SETTINGS join_use_nulls = 0) AS s ON p.session_id = s.session_id AND s.last_seen >= @p0 AND s.first_seen < @p1
+   WHERE p.ts >= @p0 AND p.ts < @p1
+) AS d
+GROUP BY d.d0, d.s0
+ORDER BY d.d0, d.s0 NULLS FIRST
+LIMIT 1001
+-- p0 datetime = $f1
+-- p1 datetime = $f2
+
+### hw.page_view_events.where(r0 => $f1 <= r0.ts and r0.session.traffic_type == 'search').select(event_id, ts)
+SELECT p.event_id, p.ts
+FROM (SELECT * FROM page_view_events SETTINGS join_use_nulls = 0) AS p
+INNER JOIN (SELECT * FROM session SETTINGS join_use_nulls = 0) AS s ON p.session_id = s.session_id
+WHERE @p0 <= p.ts AND s.last_seen >= @p0 AND s.traffic_type = @p1
+-- p0 datetime = $f1
+-- p1 string = 'search'
+
+### hw.page_view_events.where(between(ts, $f1, $f2)).select(event_id, t: session.traffic_type, b: session.device.browser)
+SELECT p.event_id, s.traffic_type AS t, d.browser AS b
+FROM (SELECT * FROM page_view_events SETTINGS join_use_nulls = 0) AS p
+LEFT JOIN (SELECT * FROM session SETTINGS join_use_nulls = 0) AS s ON p.session_id = s.session_id AND s.last_seen >= @p0 AND s.first_seen <= @p1
+LEFT JOIN (SELECT * FROM device SETTINGS join_use_nulls = 0) AS d ON s.device_id = d.device_id
+WHERE p.ts BETWEEN @p0 AND @p1
+-- p0 datetime = $f1
+-- p1 datetime = $f2
+
+### hw.session.where(first_seen >= $f1).groupBy(b: device.browser).select(b, n: count())
+SELECT d.browser AS b, count(*) AS n
+FROM (SELECT * FROM session SETTINGS join_use_nulls = 0) AS s
+LEFT JOIN (SELECT * FROM device SETTINGS join_use_nulls = 0) AS d ON s.device_id = d.device_id
+WHERE s.first_seen >= @p0
+GROUP BY d.browser
+-- p0 datetime = $f1
+
+### hw.page_view_events.where(ts >= $f1).select(event_id, c: crm_contact.country)
+SELECT p.event_id, c.country AS c
+FROM (SELECT * FROM page_view_events SETTINGS join_use_nulls = 0) AS p
+LEFT JOIN (SELECT * FROM crm.contact SETTINGS join_use_nulls = 0) AS c ON p.crm_contact_id = c.contact_id
+WHERE p.ts >= @p0
+-- p0 datetime = $f1

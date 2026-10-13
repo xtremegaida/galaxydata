@@ -62,7 +62,8 @@
       "indexes": [],
       "foreignKeys": [],
       "comment": "A person the CRM knows.",
-      "timeColumn": "first_seen"
+      "timeColumn": "first_seen",
+      "timeEndColumn": "last_seen"
     },
     {
       "schema": "web",
@@ -110,7 +111,8 @@
       "indexes": [],
       "foreignKeys": [],
       "comment": "A browser on a computer or phone, as its cookie tells it apart.",
-      "timeColumn": "first_seen"
+      "timeColumn": "first_seen",
+      "timeEndColumn": "last_seen"
     },
     {
       "schema": "web",
@@ -206,7 +208,8 @@
         }
       ],
       "comment": "A device a CRM contact was seen on.",
-      "timeColumn": "first_seen"
+      "timeColumn": "first_seen",
+      "timeEndColumn": "last_seen"
     },
     {
       "schema": "web",
@@ -324,7 +327,8 @@
           "refColumns": [
             "session_id"
           ],
-          "isEnforced": false
+          "isEnforced": false,
+          "isWithinTimeSpan": true
         }
       ],
       "comment": "A page shown in a browser.",
@@ -416,7 +420,8 @@
         }
       ],
       "comment": "A visit; it ends after 30 minutes without user activity.",
-      "timeColumn": "first_seen"
+      "timeColumn": "first_seen",
+      "timeEndColumn": "last_seen"
     }
   ]
 }

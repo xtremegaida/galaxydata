@@ -12770,6 +12770,9 @@
           "isEnforced": {
             "type": "boolean"
           },
+          "isWithinTimeSpan": {
+            "type": "boolean"
+          },
           "onDelete": {
             "type": [
               "null",
@@ -16278,6 +16281,12 @@
             ]
           },
           "timeColumn": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "timeEndColumn": {
             "type": [
               "null",
               "string"

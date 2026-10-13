@@ -131,6 +131,10 @@ public sealed class CatalogBuilder
             if (table.TimeColumn != null && entity.FindColumn(table.TimeColumn) is { IsFound: true } time)
             {
                entity.TimeColumn = time.Item;
+               if (table.TimeEndColumn != null && entity.FindColumn(table.TimeEndColumn) is { IsFound: true, Item: { } end } && end.Type.Kind == entity.TimeColumn?.Type.Kind)
+               {
+                  entity.TimeEndColumn = end;
+               }
             }
             foreach (KeySchema unique in table.UniqueKeys)
             {
@@ -337,7 +341,12 @@ public sealed class CatalogBuilder
                   continue;
                }
                bool enforced = fk.IsEnforced || dependent.Source.TrustForeignKeys;
-               relations.Add(new RelationDef(fk.Name, RelationOrigin.ForeignKey, dependent, fromColumns, principal, toColumns, enforced));
+               relations.Add(new RelationDef(fk.Name, RelationOrigin.ForeignKey, dependent, fromColumns, principal, toColumns, enforced)
+               {
+                  // Times compared as they are: of one kind (a date with a date, a date-time with a date-time).
+                  IsWithinTimeSpan = fk.IsWithinTimeSpan && dependent.TimeColumn is { } time && principal.TimeEndColumn != null &&
+                                     principal.TimeColumn!.Type.Kind == time.Type.Kind,
+               });
             }
          }
       }

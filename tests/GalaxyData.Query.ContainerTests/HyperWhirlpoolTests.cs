@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using ClickHouse.Driver.ADO;
+using GalaxyData.Query.Binding;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Dml;
 using GalaxyData.Query.Execution;
@@ -64,9 +65,9 @@ public sealed class HyperWhirlpoolTests(Servers servers) : IAsyncLifetime
       return (new QueryEngine(catalog, new Connections(Open), [HyperWhirlpoolSourceProvider.Instance]), source);
    }
 
-   private static async Task<string> RunAsync(QueryEngine engine, string query, PageRequest? paging = null)
+   private static async Task<string> RunAsync(QueryEngine engine, string query, PageRequest? paging = null, QueryParameters? parameters = null)
    {
-      await using QueryResult result = await engine.ExecuteAsync(new QueryRequest(query) { Paging = paging }, Token);
+      await using QueryResult result = await engine.ExecuteAsync(new QueryRequest(query) { Paging = paging, Parameters = parameters ?? new QueryParameters() }, Token);
       return TestSources.Format(await result.ToListAsync(Token), result.Schema).ReplaceLineEndings("\n").TrimEnd();
    }
 
@@ -168,6 +169,25 @@ public sealed class HyperWhirlpoolTests(Servers servers) : IAsyncLifetime
       // The sorted page is those rows of the whole query.
       string sorted = "hw.page_view_events.where(url != '').orderBy(desc(ts))" + Displays;
       (await RunAsync(engine, sorted, new PageRequest(1, 3))).ShouldBe(string.Join("\n", (await RunAsync(engine, sorted)).Split('\n').Skip(1).Take(3)));
+   }
+
+   /// <summary>
+   /// A chart's dates bound the sessions its events are joined to, as an event falls within its session's span: an
+   /// event at its session's very start or end still finds it.
+   /// </summary>
+   [Fact]
+   public async Task AChartsDatesBoundTheSessionsItsEventsAreJoinedTo()
+   {
+      (QueryEngine engine, _) = await EngineAsync();
+      const string Chart = "hw.page_view_events.where(r0 => (r0.ts >= $f1 and r0.ts < $f2)).groupBy(d0: startOfMonth(ts), s0: session.traffic_type).select(d0, s0, m0: count()).orderBy(d0, s0)";
+      static QueryParameters Dates(DateTime from, DateTime to) => new QueryParameters().Add("f1", from).Add("f2", to);
+      engine.Prepare(new QueryRequest(Chart) { Parameters = Dates(DateTime.UnixEpoch, DateTime.UnixEpoch) }).Fragments.ShouldHaveSingleItem()
+         .Statement.Text.ShouldContain(".last_seen >= @p0 AND s.first_seen < @p1");
+      // The last event of the first visit (at its last_seen) and the only one of the second; not the third's first.
+      (await RunAsync(engine, Chart, parameters: Dates(new DateTime(2026, 1, 5, 8, 12, 0, DateTimeKind.Utc), new DateTime(2026, 2, 11, 19, 0, 0, DateTimeKind.Utc))))
+         .ShouldBe("2026-01-01 | 'search' | 1\n2026-02-01 | 'direct' | 1");
+      (await RunAsync(engine, Chart, parameters: Dates(new DateTime(2026, 2, 11, 19, 20, 0, DateTimeKind.Utc), new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc))))
+         .ShouldBe("2026-02-01 | 'social' | 1");
    }
 
    [Fact]
