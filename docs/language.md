@@ -1179,7 +1179,7 @@ otherwise it is refused (GDQ2027). An expression written exactly as a key part, 
 
 - `count()` counts the rows; `count(condition)` the rows where it is true; `count(value)` the rows where the value
   isn't null.
-- `countDistinct(value)`, `sum(value)`, `avg(value)`, `min(value)`, `max(value)`.
+- `countDistinct(value)`, `approxCountDistinct(value)`, `sum(value)`, `avg(value)`, `min(value)`, `max(value)`.
 - `any(condition)` and `all(condition)`; `any()` is always true, as a group always has rows.
 - `it.count()` or `g.count()` (with a lambda parameter `g`) call them on the group.
 
@@ -1417,6 +1417,7 @@ each row (`orders.count()` per customer); on any other query that refers to encl
 | `.count(condition)` | the number of rows where the condition is true | `int64` |
 | `.count(value)` | the number of rows where the value isn't null | `int64` |
 | `.countDistinct(value)` | the number of distinct values, nulls not counted | `int64` |
+| `.approxCountDistinct(value)` | the number of distinct values, estimated where the database can (section 9.3) | `int64` |
 | `.sum(value)` | the sum; 0 when there are no rows | whole numbers: `int64`; `decimal(p,s)`: `decimal(38,s)`; a decimal without fixed precision: the same; otherwise `double` |
 | `.avg(value)` | the average; null when there are no rows | decimals: `decimal`; otherwise `double` |
 | `.min(value)`, `.max(value)` | the smallest, largest; null when there are no rows | the value's type |
@@ -1426,8 +1427,8 @@ each row (`orders.count()` per customer); on any other query that refers to encl
 | `.contains(value)` | whether the query's one column has the value; the same as `value in query` | `boolean` |
 
 - The argument is an expression over the row, or a lambda.
-- `sum`, `avg`, `min`, `max` and `countDistinct` without an argument take the query's only column:
-  `shop.orders.select(total).sum()`. With more columns, they need the value (GDQ2005).
+- `sum`, `avg`, `min`, `max`, `countDistinct` and `approxCountDistinct` without an argument take the query's only
+  column: `shop.orders.select(total).sum()`. With more columns, they need the value (GDQ2005).
 - `sum` and `avg` need numbers (GDQ2006). `min` and `max` need values that can be ordered, and not true/false values
   (use `any` and `all`); GDQ2024.
 - In `all(condition)`, a row where the condition is null fails it.
@@ -1867,6 +1868,9 @@ These differ between databases, and the language doesn't say which result is rig
   without an `_SC` collation, as one elsewhere.
 - **Date-times with an offset** are read as instants in UTC; SQL Server's and SQLite's own offsets are not kept.
   SQLite groups offset date-times, and takes their `min` and `max`, by their text.
+- **`approxCountDistinct`** is an estimate on ClickHouse (`uniqCombined64`: within about 1%, in a few kilobytes
+  for each group however many values there are, where an exact count holds every value in memory at once), and
+  exact elsewhere.
 - `tinyint + tinyint` overflows past 255 in SQL Server (the language's `int16` would not); ClickHouse's whole
   numbers wrap around when they overflow, where the others fail.
 - The merge engine keeps date-times to the microsecond.

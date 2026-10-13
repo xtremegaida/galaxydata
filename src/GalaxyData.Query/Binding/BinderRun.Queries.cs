@@ -14,7 +14,7 @@ internal sealed partial class BinderRun
    {
       "where", "select", "extend", "orderBy", "orderByDescending", "orderByDesc", "thenBy", "thenByDescending", "thenByDesc",
       "take", "skip", "distinct", "groupBy", "join", "leftJoin", "selectMany", "union", "concat", "intersect", "except",
-      "count", "countDistinct", "sum", "avg", "min", "max", "any", "all", "contains", "first", "firstOrDefault",
+      "count", "countDistinct", "approxCountDistinct", "sum", "avg", "min", "max", "any", "all", "contains", "first", "firstOrDefault",
    };
 
    /// <summary>The methods of a query, as they are written; some have a shorter spelling too (<c>orderByDesc</c>).</summary>
@@ -113,7 +113,7 @@ internal sealed partial class BinderRun
             return BindSetOperation(input, call, scope, SetOperationKind.Intersect, "intersect");
          case "except":
             return BindSetOperation(input, call, scope, SetOperationKind.Except, "except");
-         case "count" or "countdistinct" or "sum" or "avg" or "min" or "max" or "any" or "all" or "contains":
+         case "count" or "countdistinct" or "approxcountdistinct" or "sum" or "avg" or "min" or "max" or "any" or "all" or "contains":
             return BindQueryAggregate(input, method, call, scope);
          case "first":
             return BindFirst(input, call, scope, orDefault: false);

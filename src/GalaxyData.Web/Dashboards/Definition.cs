@@ -247,6 +247,13 @@ public enum Aggregate
    CountValues,
 
    CountDistinct,
+
+   /// <summary>
+   /// The distinct values, estimated where the database can (<c>approxCountDistinct(x)</c>): a large source's exact
+   /// count may need more memory than a query has.
+   /// </summary>
+   ApproxCountDistinct,
+
    Sum,
    Avg,
    Min,

@@ -529,6 +529,17 @@ Project status#9, n#16 = count#15, qty#18 = sum#17, priced#20 = countDistinct#19
 => all boolean: computed (all(qty > 0)) from sales.order_lines.qty
 => id int64: direct sales.order_lines.order_id
 
+### sales.order_lines.groupBy(order).select(order.status, quantities: approxCountDistinct(qty), priced: price.approxCountDistinct())
+Project status#9, quantities#16 = approxCountDistinct#15, priced#18 = approxCountDistinct#17, id#6
+  Aggregate by id#6 = order_id#1, status#9: approxCountDistinct#15 = approxCountDistinct(qty#4), approxCountDistinct#17 = approxCountDistinct(price#5)
+    Join inner via order: order_id#1 == id#7
+      Scan sales.order_lines (order_id#1, line_no#2, product_code#3, qty#4, price#5)
+      Scan sales.orders (id#7, customer_id#8, status#9, total#10, order_date#11, shipped_at#12, ship_customer_id#13, attachment#14)
+=> status string(20,ansi): direct order -> sales.orders.status
+=> quantities int64: aggregated (approxCountDistinct(qty)) from sales.order_lines.qty
+=> priced int64: aggregated (price.approxCountDistinct()) from sales.order_lines.price
+=> id int64: direct sales.order_lines.order_id
+
 ### sales.orders.groupBy().select(n: count(), total: sum(total))
 Project n#10 = count#9, total#12 = sum#11
   Aggregate: count#9 = count(*), sum#11 = sum(total#4)

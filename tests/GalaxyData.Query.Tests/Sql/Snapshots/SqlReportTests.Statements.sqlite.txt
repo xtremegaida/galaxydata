@@ -312,6 +312,12 @@ FROM order_lines AS o
 INNER JOIN orders AS o2 ON o.order_id = o2.id
 GROUP BY o.order_id, o2.status
 
+### sales.order_lines.groupBy(order).select(order.status, quantities: approxCountDistinct(qty), priced: price.approxCountDistinct())
+SELECT o2.status, count(DISTINCT o.qty) AS quantities, count(DISTINCT o.price) AS priced, o.order_id AS id
+FROM order_lines AS o
+INNER JOIN orders AS o2 ON o.order_id = o2.id
+GROUP BY o.order_id, o2.status
+
 ### sales.orders.groupBy().select(n: count(), total: sum(total))
 SELECT count(*) AS n, coalesce(sum(o.total), 0) AS total
 FROM orders AS o

@@ -168,6 +168,12 @@ public enum AggregateFunction : byte
 
    CountDistinct,
 
+   /// <summary>
+   /// The distinct values, estimated where the database keeps a sketch of them instead of every value (ClickHouse,
+   /// within about 1%, in a fixed few kilobytes per group); counted exactly elsewhere.
+   /// </summary>
+   ApproxCountDistinct,
+
    /// <summary>The sum, which is 0 when there are no values.</summary>
    Sum,
 

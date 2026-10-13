@@ -280,6 +280,7 @@ internal static class QueryExplainer
          {
             AggregateFunction.CountRows => "count()",
             AggregateFunction.CountDistinct => $"countDistinct({Expr(item.Argument!)})",
+            AggregateFunction.ApproxCountDistinct => $"approxCountDistinct({Expr(item.Argument!)})",
             _ => $"{item.Function.ToString().ToLowerInvariant()}({Expr(item.Argument!)})",
          };
          return $"{QueryText.QuoteName(item.Column.Name)}: {function}";

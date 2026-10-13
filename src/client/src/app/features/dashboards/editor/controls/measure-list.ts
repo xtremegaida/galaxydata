@@ -49,6 +49,8 @@ const aggregates: readonly { aggregate: Aggregate; label: string; use: FieldUse 
   { aggregate: 'count', label: 'Count of rows', use: null },
   { aggregate: 'countValues', label: 'Count of values', use: 'any' },
   { aggregate: 'countDistinct', label: 'Count of distinct values', use: 'any' },
+  // Within about 1% on ClickHouse, in a few kilobytes, where an exact count holds every value; exact elsewhere.
+  { aggregate: 'approxCountDistinct', label: 'Count of distinct values (approximate)', use: 'any' },
   { aggregate: 'sum', label: 'Sum', use: 'number' },
   { aggregate: 'avg', label: 'Average', use: 'number' },
   { aggregate: 'min', label: 'Least', use: 'ordered' },
@@ -66,6 +68,8 @@ export function measureLabel(aggregate: Aggregate, fieldLabel: string | null): s
       return `Count of ${of}`;
     case 'countDistinct':
       return `Distinct ${of}`;
+    case 'approxCountDistinct':
+      return `Distinct ${of} (approx.)`;
     case 'sum':
       return `Sum of ${of}`;
     case 'avg':

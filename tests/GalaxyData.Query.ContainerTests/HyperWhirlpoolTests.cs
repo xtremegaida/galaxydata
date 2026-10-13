@@ -135,8 +135,8 @@ public sealed class HyperWhirlpoolTests(Servers servers) : IAsyncLifetime
       // Events without a contact refer to '', which no contact has.
       (await RunAsync(engine, "hw.page_view_events.groupBy(lifecycle: crm_contact.lifecycle).select(lifecycle, n: count()).orderBy(n, lifecycle)"))
          .ShouldBe("'applicant' | 1\nnull | 2\n'student' | 3");
-      (await RunAsync(engine, "hw.page_view_events.groupBy(month: startOfMonth(ts)).select(month, views: count(), visits: countDistinct(session_id)).orderBy(month)"))
-         .ShouldBe("2026-01-01 | 3 | 1\n2026-02-01 | 3 | 2");
+      (await RunAsync(engine, "hw.page_view_events.groupBy(month: startOfMonth(ts)).select(month, views: count(), visits: countDistinct(session_id), estimated: approxCountDistinct(session_id)).orderBy(month)"))
+         .ShouldBe("2026-01-01 | 3 | 1 | 1\n2026-02-01 | 3 | 2 | 2");
       (await RunAsync(engine, "hw.link_device_contact.select(browser: device.browser, country: crm_contact.country, evidence).orderBy(browser)"))
          .ShouldBe("'Chrome' | 'KE' | 1\n'Firefox' | 'ZA' | 3");
       (await RunAsync(engine, "hw.session.where(device.browser == 'Firefox').groupBy(traffic_type).select(traffic_type, pages: sum(page_views)).orderBy(traffic_type)"))

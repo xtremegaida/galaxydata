@@ -27,12 +27,12 @@ null | "1"
 underlying: shop.orders
 
 ### Through a navigation: averages (counted once per order) and values counted
-columns: d0 Dimension city, m0 Measure total, m1 Measure ship_address_id; limit 25
-main: shop.orders.groupBy(d0: customer.city).select(d0, m0: avg(total), m1: count(r0 => r0.ship_address_id != null)).orderBy(desc(m0), d0).take(26)
-d0 | m0 | m1
-"Cape Town" | "174.75" | "2"
-"Johannesburg" | "12.25" | "1"
-null | "0" | "0"
+columns: d0 Dimension city, m0 Measure total, m1 Measure ship_address_id, m2 Measure customer_id; limit 25
+main: shop.orders.groupBy(d0: customer.city).select(d0, m0: avg(total), m1: count(r0 => r0.ship_address_id != null), m2: approxCountDistinct(customer_id)).orderBy(desc(m0), d0).take(26)
+d0 | m0 | m1 | m2
+"Cape Town" | "174.75" | "2" | "1"
+"Johannesburg" | "12.25" | "1" | "1"
+null | "0" | "0" | "1"
 underlying: shop.orders
 
 ### A pie of the largest two, and the total for the rest

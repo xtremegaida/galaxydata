@@ -667,6 +667,7 @@ internal sealed class Lowerer
    {
       AggregateKind.Count => argument == null ? AggregateFunction.CountRows : AggregateFunction.Count,
       AggregateKind.CountDistinct => AggregateFunction.CountDistinct,
+      AggregateKind.ApproxCountDistinct => AggregateFunction.ApproxCountDistinct,
       AggregateKind.Sum => AggregateFunction.Sum,
       AggregateKind.Avg => AggregateFunction.Avg,
       AggregateKind.Min => AggregateFunction.Min,
@@ -674,7 +675,12 @@ internal sealed class Lowerer
       _ => throw new InvalidOperationException($"{kind} is not an aggregate function"),
    };
 
-   private static string AggregateName(AggregateKind kind) => kind == AggregateKind.CountDistinct ? "countDistinct" : kind.ToString().ToLowerInvariant();
+   private static string AggregateName(AggregateKind kind) => kind switch
+   {
+      AggregateKind.CountDistinct => "countDistinct",
+      AggregateKind.ApproxCountDistinct => "approxCountDistinct",
+      _ => kind.ToString().ToLowerInvariant(),
+   };
 
    /// <summary>An aggregate over a query's rows, as a single-row plan: a scalar subquery.</summary>
    private PlanExpr QueryAggregate(BoundQueryAggregate aggregate)

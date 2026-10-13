@@ -72,6 +72,7 @@ internal static class PlanCases
       "sales.orders.groupBy(customer).select(customer.id, n: count())",
       "sales.orders.groupBy(customer_id).extend(n: count()).where(n > 1 and sum(total) > 10).select(customer_id, n)",
       "sales.order_lines.groupBy(order).select(order.status, n: count(), qty: qty.sum(), priced: price.countDistinct(), all: all(qty > 0))",
+      "sales.order_lines.groupBy(order).select(order.status, quantities: approxCountDistinct(qty), priced: price.approxCountDistinct())",
       "sales.orders.groupBy().select(n: count(), total: sum(total))",
       "sales.orders.groupBy(big: total > 100).select(big, n: count())",
       "sales.customers.select(name, n: orders_by_customer.count(), spend: orders_by_customer.sum(total), last: orders_by_customer.max(order_date))",

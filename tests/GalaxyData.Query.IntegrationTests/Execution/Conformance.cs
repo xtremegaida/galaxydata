@@ -92,6 +92,7 @@ internal static partial class Conformance
       "shop.orders.select(customer_id).except(shop.addresses.select(customer_id))",
       "shop.customers.select(name, n: addresses.countDistinct(city)).orderBy(name)",
       "shop.customers.where(addresses.countDistinct(city) == 0).select(name)",
+      "shop.customers.select(name, n: addresses.approxCountDistinct(city)).orderBy(name)",
       "shop.orders.take(2).count()",
       "shop.orders.skip(1).count()",
       "shop.orders.select(id, total).concat(shop.orders.select(id, total)).count()",

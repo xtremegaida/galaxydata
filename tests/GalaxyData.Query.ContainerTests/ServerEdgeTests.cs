@@ -343,6 +343,7 @@ public sealed class ServerEdgeTests(Servers servers)
       ("bool-union", "shop.p.select(id, k: n > 1).union(shop.p.select(id, k: b)).orderBy(id, k)"),
       ("bool-functions", "shop.p.select(id, x: iif(b, 'y', 'n'), t: toString(b), i: toInt(b), t2: toString(n > 1)).orderBy(id)"),
       ("aggregates", "shop.p.groupBy().select(c: count(), cn: count(n), cd: countDistinct(m), s: sum(n), sw: sum(w), a: avg(n), mn: min(d), mx: max(ts), mf: min(f))"),
+      ("approx-countDistinct", "shop.p.groupBy(m).select(m, cd: countDistinct(n), ad: approxCountDistinct(n), ab: approxCountDistinct(b)).orderBy(m)"),
       ("aggregates-empty", "shop.p.where(id > 100).groupBy().select(c: count(), s: sum(n), a: avg(n), mn: min(d), mx: max(s), sd: sum(dm))"),
       ("group-expression-keys", "shop.p.groupBy(k: n % 2, y: year(d)).select(k, y, c: count(), s: sum(f)).orderBy(k, y)"),
       ("having", "shop.p.groupBy(m).where(count() > 1 and sum(n) != 0).select(m, c: count()).orderBy(m)"),

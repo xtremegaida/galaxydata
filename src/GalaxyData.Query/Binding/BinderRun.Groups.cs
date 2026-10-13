@@ -19,7 +19,7 @@ internal sealed partial class BinderRun
 
    private static readonly HashSet<string> AggregateNames = new(StringComparer.OrdinalIgnoreCase)
    {
-      "count", "countDistinct", "sum", "avg", "min", "max", "any", "all",
+      "count", "countDistinct", "approxCountDistinct", "sum", "avg", "min", "max", "any", "all",
    };
 
    private BoundQuery BindGroupBy(BoundQuery input, CallSyntax call, Scope scope)
@@ -440,6 +440,7 @@ internal sealed partial class BinderRun
    {
       "count" => AggregateKind.Count,
       "countdistinct" => AggregateKind.CountDistinct,
+      "approxcountdistinct" => AggregateKind.ApproxCountDistinct,
       "sum" => AggregateKind.Sum,
       "avg" => AggregateKind.Avg,
       "min" => AggregateKind.Min,
@@ -467,7 +468,7 @@ internal sealed partial class BinderRun
       ScalarType type = argument.Scalar;
       switch (kind)
       {
-         case AggregateKind.CountDistinct:
+         case AggregateKind.CountDistinct or AggregateKind.ApproxCountDistinct:
             if (type.Kind is ScalarKind.Unknown or ScalarKind.Json)
             {
                throw Error(node, DiagnosticCodes.TypeMismatch, $"Values of {TypeRules.Describe(type)} can't be told apart reliably; convert them first");

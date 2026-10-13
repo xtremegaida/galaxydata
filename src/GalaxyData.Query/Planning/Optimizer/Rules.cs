@@ -249,7 +249,10 @@ internal sealed class DecorrelateScalarAggregates : IRewriteRule
       PlanExpr Result(PlanColumn column)
       {
          PlanColumnRef reference = new(column, column.Type.AsNullable());
-         if (aggregate.Function is not (AggregateFunction.Count or AggregateFunction.CountRows or AggregateFunction.CountDistinct or AggregateFunction.Sum)) { return reference; }
+         if (aggregate.Function is not (AggregateFunction.Count or AggregateFunction.CountRows or AggregateFunction.CountDistinct or AggregateFunction.ApproxCountDistinct or AggregateFunction.Sum))
+         {
+            return reference;
+         }
          FunctionRegistry.Default.TryGet("coalesce", out FunctionDef coalesce);
          return new PlanFunction(coalesce, [reference, new PlanLiteral(0L, ScalarType.Int64.AsNonNullable())], subquery.Type.AsNonNullable(), null);
       }

@@ -1330,7 +1330,7 @@ export interface components {
             details: null | string;
         };
         /** @enum {unknown} */
-        Aggregate: "count" | "countValues" | "countDistinct" | "sum" | "avg" | "min" | "max";
+        Aggregate: "count" | "countValues" | "countDistinct" | "approxCountDistinct" | "sum" | "avg" | "min" | "max";
         /** @enum {unknown} */
         AggregateHint: "sum" | "avg" | "min" | "max" | "countDistinct";
         /**

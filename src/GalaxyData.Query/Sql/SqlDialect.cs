@@ -281,13 +281,14 @@ public abstract class SqlDialect
       new SqlBinary(op, left, right);
 
    /// <summary>
-   /// An aggregate function. A sum is 0 when there are no values, as the language defines, where SQL gives null.
+   /// An aggregate function. A sum is 0 when there are no values, as the language defines, where SQL gives null. An
+   /// estimate of the distinct values is the exact count unless the dialect has one.
    /// </summary>
    protected internal virtual SqlExpr Aggregate(AggregateFunction function, SqlExpr? argument, ScalarType? argumentType) => function switch
    {
       AggregateFunction.CountRows => new SqlAggregate(AggregateName("count"), null),
       AggregateFunction.Count => new SqlAggregate(AggregateName("count"), argument),
-      AggregateFunction.CountDistinct => new SqlAggregate(AggregateName("count"), argument, distinct: true),
+      AggregateFunction.CountDistinct or AggregateFunction.ApproxCountDistinct => new SqlAggregate(AggregateName("count"), argument, distinct: true),
       AggregateFunction.Sum => new SqlFunctionCall(AggregateName("coalesce"), new SqlAggregate(AggregateName("sum"), argument), new SqlLiteral(0L, ScalarType.Int64)),
       AggregateFunction.Avg => new SqlAggregate(AggregateName("avg"), argument),
       AggregateFunction.Min => new SqlAggregate(AggregateName("min"), argument),

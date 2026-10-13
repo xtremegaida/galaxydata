@@ -141,9 +141,14 @@ public sealed class ClickHouseDialect : SqlDialect
    /// says, and counts are as they are. They are written so rather than made so by the setting that does it
    /// (<c>aggregate_functions_null_for_empty</c>), which would also rewrite the aggregates of the views a query reads:
    /// a view's <c>anyMerge</c> of an <c>any</c> state would be an <c>anyOrNullMerge</c>, which can't read it.
+   /// The distinct values are estimated by <c>uniqCombined64</c>, a sketch of a few kilobytes: an exact count
+   /// (<c>uniqExact</c>) holds every value in memory at once, and can't spill to disk. Of nulls only it is null, so
+   /// 0 then, as a count is.
    /// </summary>
    protected override SqlExpr Aggregate(AggregateFunction function, SqlExpr? argument, ScalarType? argumentType) => function switch
    {
+      AggregateFunction.ApproxCountDistinct =>
+         new SqlFunctionCall("coalesce", new SqlAggregate("uniqCombined64", argument), new SqlLiteral(0L, ScalarType.Int64)),
       AggregateFunction.Sum => new SqlFunctionCall("coalesce", new SqlAggregate("sumOrNull", argument), new SqlLiteral(0L, ScalarType.Int64)),
       AggregateFunction.Avg => new SqlAggregate("avgOrNull", argument),
       AggregateFunction.Min => new SqlAggregate("minOrNull", argument),

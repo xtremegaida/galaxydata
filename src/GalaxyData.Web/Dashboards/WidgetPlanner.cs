@@ -646,7 +646,7 @@ public sealed class PlanContext
       {
          Aggregate.Sum or Aggregate.Avg => type.IsNumeric,
          Aggregate.Min or Aggregate.Max => type.IsNumeric || type.IsTemporal || type.Kind is ScalarKind.String or ScalarKind.Interval,
-         Aggregate.CountDistinct => type.Kind is not (ScalarKind.Json or ScalarKind.Unknown),
+         Aggregate.CountDistinct or Aggregate.ApproxCountDistinct => type.Kind is not (ScalarKind.Json or ScalarKind.Unknown),
          _ => true,
       };
       if (!fits)
@@ -663,6 +663,7 @@ public sealed class PlanContext
       {
          Aggregate.CountValues => $"count({planner.Dashboard.Row(0)} => {field.Member(planner.Dashboard.Row(0))} != null)",
          Aggregate.CountDistinct => $"countDistinct({member})",
+         Aggregate.ApproxCountDistinct => $"approxCountDistinct({member})",
          Aggregate.Sum => $"sum({member})",
          Aggregate.Avg => $"avg({member})",
          Aggregate.Min => $"min({member})",

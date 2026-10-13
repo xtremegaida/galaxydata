@@ -9382,6 +9382,7 @@
           "count",
           "countValues",
           "countDistinct",
+          "approxCountDistinct",
           "sum",
           "avg",
           "min",

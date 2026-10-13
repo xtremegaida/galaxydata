@@ -226,7 +226,7 @@ public sealed class WidgetQueryTests
       DashboardWidget months = W("months", Line("orders", D("order_date", Bucket.Month), Count(), Of(Aggregate.Sum, "total")));
       DashboardWidget weekdays = W("weekdays", Bar("orders", D("order_date", Bucket.DayOfWeek)) with { Sort = new WidgetSort(SortTarget.Dimension, 0, false) });
       DashboardWidget hours = W("hours", Bar("orders", D("placed_at", Bucket.HourOfDay)) with { Sort = new WidgetSort(SortTarget.Dimension, 0, false) });
-      DashboardWidget cities = W("cities", Bar("orders", D("city", null, "customer"), measures: [Of(Aggregate.Avg, "total"), Of(Aggregate.CountValues, "ship_address_id")]));
+      DashboardWidget cities = W("cities", Bar("orders", D("city", null, "customer"), measures: [Of(Aggregate.Avg, "total"), Of(Aggregate.CountValues, "ship_address_id"), Of(Aggregate.ApproxCountDistinct, "customer_id")]));
       DashboardWidget pie = W("pie", Pie("orders", D("status"), Of(Aggregate.Sum, "total"), other: true, limit: 2));
       DashboardWidget series = W("series", Bar("orders", D("status"), D("customer_id"), limit: 1));
       DashboardWidget grouped = W("grouped", new TableConfig("orders", [], true, All, TableMode.Grouped, [D("city", null, "customer"), D("status")],

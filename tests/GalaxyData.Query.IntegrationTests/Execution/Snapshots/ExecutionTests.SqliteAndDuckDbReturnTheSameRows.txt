@@ -368,6 +368,12 @@ name | n || id
 name || id
 'Gamma Inc' || 3
 
+### shop.customers.select(name, n: addresses.approxCountDistinct(city)).orderBy(name)
+name | n || id
+'Acme Ltd' | 1 || 1
+'Beta Corp' | 1 || 2
+'Gamma Inc' | 0 || 3
+
 ### shop.orders.take(2).count()
 value
 2

@@ -152,6 +152,10 @@ engine), and no database driver.
   name `DISTINCT`, decimals divide with 18 places, a decimal and a whole number take a remainder as two decimals
   (ClickHouse's own `%` of them is wrong), `substring` takes a start before the first character, and `toString`
   writes decimals with their scale and date-times without fractions they don't have.
+- **Distinct values are estimated when asked.** An exact count (`countDistinct`, ClickHouse's `uniqExact`) holds
+  every value in memory at once and can't go to disk: a warehouse's distinct sessions of all time can take more
+  memory than a query has. `approxCountDistinct` is `uniqCombined64`, within about 1% in a few kilobytes, and the
+  dashboard editor offers it as a count of distinct values (approximate).
 - **Parameters** are sent with their ClickHouse types, and at most 1,000 in a statement: keys that are text past
   that are fetched in full.
 - **Stopping a statement** stops its HTTP request, and kills the statement on the server by its query id.

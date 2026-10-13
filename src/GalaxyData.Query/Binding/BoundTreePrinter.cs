@@ -150,6 +150,7 @@ public static class BoundTreePrinter
    private static string Aggregate(AggregateKind kind) => kind switch
    {
       AggregateKind.CountDistinct => "countDistinct",
+      AggregateKind.ApproxCountDistinct => "approxCountDistinct",
       _ => kind.ToString().ToLowerInvariant(),
    };
 

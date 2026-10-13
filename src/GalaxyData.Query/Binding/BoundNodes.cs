@@ -152,6 +152,8 @@ public enum AggregateKind : byte
 {
    Count,
    CountDistinct,
+   /// <summary>The distinct values, estimated where the database can (<see cref="Planning.AggregateFunction.ApproxCountDistinct"/>).</summary>
+   ApproxCountDistinct,
    Sum,
    Avg,
    Min,
