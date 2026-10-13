@@ -346,6 +346,26 @@ public abstract class SqlDialect
    /// </summary>
    protected internal virtual bool CorrelatesValueSubqueries => true;
 
+   /// <summary>
+   /// Whether the database builds a join's hash table from its right side whatever the sizes of the two, so a page of
+   /// rows joined to others (a grid's, to the rows it refers to) is written on the right: built from the rows it is
+   /// joined to, the table could take all of a large table's memory.
+   /// </summary>
+   protected internal virtual bool BuildsJoinsFromRight => false;
+
+   /// <summary>
+   /// Whether a column selected from a join without a name of its own is named by its table too (<c>d.id</c>) where
+   /// both sides have one of its name; a derived table's columns are then named, for the query around it to read.
+   /// </summary>
+   protected internal virtual bool NamesJoinedColumnsByTable => false;
+
+   /// <summary>
+   /// Whether a sorted page of a view's rows is found by its keys first, and then read whole for those keys only: where
+   /// the database reads every column of every row to sort a view's rows, as ClickHouse does (a table's it reads for
+   /// the rows kept only).
+   /// </summary>
+   protected internal virtual bool PagesViewsByKeys => false;
+
    public override string ToString() => Name;
 
    #region Helpers for translations

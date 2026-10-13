@@ -127,6 +127,15 @@ engine), and no database driver.
   outer joins giving nulls would give nulls a view's columns can't hold, which fails the query. So aggregates aren't
   rewritten, and a view is read in a subquery with ClickHouse's own outer joins
   (`(SELECT * FROM v SETTINGS join_use_nulls = 0)`); the statement's own joins, to a view too, still give nulls.
+- **A page of a view is found by its key first.** To sort a table's rows for a page, ClickHouse reads the columns
+  the sort doesn't need for the rows it keeps only, but a view's it reads whole: a page of a large view would read
+  every column of every row. So a sorted page of a view with a key of one column finds the page's keys first, and
+  reads only those rows whole: `WHERE v.id IN (SELECT v.id … ORDER BY … LIMIT 51)`, still in the page's order.
+- **A page is joined on the right.** ClickHouse builds a join's hash table from its right side, and swaps the sides
+  only where it can estimate both, which it can't for a view. A grid's page joined to the rows it refers to (for
+  their display values) would build the table from all of those, which can take more memory than a query may have.
+  So the page is written on the right (`FROM customers AS c RIGHT JOIN (… LIMIT 51) AS d ON …`), each join after
+  the first around the joins before it in a derived table.
 - **What runs in the merge engine.** A subquery may read columns of the query it is in only to test whether rows
   exist (`EXISTS`): ClickHouse's subqueries that give values read null where they find no rows (a count of none is
   null), so `first()` of a navigation, and counts and sums over one, run in the merge engine, over the rows they read.

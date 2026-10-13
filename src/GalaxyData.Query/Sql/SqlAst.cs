@@ -319,6 +319,8 @@ internal enum SqlJoinKind : byte
    Inner,
    Left,
    Cross,
+   /// <summary>A left join written the other way round (<see cref="SqlDialect.BuildsJoinsFromRight"/>): its right side's rows are all kept.</summary>
+   Right,
 }
 
 internal sealed class SqlJoin(SqlJoinKind kind, SqlTableSource left, SqlTableSource right, SqlExpr? condition) : SqlTableSource

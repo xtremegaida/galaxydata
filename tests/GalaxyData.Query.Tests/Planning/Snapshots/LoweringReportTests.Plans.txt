@@ -339,6 +339,25 @@ Project id#1, who#17 = name#10, id#9
 => who string(100): direct customer -> sales.customers.name
 => id int32: direct customer -> sales.customers.id
 
+### sales.order_lines.take(5).select(order_id, p: product.name, region: order.customer.region.name)
+Project order_id#1, p#9 = name#7, region#28 = name#27, line_no#2, code#6, code#26
+  Join left via region: region_code#23 == code#26
+    Join inner via customer: customer_id#11 == id#18
+      Join inner via order: order_id#1 == id#10
+        Join inner via product: product_code#3 == code#6
+          Limit take 5
+            Scan sales.order_lines (order_id#1, line_no#2, product_code#3, qty#4, price#5)
+          Scan sales.products (code#6, name#7, price#8)
+        Scan sales.orders (id#10, customer_id#11, status#12, total#13, order_date#14, shipped_at#15, ship_customer_id#16, attachment#17)
+      Scan sales.customers (id#18, name#19, city#20, credit_limit#21, created#22, region_code#23, uid#24, notes#25)
+    Scan sales.regions (code#26, name#27)
+=> order_id int64: direct sales.order_lines.order_id
+=> p string: direct product -> sales.products.name
+=> region string?: direct order.customer.region -> sales.regions.name
+=> line_no int32: direct sales.order_lines.line_no
+=> code string(20): direct product -> sales.products.code
+=> code string(3)?: direct order.customer.region -> sales.regions.code
+
 ### sales.orders.select(status).distinct().orderBy(status).take(3)
 Limit take 3
   Sort status#3

@@ -54,6 +54,7 @@ internal static class PlanCases
       "sales.orders.orderBy(id).distinct()",
       "sales.orders.orderBy(total).take(10).where(status == 'open')",
       "sales.orders.take(5).select(id, who: customer.name)",
+      "sales.order_lines.take(5).select(order_id, p: product.name, region: order.customer.region.name)",
       "sales.orders.select(status).distinct().orderBy(status).take(3)",
       "sales.orders.skip(5)",
       "sales.orders.take(5).take(3).skip(1)",

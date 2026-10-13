@@ -178,6 +178,21 @@ public sealed class ClickHouseDialect : SqlDialect
    /// <summary>A subquery that reads the query around it gives null where it finds no rows (a count of none is null), so only EXISTS may.</summary>
    protected override bool CorrelatesValueSubqueries => false;
 
+   /// <summary>
+   /// A join's hash table is built from its right side. ClickHouse swaps the sides only where it can estimate both,
+   /// which it can't for a view: a page joined to the view it refers to would build the table from the whole view.
+   /// </summary>
+   protected override bool BuildsJoinsFromRight => true;
+
+   /// <summary><c>SELECT d.id FROM d JOIN s ON …</c>, where <c>s</c> has an <c>id</c> too, names the column <c>d.id</c>.</summary>
+   protected override bool NamesJoinedColumnsByTable => true;
+
+   /// <summary>
+   /// ClickHouse reads the columns a sort doesn't need for the rows a limit keeps only (lazy materialization), but not
+   /// through a view: a page of a view's rows sorted whole would read every column of every row.
+   /// </summary>
+   protected override bool PagesViewsByKeys => true;
+
    protected override SqlExpr? Function(SqlCall c) => c.Id switch
    {
       FunctionId.Lower => Call("lowerUTF8", c.Arg(0)),

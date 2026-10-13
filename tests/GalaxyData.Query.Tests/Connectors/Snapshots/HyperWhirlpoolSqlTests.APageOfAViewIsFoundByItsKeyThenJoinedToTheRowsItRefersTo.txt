@@ -1,0 +1,48 @@
+### hw.session, rows 1 to 51
+SELECT s.session_id, s.device_id, s.first_seen, s.last_seen, s.events, s.page_views, s.duration_ms, s.traffic_type
+FROM (SELECT * FROM session SETTINGS join_use_nulls = 0) AS s
+WHERE s.session_id IN (
+   SELECT s.session_id
+   FROM (SELECT * FROM session SETTINGS join_use_nulls = 0) AS s
+   ORDER BY s.session_id
+   LIMIT 51
+)
+ORDER BY s.session_id
+
+### hw.page_view_events.where(url != '').orderBy(desc(ts)).extend(_display0: session.traffic_type, _display1: device.browser, _display2: crm_contact.country), rows 51 to 101
+SELECT d4.log_day, d4.event_id, d4.ts, d4.session_id, d4.device_id, d4.crm_contact_id, d4.ip, d4.url, d4.referrer, d4.viewport_w, d4._errors, d4.traffic_type AS _display0, d4.browser AS _display1, c.country AS _display2
+FROM (SELECT * FROM crm.contact SETTINGS join_use_nulls = 0) AS c
+RIGHT JOIN (
+   SELECT d2.log_day AS log_day, d2.event_id AS event_id, d2.ts AS ts, d2.session_id AS session_id, d2.device_id AS device_id, d2.crm_contact_id AS crm_contact_id, d2.ip AS ip, d2.url AS url, d2.referrer AS referrer, d2.viewport_w AS viewport_w, d2._errors AS _errors, d2.traffic_type AS traffic_type, d3.browser AS browser, d2.sort_key AS sort_key, d2.sort_key_2 AS sort_key_2
+   FROM (SELECT * FROM device SETTINGS join_use_nulls = 0) AS d3
+   RIGHT JOIN (
+      SELECT d.log_day AS log_day, d.event_id AS event_id, d.ts AS ts, d.session_id AS session_id, d.device_id AS device_id, d.crm_contact_id AS crm_contact_id, d.ip AS ip, d.url AS url, d.referrer AS referrer, d.viewport_w AS viewport_w, d._errors AS _errors, s.traffic_type AS traffic_type, d.ts AS sort_key, d.event_id AS sort_key_2
+      FROM (SELECT * FROM session SETTINGS join_use_nulls = 0) AS s
+      RIGHT JOIN (
+         SELECT p.log_day, p.event_id, p.ts, p.session_id, p.device_id, p.crm_contact_id, p.ip, p.url, p.referrer, p.viewport_w, CAST(p._errors AS String) AS _errors
+         FROM (SELECT * FROM page_view_events SETTINGS join_use_nulls = 0) AS p
+         WHERE p.event_id IN (
+            SELECT p.event_id
+            FROM (SELECT * FROM page_view_events SETTINGS join_use_nulls = 0) AS p
+            WHERE p.url <> @p0
+            ORDER BY p.ts DESC, p.event_id
+            LIMIT 51 OFFSET 50
+         )
+      ) AS d ON d.session_id = s.session_id
+   ) AS d2 ON d2.device_id = d3.device_id
+) AS d4 ON d4.crm_contact_id = c.contact_id
+ORDER BY d4.sort_key DESC, d4.sort_key_2
+LIMIT 51
+-- p0 string = ''
+
+### hw.link_device_contact.extend(_display0: device.browser), rows 1 to 51
+SELECT d.from_type, d.from_id, d.to_type, d.to_id, d.device_id, d.crm_contact_id, d.first_seen, d.last_seen, d.evidence, d2.browser AS _display0
+FROM (SELECT * FROM device SETTINGS join_use_nulls = 0) AS d2
+RIGHT JOIN (
+   SELECT l.from_type, l.from_id, l.to_type, l.to_id, l.device_id, l.crm_contact_id, l.first_seen, l.last_seen, l.evidence
+   FROM (SELECT * FROM link_device_contact SETTINGS join_use_nulls = 0) AS l
+   ORDER BY l.from_id, l.to_id
+   LIMIT 51
+) AS d ON d.device_id = d2.device_id
+ORDER BY d.from_id, d.to_id
+LIMIT 51

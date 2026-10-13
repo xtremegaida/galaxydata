@@ -29,6 +29,8 @@ internal static partial class Conformance
       "shop.orders.orderBy(desc(total)).take(2).select(id, total)",
       "shop.orders.orderBy(id).skip(1).take(2).select(id, status)",
       "shop.orders.orderBy(total).take(3).where(status == 'open').select(id, total)",
+      "shop.orders.orderBy(id).take(3).select(id, who: customer.name, ship: ship_address.city)",
+      "shop.order_lines.orderBy(order_id, line_no).skip(1).take(3).select(order_id, line_no, city: order.customer.city, bill: order.bill_address.line1)",
       "shop.customers.orderBy(city).select(name, city)",
       "shop.customers.orderBy(desc(city)).select(name, city)",
       "shop.orders.where(ship_address == null).select(id)",

@@ -199,6 +199,18 @@ FROM (
 ) AS d
 INNER JOIN customers AS c ON d.customer_id = c.id
 
+### sales.order_lines.take(5).select(order_id, p: product.name, region: order.customer.region.name)
+SELECT d.order_id, p.name AS p, r.name AS region, d.line_no, p.code, r.code
+FROM (
+   SELECT o.order_id, o.line_no, o.product_code
+   FROM order_lines AS o
+   LIMIT 5
+) AS d
+INNER JOIN products AS p ON d.product_code = p.code
+INNER JOIN orders AS o2 ON d.order_id = o2.id
+INNER JOIN customers AS c ON o2.customer_id = c.id
+LEFT JOIN regions AS r ON c.region_code = r.code
+
 ### sales.orders.select(status).distinct().orderBy(status).take(3)
 SELECT DISTINCT o.status
 FROM orders AS o

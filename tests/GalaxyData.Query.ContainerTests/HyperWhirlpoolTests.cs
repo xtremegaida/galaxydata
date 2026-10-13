@@ -64,9 +64,9 @@ public sealed class HyperWhirlpoolTests(Servers servers) : IAsyncLifetime
       return (new QueryEngine(catalog, new Connections(Open), [HyperWhirlpoolSourceProvider.Instance]), source);
    }
 
-   private static async Task<string> RunAsync(QueryEngine engine, string query)
+   private static async Task<string> RunAsync(QueryEngine engine, string query, PageRequest? paging = null)
    {
-      await using QueryResult result = await engine.ExecuteAsync(new QueryRequest(query), Token);
+      await using QueryResult result = await engine.ExecuteAsync(new QueryRequest(query) { Paging = paging }, Token);
       return TestSources.Format(await result.ToListAsync(Token), result.Schema).ReplaceLineEndings("\n").TrimEnd();
    }
 
@@ -140,6 +140,34 @@ public sealed class HyperWhirlpoolTests(Servers servers) : IAsyncLifetime
          .ShouldBe("'Chrome' | 'KE' | 1\n'Firefox' | 'ZA' | 3");
       (await RunAsync(engine, "hw.session.where(device.browser == 'Firefox').groupBy(traffic_type).select(traffic_type, pages: sum(page_views)).orderBy(traffic_type)"))
          .ShouldBe("'direct' | 1\n'search' | 3");
+   }
+
+   /// <summary>
+   /// A grid's page of a view is found by its key first, then joined to the rows it refers to (their display values)
+   /// with the page on the side ClickHouse builds the join from: the rows the whole query has there, in its order.
+   /// </summary>
+   [Fact]
+   public async Task PagesAreFoundByTheirKeysAndJoinedToTheRowsTheyReferTo()
+   {
+      (QueryEngine engine, _) = await EngineAsync();
+      const string Displays = ".extend(_display0: session.traffic_type, _display1: device.browser, _display2: crm_contact.country)";
+      QueryReport report = new();
+      foreach ((string query, PageRequest page) in new[]
+      {
+         // As a grid opens: in the key's order.
+         ("hw.page_view_events" + Displays, new PageRequest(2, 3)),
+         ("hw.page_view_events.where(url != '').orderBy(desc(ts))" + Displays, new PageRequest(1, 3)),
+      })
+      {
+         string sql = engine.Prepare(new QueryRequest(query) { Paging = page }).Fragments.ShouldHaveSingleItem().Statement.Text;
+         sql.ShouldContain(".event_id IN (");
+         sql.ShouldContain("RIGHT JOIN");
+         report.Case($"{query}, rows {page.Offset + 1} to {page.Offset + page.Limit}", await RunAsync(engine, query, page));
+      }
+      Golden.Match(report.ToString());
+      // The sorted page is those rows of the whole query.
+      string sorted = "hw.page_view_events.where(url != '').orderBy(desc(ts))" + Displays;
+      (await RunAsync(engine, sorted, new PageRequest(1, 3))).ShouldBe(string.Join("\n", (await RunAsync(engine, sorted)).Split('\n').Skip(1).Take(3)));
    }
 
    [Fact]

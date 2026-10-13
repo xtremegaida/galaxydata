@@ -168,6 +168,12 @@ internal sealed class SqlBuilder
       public bool Aggregated { get; set; }
 
       public bool HasPaging => Select.Limit != null || Select.Offset != null;
+
+      /// <summary>Its rows are a page's, joined to the rows they refer to: few, whatever they're joined to next.</summary>
+      public bool IsPage { get; set; }
+
+      /// <summary>The key of the table the SELECT reads, as its columns there: only meant while it reads that table alone.</summary>
+      public IReadOnlyList<SqlColumn>? Key { get; set; }
    }
 
    #region Operators
@@ -224,7 +230,8 @@ internal sealed class SqlBuilder
             if (frame.HasPaging || unsortedDistinctOffset) { frame = Wrap(frame, limit.Input.Output, needed); }
             frame.Select.Limit = limit.Count == null ? null : Count(limit.Count);
             frame.Select.Offset = limit.Offset == null ? null : Count(limit.Offset);
-            return frame;
+            // Not in a subquery that reads the query around it: its conditions would be a subquery deeper.
+            return dialect.PagesViewsByKeys && outer.Count == 0 ? ByKeys(frame) : frame;
          }
          case AggregateNode aggregate:
             return Aggregate(aggregate, needed);
@@ -263,6 +270,32 @@ internal sealed class SqlBuilder
          SqlColumn read = new(alias, column.Column.Name) { NativeType = column.Column.NativeType };
          frame.Columns[column.Output] = column.Column.ReadAs is { } type ? new SqlCast(read, type) : read;
       }
+      frame.Key = table.Key?.Columns.Select(c => new SqlColumn(alias, c.Name) { NativeType = c.NativeType }).ToList();
+      return frame;
+   }
+
+   /// <summary>
+   /// A sorted page of a view's rows, found by their key first (<see cref="SqlDialect.PagesViewsByKeys"/>): the page's
+   /// keys are sorted reading only the columns the sort and filters need, and then only the rows with those keys are
+   /// read whole, <c>WHERE id IN (SELECT id … ORDER BY … LIMIT …)</c>, still in the page's order. A key whose rows aren't
+   /// unique would give the page more rows; an entity's key is unique. Rows that are a page's are a page still, though
+   /// the SELECT doesn't limit them: a filter or a sort on top keeps to them.
+   /// </summary>
+   private static Frame ByKeys(Frame frame)
+   {
+      SqlSelect page = frame.Select;
+      if (frame.Key is not [SqlColumn key] || page.From is not SqlTable { IsView: true } || page.OrderBy.Count == 0 || page.Limit == null ||
+          frame.Aggregated || frame.DistinctColumns != null || page.Distinct)
+      {
+         return frame;
+      }
+      SqlSelect keys = new() { From = page.From, Where = page.Where, Limit = page.Limit, Offset = page.Offset };
+      keys.Items.Add(new SqlSelectItem(key, null));
+      keys.OrderBy.AddRange(page.OrderBy);
+      page.Where = new SqlInSubquery(key, keys);
+      page.Limit = null;
+      page.Offset = null;
+      frame.IsPage = true;
       return frame;
    }
 
@@ -317,8 +350,13 @@ internal sealed class SqlBuilder
       }
 
       Frame left = Build(join.Left, leftNeeded);
+      bool page = left.HasPaging || left.IsPage;
       if (left.HasPaging || left.DistinctColumns != null || left.Aggregated) { left = Wrap(left, join.Left.Output, leftNeeded); }
       if (join.Kind is JoinKind.Semi or JoinKind.Anti) { return SemiJoin(join, left); }
+      // A page goes on the side a database builds the join from (BuildsJoinsFromRight), in a derived table of its own
+      // once it is joined already or found by its keys: the join isn't built from all the rows it is joined to.
+      bool swap = page && dialect.BuildsJoinsFromRight && join.Condition != null;
+      if (swap && left.Select.From is not SqlDerivedTable) { left = Wrap(left, join.Left.Output, leftNeeded); }
       Frame right = Build(join.Right, rightNeeded);
       if (!right.HasPaging) { right.Select.OrderBy.Clear(); }
       // Values computed from an outer-joined row must be computed before the join: after it, a missing row's
@@ -336,8 +374,11 @@ internal sealed class SqlBuilder
       SqlExpr? condition = join.Condition == null ? null : Condition(join.Condition, columns);
       if (join.Kind == JoinKind.Left) { condition = AndAlso(condition, right.Select.Where); }
       else { left.Select.Where = AndAlso(left.Select.Where, right.Select.Where); }
-      left.Select.From = new SqlJoin(join.Kind == JoinKind.Inner ? SqlJoinKind.Inner : SqlJoinKind.Left, left.Select.From!, right.Select.From!, condition);
+      left.Select.From = swap
+         ? new SqlJoin(join.Kind == JoinKind.Inner ? SqlJoinKind.Inner : SqlJoinKind.Right, right.Select.From!, left.Select.From!, condition)
+         : new SqlJoin(join.Kind == JoinKind.Inner ? SqlJoinKind.Inner : SqlJoinKind.Left, left.Select.From!, right.Select.From!, condition);
       left.Columns = columns;
+      left.IsPage = page;
       return left;
    }
 

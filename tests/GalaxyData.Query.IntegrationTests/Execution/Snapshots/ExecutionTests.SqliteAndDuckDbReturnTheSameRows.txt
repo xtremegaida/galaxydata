@@ -17,6 +17,18 @@ id | status
 id | total
 1003 | 12.25
 
+### shop.orders.orderBy(id).take(3).select(id, who: customer.name, ship: ship_address.city)
+id | who | ship || id | id
+1001 | 'Acme Ltd' | 'Cape Town' || 1 | 1
+1002 | 'Acme Ltd' | 'Cape Town' || 1 | 1
+1003 | 'Beta Corp' | 'Johannesburg' || 2 | 2
+
+### shop.order_lines.orderBy(order_id, line_no).skip(1).take(3).select(order_id, line_no, city: order.customer.city, bill: order.bill_address.line1)
+order_id | line_no | city | bill || id | id
+1001 | 2 | 'Cape Town' | '1 Main Rd' || 1 | 1
+1002 | 1 | 'Cape Town' | null || 1 | null
+1003 | 1 | 'Johannesburg' | '9 High St' || 2 | 2
+
 ### shop.customers.orderBy(city).select(name, city)
 name | city || id
 'Gamma Inc' | null || 3

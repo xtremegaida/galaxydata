@@ -22,6 +22,9 @@ internal sealed class SqlWriter
    private bool inlineConstants;
    private int indent;
 
+   /// <summary>Set while a derived table's query is written: the query around it reads its columns by name.</summary>
+   private bool inDerivedTable;
+
    /// <summary>What columns of no table are written after, in SQL Server's OUTPUT clause: <c>INSERTED</c>.</summary>
    private string? columnPrefix;
 
@@ -239,7 +242,8 @@ internal sealed class SqlWriter
          if (i > 0) { text.Append(", "); }
          SqlSelectItem item = select.Items[i];
          Expr(item.Expr);
-         if (item.Alias != null && !(item.Expr is SqlColumn column && column.Column == item.Alias))
+         bool namedByTable = inDerivedTable && select.From is SqlJoin && dialect.NamesJoinedColumnsByTable;
+         if (item.Alias != null && !(item.Expr is SqlColumn column && column.Column == item.Alias && !namedByTable))
          {
             text.Append(" AS ").Append(dialect.Identifier(item.Alias));
          }
@@ -347,7 +351,10 @@ internal sealed class SqlWriter
             TableReference(table);
             break;
          case SqlDerivedTable derived:
+            bool outer = inDerivedTable;
+            inDerivedTable = true;
             Nested(derived.Query);
+            inDerivedTable = outer;
             text.Append(" AS ").Append(dialect.Identifier(derived.Alias));
             break;
          case SqlJoin join:
@@ -358,6 +365,7 @@ internal sealed class SqlWriter
             {
                SqlJoinKind.Inner when join.Condition != null => "INNER JOIN ",
                SqlJoinKind.Left => "LEFT JOIN ",
+               SqlJoinKind.Right => "RIGHT JOIN ",
                _ => "CROSS JOIN ",
             });
             if (join.Right is SqlJoin)
@@ -375,7 +383,7 @@ internal sealed class SqlWriter
                text.Append(" ON ");
                Expr(join.Condition);
             }
-            else if (join.Kind == SqlJoinKind.Left)
+            else if (join.Kind is SqlJoinKind.Left or SqlJoinKind.Right)
             {
                text.Append(" ON 1 = 1");
             }
