@@ -26,9 +26,22 @@ import type { SelectionAction } from '../model/widget-context';
 const numeric = new Set(['int16', 'int32', 'int64', 'decimal', 'single', 'double']);
 
 /**
+ * A chart's "Other" (the rest of its slices or series), as rows of the table's columns: the cell of the column it is
+ * the rest of (`column`) says its name. Not chosen; stepped into (`step`) when it can be.
+ */
+export interface OtherRows {
+  readonly rows: readonly (readonly unknown[])[];
+  readonly column: number;
+  readonly name: string;
+  readonly color: string;
+  readonly step: (() => void) | null;
+  readonly stepLabel: string;
+}
+
+/**
  * A widget's rows as a table: a table widget's, and a chart's to read with a keyboard (each row a slice, with
- * buttons that choose it, add it, or leave it out). Values as the chart labels them: periods as they are read,
- * numbers in the locale, exactly.
+ * buttons that choose it, add it, or leave it out; its "Other" last, with a button that steps into it). Values as
+ * the chart labels them: periods as they are read, numbers in the locale, exactly.
  */
 @Component({
   selector: 'gd-rows-table',
@@ -47,7 +60,7 @@ const numeric = new Set(['int16', 'int32', 'int64', 'decimal', 'single', 'double
                 {{ column.label }}
               </th>
             }
-            @if (choosing()) {
+            @if (actions()) {
               <th scope="col" class="actions"><span class="hidden">Choose</span></th>
             }
           </tr>
@@ -67,38 +80,75 @@ const numeric = new Set(['int16', 'int32', 'int64', 'decimal', 'single', 'double
                   {{ text(row, column) }}
                 </td>
               }
-              @if (choosing()) {
+              @if (actions()) {
                 <td class="actions">
-                  <button
-                    matIconButton
-                    type="button"
-                    matTooltip="Choose only this"
-                    [attr.aria-label]="'Choose only ' + rowName(row)"
-                    (click)="choose()(keyOf(row), 'replace')"
-                  >
-                    <mat-icon>filter_alt</mat-icon>
-                  </button>
-                  <button
-                    matIconButton
-                    type="button"
-                    matTooltip="Add to those chosen"
-                    [attr.aria-label]="'Add ' + rowName(row)"
-                    (click)="choose()(keyOf(row), 'add')"
-                  >
-                    <mat-icon>add</mat-icon>
-                  </button>
-                  <button
-                    matIconButton
-                    type="button"
-                    matTooltip="Leave out"
-                    [attr.aria-label]="'Leave out ' + rowName(row)"
-                    (click)="choose()(keyOf(row), 'exclude')"
-                  >
-                    <mat-icon>block</mat-icon>
-                  </button>
+                  @if (choosing()) {
+                    <button
+                      matIconButton
+                      type="button"
+                      matTooltip="Choose only this"
+                      [attr.aria-label]="'Choose only ' + rowName(row)"
+                      (click)="choose()(keyOf(row), 'replace')"
+                    >
+                      <mat-icon>filter_alt</mat-icon>
+                    </button>
+                    <button
+                      matIconButton
+                      type="button"
+                      matTooltip="Add to those chosen"
+                      [attr.aria-label]="'Add ' + rowName(row)"
+                      (click)="choose()(keyOf(row), 'add')"
+                    >
+                      <mat-icon>add</mat-icon>
+                    </button>
+                    <button
+                      matIconButton
+                      type="button"
+                      matTooltip="Leave out"
+                      [attr.aria-label]="'Leave out ' + rowName(row)"
+                      (click)="choose()(keyOf(row), 'exclude')"
+                    >
+                      <mat-icon>block</mat-icon>
+                    </button>
+                  }
                 </td>
               }
             </tr>
+          }
+          @if (other(); as other) {
+            @for (row of other.rows; track $index) {
+              <tr class="other" [class.faded]="otherFaded()">
+                @for (column of shown(); track column.name) {
+                  <td [class.number]="isNumber(column)">
+                    @if (data().columns.indexOf(column) === other.column) {
+                      <span
+                        class="swatch"
+                        aria-hidden="true"
+                        [style.background]="other.color"
+                      ></span>
+                      {{ other.name }}
+                    } @else {
+                      {{ text(row, column) }}
+                    }
+                  </td>
+                }
+                @if (actions()) {
+                  <td class="actions">
+                    @if (other.step && $first) {
+                      <button
+                        matIconButton
+                        type="button"
+                        [matTooltip]="other.stepLabel"
+                        [attr.aria-label]="other.stepLabel"
+                        (click)="other.step()"
+                      >
+                        <mat-icon>arrow_forward</mat-icon>
+                      </button>
+                    }
+                  </td>
+                }
+              </tr>
+            }
           }
         </tbody>
       </table>
@@ -187,6 +237,18 @@ export class RowsTable {
   readonly swatch = input<(row: readonly unknown[] | null, column: WidgetColumn) => string | null>(
     () => null,
   );
+
+  /** A chart's "Other", shown after its rows. */
+  readonly other = input<OtherRows | null>(null);
+
+  /** Whether rows have a cell of buttons: to choose them, or to step into "Other". */
+  protected readonly actions = computed(() => this.choosing() || !!this.other()?.step);
+
+  /** "Other" isn't chosen: faded while slices are. */
+  protected readonly otherFaded = computed(() => {
+    const selection = this.selection();
+    return !!selection && selection.mode === 'include' && selection.keys.length > 0;
+  });
 
   /** The columns shown: all but a raw table's key, which choosing its rows sends. */
   protected readonly shown = computed(() => this.data().columns.filter((c) => c.role !== 'key'));

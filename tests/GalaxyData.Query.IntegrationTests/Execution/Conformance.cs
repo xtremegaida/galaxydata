@@ -49,6 +49,10 @@ internal static partial class Conformance
       "shop.orders.select(id, t: toString(total), i: toInt(total), f: toDouble(total), b: toBool(total), big: total > 100).orderBy(id)",
       "shop.orders.select(status).distinct().orderBy(status)",
       "shop.orders.where(status in ['open', 'shipped'] and not (total < 50)).select(id).orderBy(id)",
+      // A dashboard's largest series (ties by their text, as guids are), and the rest of them: kept without a value, or not.
+      "shop.orders.groupBy(s0: customer_id).select(s0, m0: count()).orderBy(desc(m0), toString(s0)).take(3)",
+      "(shop.orders).where(r0 => (not (r0.customer.city in ['Cape Town']) or r0.customer.city == null)).groupBy(d0: status).select(d0, m0: count()).orderBy(d0)",
+      "(shop.orders).where(r0 => (r0.customer.city != null and not (r0.customer.city in ['Cape Town']))).groupBy(d0: status).select(d0, m0: count()).orderBy(d0)",
       "shop.orders.where(total > $min and order_date >= $since).select(id).orderBy(id)",
       "shop.customers.where(credit_limit == null).select(name)",
       "shop.addresses.select(line1, who: customer.name).orderBy(line1)",

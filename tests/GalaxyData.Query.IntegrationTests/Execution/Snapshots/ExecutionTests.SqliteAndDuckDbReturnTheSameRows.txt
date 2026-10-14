@@ -131,6 +131,21 @@ id
 1001
 1002
 
+### shop.orders.groupBy(s0: customer_id).select(s0, m0: count()).orderBy(desc(m0), toString(s0)).take(3)
+s0 | m0
+1 | 2
+2 | 1
+3 | 1
+
+### (shop.orders).where(r0 => (not (r0.customer.city in ['Cape Town']) or r0.customer.city == null)).groupBy(d0: status).select(d0, m0: count()).orderBy(d0)
+d0 | m0
+'cancelled' | 1
+'open' | 1
+
+### (shop.orders).where(r0 => (r0.customer.city != null and not (r0.customer.city in ['Cape Town']))).groupBy(d0: status).select(d0, m0: count()).orderBy(d0)
+d0 | m0
+'open' | 1
+
 ### shop.orders.where(total > $min and order_date >= $since).select(id).orderBy(id)
 id
 1002

@@ -17175,6 +17175,19 @@
           "colorBy": {
             "$ref": "#/components/schemas/BarColorBy"
           },
+          "seriesLimit": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "seriesOther": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
           "source": {
             "type": "string"
           },
@@ -17293,6 +17306,19 @@
               "integer"
             ],
             "format": "int32"
+          },
+          "seriesLimit": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "seriesOther": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           },
           "source": {
             "type": "string"
@@ -17535,6 +17561,32 @@
             "items": {
               "$ref": "#/components/schemas/LabelColorDto"
             }
+          },
+          "series": {
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "moreSeries": {
+            "type": "boolean",
+            "default": false
+          },
+          "otherRows": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "array"
+            }
+          },
+          "next": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -17593,6 +17645,26 @@
           },
           "underlying": {
             "$ref": "#/components/schemas/QueryTextDto"
+          },
+          "series": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/QueryTextDto"
+              }
+            ]
+          },
+          "rest": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/QueryTextDto"
+              }
+            ]
           }
         }
       },

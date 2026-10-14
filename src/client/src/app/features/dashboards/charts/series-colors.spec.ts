@@ -74,6 +74,7 @@ function colorsOf(memory: PaletteMemory, labels: (string | null)[], theme = ligh
 function dataOf(
   columns: [string, 'dimension' | 'series' | 'measure'][],
   rows: unknown[][],
+  extra: Partial<WidgetData> = {},
 ): WidgetData {
   const indexes: Record<string, number> = {};
   return {
@@ -98,6 +99,8 @@ function dataOf(
     refreshedAt: '2026-03-01T10:00:00Z',
     cached: false,
     issues: [],
+    moreSeries: false,
+    ...extra,
   };
 }
 
@@ -424,6 +427,109 @@ describe('what a chart colours', () => {
     expect(hexOf('rgba(1, 2, 3, 0.5)')).toBe('#010203');
     expect(hexOf('#ABCDEF')).toBe('#abcdef');
     expect(hexOf('red')).toBe('#000000');
+  });
+
+  it('colours the largest series first, and each step into Other from the first colour again', () => {
+    const limited: BarConfig = {
+      ...bar,
+      series: { field: { path: [], column: 'region' }, bucket: null, label: 'Region' },
+      measures: [bar.measures[0]],
+      seriesLimit: 2,
+      seriesOther: true,
+    };
+    const columns: [string, 'dimension' | 'series' | 'measure'][] = [
+      ['Status', 'dimension'],
+      ['Region', 'series'],
+      ['Orders', 'measure'],
+    ];
+    const painter = new WidgetColors();
+    const largest = painter.paint(
+      limited,
+      dataOf(
+        columns,
+        [
+          ['open', 'EMEA', '1'],
+          ['open', 'APAC', '3'],
+        ],
+        { series: ['APAC', 'EMEA'], moreSeries: true, otherRows: [['open', '2']], next: 2 },
+      ),
+      null,
+      light,
+      'en-ZA',
+    );
+    expect(largest.entries.map((e) => [e.label, e.color])).toEqual([
+      ['APAC', light.series[0]],
+      ['EMEA', light.series[1]],
+    ]);
+    // The next two: others, from the first colour (past the theme's eight, they'd be grey, as Other is).
+    const next = painter.paint(
+      limited,
+      dataOf(
+        columns,
+        [
+          ['open', 'LATAM', '1'],
+          ['open', 'NA', '1'],
+        ],
+        { series: ['NA', 'LATAM'], offset: 2 },
+      ),
+      null,
+      light,
+      'en-ZA',
+    );
+    expect(next.entries.map((e) => [e.label, e.color])).toEqual([
+      ['NA', light.series[0]],
+      ['LATAM', light.series[1]],
+    ]);
+  });
+
+  it("never paints a slice or series Other's grey beside an Other: the colours again from the first", () => {
+    const ten = dataOf(
+      [
+        ['Status', 'dimension'],
+        ['Orders', 'measure'],
+      ],
+      Array.from({ length: 10 }, (_, i) => [`s${i + 1}`, String(20 - i)]),
+      { other: '5' },
+    );
+    const painted = new WidgetColors().paint({ ...pie, limit: 10 }, ten, null, light, 'en-ZA');
+    expect(painted.entries.slice(7).map((e) => [e.label, e.color, e.pair])).toEqual([
+      ['s8', light.series[7], galaxyColors[7]],
+      ['s9', light.series[0], galaxyColors[0]],
+      ['s10', light.series[1], galaxyColors[1]],
+    ]);
+    // Without an Other, past the eighth is grey, as ever.
+    const plain = new WidgetColors().paint(
+      { ...pie, limit: 10, other: false },
+      { ...ten, other: null },
+      null,
+      light,
+      'en-ZA',
+    );
+    expect(plain.entries.slice(8).map((e) => [e.color, e.pair])).toEqual([
+      [light.neutral, null],
+      [light.neutral, null],
+    ]);
+    // A chart's largest series, the rest as Other, alike.
+    const limited: BarConfig = {
+      ...bar,
+      series: { field: { path: [], column: 'region' }, bucket: null, label: 'Region' },
+      measures: [bar.measures[0]],
+      seriesLimit: 9,
+      seriesOther: true,
+    };
+    const nine = Array.from({ length: 9 }, (_, i) => `r${i + 1}`);
+    const regions = dataOf(
+      [
+        ['Status', 'dimension'],
+        ['Region', 'series'],
+        ['Orders', 'measure'],
+      ],
+      nine.map((r) => ['open', r, '1']),
+      { series: nine, moreSeries: true, otherRows: [['open', '3']], next: 9 },
+    );
+    expect(new WidgetColors().paint(limited, regions, null, light, 'en-ZA').entries[8].color).toBe(
+      light.series[0],
+    );
   });
 
   it('is drawn as ever without a palette, and anew when what it colours changes', () => {

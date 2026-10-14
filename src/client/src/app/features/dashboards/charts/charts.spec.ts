@@ -1,7 +1,15 @@
 import type { BarConfig, LineConfig, PieConfig, WidgetData } from '../model/definition';
 import { barDefaults, lineDefaults, pieDefaults } from '../model/widget-defaults';
 import { actionOf } from './chart-events';
-import { ColorMemory, type ChartContext, barOption, lineOption, pieOption } from './chart-options';
+import {
+  ColorMemory,
+  type ChartContext,
+  barOption,
+  lineOption,
+  otherName,
+  otherSeries,
+  pieOption,
+} from './chart-options';
 import { fallbackTheme } from './chart-theme';
 import { contrast } from './color-checks';
 import {
@@ -42,6 +50,7 @@ function dataOf(
     refreshedAt: '2026-03-01T10:00:00Z',
     cached: false,
     issues: [],
+    moreSeries: false,
     ...extra,
   } as WidgetData;
 }
@@ -61,10 +70,13 @@ function contextOf(partial: Partial<ChartContext> = {}): ChartContext {
 interface Series {
   name: string;
   type: string;
+  itemStyle?: Record<string, unknown>;
+  lineStyle?: Record<string, unknown>;
   data: {
     value: number | null;
-    key: unknown[];
+    key: unknown[] | null;
     raw: unknown;
+    other?: true;
     itemStyle?: Record<string, unknown>;
     name?: string;
   }[];
@@ -262,6 +274,13 @@ describe('chart options', () => {
     const nine = new ColorMemory();
     Array.from({ length: 8 }, (_, i) => nine.slot(String(i)));
     expect(nine.color('ninth', theme)).toBe(theme.neutral);
+    // Beside an Other (grey), the colours again from the first: none looks like it.
+    const again = new ColorMemory(true);
+    Array.from({ length: 8 }, (_, i) => again.slot(String(i)));
+    expect([again.color('ninth', theme), again.color('tenth', theme)]).toEqual([
+      theme.series[0],
+      theme.series[1],
+    ]);
   });
 
   it("adds the rest of a pie as Other, which can't be chosen", () => {
@@ -282,6 +301,160 @@ describe('chart options', () => {
       ['open', 262.25, ['open']],
       ['Other', 99.5, null],
     ]);
+  });
+
+  it('marks the rest of a pie as Other, stepped into, and says where it is', () => {
+    const config: PieConfig = {
+      ...pieDefaults('orders'),
+      dimension: { field: { path: [], column: 'status' }, bucket: null, label: 'Status' },
+      limit: 1,
+      other: true,
+    };
+    const data = dataOf(
+      [
+        ['Status', 'dimension', text],
+        ['Orders', 'measure', int64],
+      ],
+      [['cancelled', '1']],
+      { other: '1', offset: 1, next: 2, truncated: true },
+    );
+    const option = pieOption(config, data, contextOf());
+    const items = (option.series as unknown as Series[])[0].data;
+    expect(items.map((i) => [i.name, i.key, i.other])).toEqual([
+      ['cancelled', ['cancelled'], undefined],
+      ['Other', null, true],
+    ]);
+    const tip = (option.tooltip as { formatter: (p: unknown) => string }).formatter({
+      name: 'Other',
+      percent: 50,
+      marker: '',
+      data: items[1],
+    });
+    expect(tip).toBe('Other<br>1 (50,0%)<br>Click to see the next slice');
+    expect((option.aria as { label: { description: string } }).label.description).toBe(
+      'Pie chart of Rows by Status, 2 categories; highest cancelled 1; slice 2; the rest as Other',
+    );
+    // At the last step, nothing further: no hint.
+    const last = pieOption(config, { ...data, next: null }, contextOf());
+    const end = (last.tooltip as { formatter: (p: unknown) => string }).formatter({
+      name: 'Other',
+      percent: 50,
+      marker: '',
+      data: (last.series as unknown as Series[])[0].data[1],
+    });
+    expect(end).toBe('Other<br>1 (50,0%)');
+  });
+
+  it('draws the largest series first, and the rest as Other: grey, in its stack, stepped into', () => {
+    const data = dataOf(
+      [
+        ['Status', 'dimension', text],
+        ['Customer', 'series', int64],
+        ['Orders', 'measure', int64],
+      ],
+      [
+        ['open', '1', '1'],
+        ['open', '2', '3'],
+        ['shipped', '1', '1'],
+      ],
+      {
+        categories: ['open', 'shipped'],
+        series: ['2', '1'],
+        moreSeries: true,
+        otherRows: [
+          ['open', '2'],
+          ['shipped', '4'],
+        ],
+        next: 2,
+      },
+    );
+    const config: BarConfig = {
+      ...barDefaults('orders'),
+      series: { field: { path: [], column: 'customer_id' }, bucket: null, label: 'Customer' },
+      seriesLimit: 2,
+      seriesOther: true,
+      stack: 'percent',
+    };
+    const theme = fallbackTheme(false);
+    const option = barOption(config, data, contextOf());
+    const series = option.series as unknown as Series[];
+    expect(series.map((s) => s.name)).toEqual(['2', '1', 'Other']);
+    // Open: 1 and 3 shown, 2 the rest's (of 6); shipped: 1 shown, 4 the rest's (of 5).
+    expect(series.map((s) => s.data.map((d) => Math.round(d.value ?? 0)))).toEqual([
+      [50, 0],
+      [17, 20],
+      [33, 80],
+    ]);
+    expect(series[2].data.map((d) => [d.key, d.other])).toEqual([
+      [null, true],
+      [null, true],
+    ]);
+    expect(series[2].itemStyle?.['color']).toBe(theme.neutral);
+    const tip = (option.tooltip as { formatter: (p: unknown) => string }).formatter({
+      name: 'open',
+      seriesName: 'Other',
+      marker: '',
+      data: series[2].data[0],
+    });
+    expect(tip).toBe('open<br>Other: 2<br>Click to see the next 2 series');
+    expect((option.aria as { label: { description: string } }).label.description).toContain(
+      'the rest as Other',
+    );
+    // Faded while slices are chosen, as it is never one of them.
+    const chosen = barOption(
+      config,
+      data,
+      contextOf({ selection: { mode: 'include', keys: [['open', '2']] } }),
+    );
+    expect((chosen.series as unknown as Series[])[2].data[0].itemStyle).toEqual({ opacity: 0.3 });
+  });
+
+  it("draws a line's x values as the server gives them: some may be its rest's alone", () => {
+    const data = dataOf(
+      [
+        ['Day', 'dimension', date],
+        ['Status', 'series', text],
+        ['Orders', 'measure', int64],
+      ],
+      [
+        ['2026-01-05', 'open', '1'],
+        ['2026-02-01', 'open', '1'],
+      ],
+      {
+        categories: ['2026-01-05', '2026-01-09', '2026-02-01', '2026-02-14'],
+        series: ['open'],
+        moreSeries: true,
+        otherRows: [
+          ['2026-01-09', '1'],
+          ['2026-02-14', '1'],
+        ],
+        next: 1,
+      },
+    );
+    const config: LineConfig = {
+      ...lineDefaults('orders'),
+      dimension: { field: { path: [], column: 'order_date' }, bucket: 'day', label: 'Day' },
+      series: { field: { path: [], column: 'status' }, bucket: null, label: 'Status' },
+      seriesLimit: 1,
+      seriesOther: true,
+      gaps: 'connect',
+    };
+    const option = lineOption(config, data, contextOf());
+    expect((option.xAxis as { data: string[] }).data).toHaveLength(4);
+    const series = option.series as unknown as Series[];
+    expect(series.map((s) => [s.name, s.data.map((d) => d.value)])).toEqual([
+      ['open', [1, null, 1, null]],
+      ['Other', [null, 1, null, 1]],
+    ]);
+    expect(series[1].lineStyle?.['color']).toBe(fallbackTheme(false).neutral);
+    // Its line itself takes clicks, not only its points: the chart knows it by its id.
+    expect(series[1]).toMatchObject({ id: otherSeries, triggerEvent: true });
+    expect(series[0]).not.toHaveProperty('triggerEvent');
+  });
+
+  it('tells Other apart from a value of that name', () => {
+    expect(otherName(['open', 'shipped'])).toBe('Other');
+    expect(otherName(['open', 'Other'])).toBe('Other (the rest)');
   });
 
   it('draws lines over every period, as zero or gaps', () => {

@@ -252,6 +252,32 @@ public sealed class DefinitionRulesTests
    }
 
    [Fact]
+   public void ASeriesIsLimitedOnlyWhenThereIsOneAndItsRestIsOtherOnlyWhenLimited()
+   {
+      DashboardDefinition sales = Definitions.Sales();
+      DashboardDefinition With(WidgetConfig config) => sales with { Widgets = [sales.Widgets[0], sales.Widgets[1] with { Config = config }, sales.Widgets[2]] };
+      BarConfig bars = Definitions.Bar("orders", "status", series: "customer_id");
+      LineConfig line = new("orders", [], true, Definitions.All, new Dimension(new FieldRef([], "order_date"), Bucket.Month, "Month"),
+         new Dimension(new FieldRef([], "status"), null, "Status"), [new Measure(Aggregate.Count, null, "Rows", null)], 1000, false, LineGaps.Break, false,
+         LegendPosition.Bottom, null, null);
+
+      Check(With(bars with { SeriesLimit = 8, SeriesOther = true })).Errors.ShouldBeEmpty();
+      Check(With(line with { SeriesLimit = 100, SeriesOther = true })).Errors.ShouldBeEmpty();
+      Check(With(bars with { SeriesLimit = 8 })).Errors.ShouldBeEmpty("the largest, and no Other");
+      Fields(With(bars with { Series = null, SeriesLimit = 8 })).ShouldBe(["definition.widgets[1].config.seriesLimit"]);
+      Fields(With(bars with { SeriesLimit = 0 })).ShouldBe(["definition.widgets[1].config.seriesLimit"]);
+      Fields(With(line with { SeriesLimit = 101 })).ShouldBe(["definition.widgets[1].config.seriesLimit"]);
+      Fields(With(line with { SeriesOther = true })).ShouldBe(["definition.widgets[1].config.seriesOther"]);
+      Fields(With(bars with { Series = null, SeriesOther = true })).ShouldBe(["definition.widgets[1].config.seriesOther"]);
+
+      // Unset, they aren't written: a chart saved before them is written as it was.
+      string json = DefinitionJson.Write(Check(With(bars)).Checked!);
+      json.ShouldNotContain("\"seriesLimit\"");
+      json.ShouldNotContain("\"seriesOther\"");
+      DefinitionJson.Write(Check(With(bars with { SeriesLimit = 8, SeriesOther = true })).Checked!).ShouldContain("\"seriesLimit\":8,\"seriesOther\":true");
+   }
+
+   [Fact]
    public void ADashboardWithoutTabsIsWrittenAsItWas()
    {
       DashboardDefinition sales = Check(Definitions.Sales()).Checked!;

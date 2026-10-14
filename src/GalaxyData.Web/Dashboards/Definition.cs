@@ -348,7 +348,8 @@ public enum BarColorBy
 
 /// <summary>
 /// Bars of measures by a dimension, and by a series too (then one measure): the first <see cref="Limit"/> categories
-/// by <see cref="Sort"/>. <see cref="Palette"/>: its own palette (none: the dashboard's).
+/// by <see cref="Sort"/>. <see cref="Palette"/>: its own palette (none: the dashboard's). By a series, the largest
+/// <see cref="SeriesLimit"/> series (none: every one), and the rest as one when <see cref="SeriesOther"/>.
 /// </summary>
 public sealed record BarConfig(
    string Source,
@@ -367,7 +368,9 @@ public sealed record BarConfig(
    string? XTitle,
    string? YTitle,
    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Palette = null,
-   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] BarColorBy ColorBy = BarColorBy.Measure) : DataWidgetConfig(Source, Conditions, Emits, Listens);
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] BarColorBy ColorBy = BarColorBy.Measure,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SeriesLimit = null,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SeriesOther = null) : DataWidgetConfig(Source, Conditions, Emits, Listens);
 
 public enum LineGaps
 {
@@ -381,7 +384,11 @@ public enum LineGaps
    Break,
 }
 
-/// <summary>Lines of measures over a dimension (x), by a series too (then one measure), in its order. <see cref="Palette"/>: its own palette (none: the dashboard's).</summary>
+/// <summary>
+/// Lines of measures over a dimension (x), by a series too (then one measure), in its order. <see cref="Palette"/>:
+/// its own palette (none: the dashboard's). By a series, the largest <see cref="SeriesLimit"/> series (none: every
+/// one), and the rest as one when <see cref="SeriesOther"/>.
+/// </summary>
 public sealed record LineConfig(
    string Source,
    List<WidgetCondition> Conditions,
@@ -397,7 +404,9 @@ public sealed record LineConfig(
    LegendPosition Legend,
    string? XTitle,
    string? YTitle,
-   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Palette = null) : DataWidgetConfig(Source, Conditions, Emits, Listens);
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Palette = null,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SeriesLimit = null,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SeriesOther = null) : DataWidgetConfig(Source, Conditions, Emits, Listens);
 
 public enum TableMode
 {

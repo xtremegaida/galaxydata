@@ -122,6 +122,13 @@ public sealed class DashboardSettings
    [Range(1, 1_000_000)]
    public int MaxChartRows { get; set; } = 10_000;
 
+   /// <summary>
+   /// How deep a chart's "Other" may be stepped into: the most slices or series ranked before the last shown (the
+   /// rest is written as not among those ranked before it).
+   /// </summary>
+   [Range(1, 10_000)]
+   public int MaxOtherDepth { get; set; } = 1_000;
+
    /// <summary>The most slices a selection of a widget's may hold, signed in and in public dashboards.</summary>
    [Range(1, 10_000)]
    public int MaxSelectionKeys { get; set; } = 50;

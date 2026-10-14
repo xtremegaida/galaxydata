@@ -9,9 +9,13 @@ export interface Chart {
   dispose(): void;
 }
 
-/** What a click on a chart's item gives: the item's data (its key), and the browser's event (its keys held). */
+/**
+ * What a click on a chart's item gives: the item's data (its key), the series it is of (by its index in the options:
+ * a click on a line itself, between its points, has no item), and the browser's event (its keys held).
+ */
 export interface ChartEvent {
   readonly data?: unknown;
+  readonly seriesIndex?: number;
   readonly event?: { readonly event?: MouseEvent };
 }
 

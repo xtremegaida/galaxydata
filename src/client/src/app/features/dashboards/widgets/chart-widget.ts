@@ -13,31 +13,70 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { MatIconButton } from '@angular/material/button';
 import { MatIcon } from '@angular/material/icon';
 import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
+import { MatTooltip } from '@angular/material/tooltip';
 import { elementSize } from '../../../core/browser/element-size';
 import { type Chart, EChartsLoader } from '../../../core/charts/echarts-loader';
 import { ColorScheme } from '../../../core/theme/color-scheme';
 import { actionOf, onMac } from '../charts/chart-events';
-import { chartOption } from '../charts/chart-options';
+import {
+  chartOption,
+  column,
+  otherName,
+  otherSeries,
+  stepNoun,
+  stepOf,
+  stepRange,
+  stepShown,
+} from '../charts/chart-options';
 import { type ChartTheme, fallbackTheme, readTheme } from '../charts/chart-theme';
+import { categoryText } from '../charts/chart-values';
 import { AssignedColors, WidgetColors, cellEntity } from '../charts/series-colors';
 import { type Key, type WidgetColumn, isChart } from '../model/definition';
 import { type SelectionAction, WidgetContext } from '../model/widget-context';
-import { RowsTable } from './rows-table';
+import { type OtherRows, RowsTable } from './rows-table';
 
 /**
  * A pie, bar or line chart of a widget's rows (ECharts, on a canvas, loaded with the first chart shown). Clicking a
  * slice chooses it (Ctrl or ⌘ adds it, Alt leaves it out); the chart says what it shows to screen readers, and its
  * rows are a table to read and choose from by keyboard ("Show as table", which is also what is shown if the chart
  * can't be loaded). Right-clicking a slice (or pressing on it long) offers the same as a menu: for touch, and where
- * Alt+click is the window manager's.
+ * Alt+click is the window manager's. Clicking "Other" (the rest of a pie's slices, or of the largest series) steps
+ * into it: the next slices or series; a bar above the chart then steps back, or back to the largest.
  */
 @Component({
   selector: 'gd-chart-widget',
-  imports: [MatIcon, MatMenu, MatMenuItem, MatMenuTrigger, RowsTable],
+  imports: [MatIcon, MatIconButton, MatMenu, MatMenuItem, MatMenuTrigger, MatTooltip, RowsTable],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { tabindex: '-1' },
   template: `
+    @if (step(); as step) {
+      <div class="step" role="group" [attr.aria-label]="step.label">
+        @if (step.top) {
+          <button
+            matIconButton
+            type="button"
+            [matTooltip]="step.topLabel"
+            [attr.aria-label]="step.topLabel"
+            (click)="stepTo(0)"
+          >
+            <mat-icon>first_page</mat-icon>
+          </button>
+        }
+        <button
+          matIconButton
+          type="button"
+          [matTooltip]="step.backLabel"
+          [attr.aria-label]="step.backLabel"
+          (click)="stepTo(step.back)"
+        >
+          <mat-icon>chevron_left</mat-icon>
+        </button>
+        <span class="range" aria-live="polite">{{ step.range }}</span>
+      </div>
+    }
     @if (asTable() && data(); as data) {
       <gd-rows-table
         [data]="data"
@@ -47,6 +86,7 @@ import { RowsTable } from './rows-table';
         [choosing]="context.choosing() && emits()"
         [choose]="choose"
         [swatch]="swatch"
+        [other]="otherRows()"
       />
     }
     @if (failed()) {
@@ -102,10 +142,29 @@ import { RowsTable } from './rows-table';
       color: var(--mat-sys-on-surface-variant);
       pointer-events: none;
     }
+    :host:focus {
+      outline: none;
+    }
     .anchor {
       position: absolute;
       width: 0;
       height: 0;
+    }
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      font: var(--mat-sys-label-medium);
+      color: var(--mat-sys-on-surface-variant);
+    }
+    .step button {
+      /* 32px targets (WCAG's least is 24px): the bar stays as small as a line of the chart's. */
+      --mat-icon-button-state-layer-size: 32px;
+      --mat-icon-button-touch-target-display: none;
+      padding: 4px;
+    }
+    .range {
+      margin-inline-start: 4px;
     }
     .canvas {
       flex: 1 1 auto;
@@ -186,6 +245,96 @@ export class ChartWidget {
   protected readonly choose = (key: Key, action: Parameters<WidgetContext['choose']>[1]) =>
     this.context.choose(key, action);
 
+  /**
+   * Where the chart is in its "Other", once stepped into it: the slices or series shown, the step back (the one
+   * before), and back to the largest (two steps in or more, where it differs from the one before).
+   */
+  protected readonly step = computed(() => {
+    const config = this.dataConfig();
+    const data = this.data();
+    const size = config ? stepOf(config) : null;
+    if (!config || !data || size === null || data.offset <= 0) {
+      return null;
+    }
+    const shown = Math.max(stepShown(config, data), 1);
+    const back = Math.max(0, data.offset - size);
+    const range = stepRange(config, data.offset + 1, data.offset + shown);
+    return {
+      label: 'Stepped into Other',
+      range: range[0].toUpperCase() + range.slice(1),
+      back,
+      backLabel: `Back to ${stepRange(config, back + 1, back + size)}`,
+      top: back > 0,
+      topLabel: `Back to the largest ${stepNoun(config).many}`,
+    };
+  });
+
+  /** The chart's "Other" as rows of its table: a pie's rest, or the rest of the largest series by category. */
+  protected readonly otherRows = computed<OtherRows | null>(() => {
+    const config = this.dataConfig();
+    const data = this.data();
+    if (!config || !data) {
+      return null;
+    }
+    const size = stepOf(config);
+    const step =
+      size !== null && data.next !== null && data.next !== undefined && this.context.choosing()
+        ? () => this.stepInto()
+        : null;
+    const noun = stepNoun(config);
+    const stepLabel = `Show the next ${size === 1 ? noun.one : `${size ?? ''} ${noun.many}`}`;
+    const color = this.theme().neutral;
+    const d = column(data, 'dimension');
+    const m = column(data, 'measure');
+    if (config.kind === 'pie') {
+      if (data.other === null || data.other === undefined || d < 0) {
+        return null;
+      }
+      const type = data.columns[d].type;
+      const names = data.rows.map((row) =>
+        categoryText(row[d], type, config.dimension.bucket, this.locale),
+      );
+      const row = data.columns.map((_, i) => (i === m ? data.other : null));
+      return { rows: [row], column: d, name: otherName(names), color, step, stepLabel };
+    }
+    const s = column(data, 'series');
+    if (!data.otherRows || s < 0) {
+      return null;
+    }
+    const type = data.columns[s].type;
+    const names = (data.series ?? []).map((value) =>
+      categoryText(value, type, config.series?.bucket, this.locale),
+    );
+    const rows = data.otherRows.map((other) =>
+      data.columns.map((_, i) => (i === d ? other[0] : i === m ? other[1] : null)),
+    );
+    return { rows, column: s, name: otherName(names), color, step, stepLabel };
+  });
+
+  /** Steps into "Other": the next slices or series, as the rows say there are (on the editor's canvas, only while trying). */
+  protected stepInto(): void {
+    const next = this.data()?.next;
+    if (next !== null && next !== undefined && this.context.choosing()) {
+      this.context.offset.set(next);
+    }
+  }
+
+  /** The series the chart was last drawn with, by index: a click on a line itself says only which it is. */
+  private drawn: readonly { id?: unknown }[] = [];
+
+  /** Whether the series of that index is "Other". */
+  private isOther(index: number | undefined): boolean {
+    return index !== undefined && this.drawn[index]?.id === otherSeries;
+  }
+
+  /** Steps back in "Other"; back at the largest, its bar goes, and the widget keeps the focus it had. */
+  protected stepTo(offset: number): void {
+    this.context.offset.set(offset);
+    if (offset === 0) {
+      (this.element.nativeElement as HTMLElement).focus();
+    }
+  }
+
   protected chooseFromMenu(action: SelectionAction): void {
     if (this.menuKey) {
       this.context.choose(this.menuKey, action);
@@ -202,7 +351,13 @@ export class ChartWidget {
           }
           const chart = charts.init(this.canvas().nativeElement);
           chart.on('click', (params) => {
-            const key = (params.data as { key?: Key | null } | undefined)?.key;
+            const item = params.data as { key?: Key | null; other?: boolean } | undefined;
+            if (item?.other || this.isOther(params.seriesIndex)) {
+              // "Other" isn't chosen: it is stepped into, whatever the keys held.
+              this.stepInto();
+              return;
+            }
+            const key = item?.key;
             if (key && this.context.choosing() && this.emits()) {
               this.context.choose(key, actionOf(params.event?.event, this.mac));
             }
@@ -243,17 +398,16 @@ export class ChartWidget {
       if (!chart || !config || !data) {
         return;
       }
-      chart.setOption(
-        chartOption(config, data, {
-          theme: this.theme(),
-          locale: this.locale,
-          selection: this.context.selection(),
-          reducedMotion: this.reducedMotion,
-          colors: this.colors(),
-          narrow: this.narrow(),
-        }),
-        { notMerge: true },
-      );
+      const option = chartOption(config, data, {
+        theme: this.theme(),
+        locale: this.locale,
+        selection: this.context.selection(),
+        reducedMotion: this.reducedMotion,
+        colors: this.colors(),
+        narrow: this.narrow(),
+      });
+      this.drawn = Array.isArray(option.series) ? (option.series as { id?: unknown }[]) : [];
+      chart.setOption(option, { notMerge: true });
     });
     // What it coloured, for the editor to list.
     effect(() => {

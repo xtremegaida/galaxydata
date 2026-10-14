@@ -104,7 +104,8 @@ export function pieDefaults(source: string | null, listens: Listens = all): PieC
     listens,
     dimension: blankDimension(),
     measure: rowCount(),
-    limit: 10,
+    // As many as the built-in colours: the rest is Other.
+    limit: 8,
     other: true,
     donut: false,
     labels: true,

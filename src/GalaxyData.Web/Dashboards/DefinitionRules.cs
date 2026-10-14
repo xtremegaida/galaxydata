@@ -66,6 +66,9 @@ public sealed partial class DefinitionRules(WidgetKinds kinds, DashboardSettings
 
    public const int MaxMeasures = 10;
 
+   /// <summary>The most series a chart split by a series may be limited to (its largest).</summary>
+   public const int MaxSeries = 100;
+
    /// <summary>The longest a tab's label may be.</summary>
    public const int TabLabelLength = 60;
 
@@ -561,6 +564,17 @@ public sealed class DefinitionCheck(DashboardSettings settings, Dictionary<strin
    public void Limit(int limit, string path, int max)
    {
       if (limit < 1 || limit > max) { Error(path, $"Show 1 to {max:N0}"); }
+   }
+
+   /// <summary>A chart's largest series (<c>seriesLimit</c>), only when it is split by a series; the rest as Other (<c>seriesOther</c>), only when they are limited.</summary>
+   public void SeriesLimit(Dimension? series, int? limit, bool? other, string path)
+   {
+      if (limit is { } n)
+      {
+         if (series == null) { Error(path + ".seriesLimit", "Only a chart split by a series shows its largest"); }
+         else { Limit(n, path + ".seriesLimit", DefinitionRules.MaxSeries); }
+      }
+      if (other == true && limit == null) { Error(path + ".seriesOther", "The rest is Other only when the series are limited"); }
    }
 
    /// <summary>A palette's id (none: the dashboard's, or the built-in colours). Whether it is there is said when the dashboard is shown, as palettes may be deleted after.</summary>

@@ -1,4 +1,4 @@
-import { Injectable, type Signal, signal } from '@angular/core';
+import { Injectable, type Signal, linkedSignal, signal } from '@angular/core';
 import type { Problem } from '../../../core/api/problem';
 import type { EntityColor, PaletteView } from '../charts/series-colors';
 import type { Key, Selection, Widget, WidgetConfig, WidgetData } from './definition';
@@ -21,8 +21,16 @@ export class WidgetContext {
   readonly selection = signal<Selection | null>(null);
   /** Whether a chart is shown as a table of its rows, which a keyboard reaches. */
   readonly asTable = signal(false);
-  /** The page of a table's rows asked for, from its first. */
-  readonly offset = signal(0);
+  /** What a chart's step into its "Other" holds for (the frame's: what the chart is asked with). */
+  private readonly stepBasis = signal<() => unknown>(() => null);
+  /**
+   * The page of a table's rows asked for, from its first; or a chart's step into its "Other": the slices or series
+   * stepped over, none again as what the chart is asked with changes (its filters, its choices, its definition).
+   */
+  readonly offset = linkedSignal<unknown, number>({
+    source: () => this.stepBasis()(),
+    computation: () => 0,
+  });
   /** Whether the dashboard is being edited (charts don't take clicks then, unless trying). */
   readonly editing = signal(false);
   /** Whether choosing slices does anything: widgets that emit, on a page that lets them. */
@@ -35,6 +43,11 @@ export class WidgetContext {
   readonly colors = signal<readonly EntityColor[]>([], {
     equal: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
+
+  /** What a chart's step into its "Other" holds for: the frame says (a table's page holds whatever). */
+  stepsWith(basis: () => unknown): void {
+    this.stepBasis.set(basis);
+  }
 
   /** What choosing a slice asks of the dashboard; the frame sets it. */
   choose: (key: Key, action: SelectionAction) => void = () => undefined;

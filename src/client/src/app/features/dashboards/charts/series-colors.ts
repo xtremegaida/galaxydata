@@ -170,8 +170,8 @@ export interface SeriesColors {
 
 /**
  * What a chart colours, in the order it meets them (so the colours by order are those it always had): a pie's
- * slices ("Other" is grey, and isn't listed); bars' and lines' series values, or else their measures; a bar chart's
- * categories when it is coloured by them.
+ * slices ("Other" is grey, and isn't listed); bars' and lines' series values (the largest first, when they are
+ * limited), or else their measures; a bar chart's categories when it is coloured by them.
  */
 export function coloredEntities(
   config: ChartConfig,
@@ -184,17 +184,18 @@ export function coloredEntities(
     index: number,
     prefix: string,
     bucket: ChartConfig['dimension']['bucket'] | undefined,
+    first: readonly unknown[] = [],
   ) => {
     const seen = new Set<string>();
     const listed: ColoredEntity[] = [];
-    for (const row of data.rows) {
-      const entity = prefix + keyText([row[index]]);
+    for (const value of [...first, ...data.rows.map((row) => row[index])]) {
+      const entity = prefix + keyText([value]);
       if (!seen.has(entity)) {
         seen.add(entity);
         listed.push({
           entity,
-          label: labelText(row[index]),
-          shown: categoryText(row[index], data.columns[index].type, bucket ?? null, locale),
+          label: labelText(value),
+          shown: categoryText(value, data.columns[index].type, bucket ?? null, locale),
         });
       }
     }
@@ -208,7 +209,7 @@ export function coloredEntities(
     return d < 0 ? [] : values(d, '', config.dimension.bucket);
   }
   if (s >= 0) {
-    return values(s, 'series:', config.series?.bucket);
+    return values(s, 'series:', config.series?.bucket, data.series ?? []);
   }
   return byCategory(config, data) && d >= 0
     ? values(d, 'category:', config.dimension.bucket)
@@ -395,10 +396,13 @@ export class PaletteMemory {
 /**
  * Colors by the entity they stand for (a series, a slice), with no palette: the theme's, in their order as entities
  * are first met, kept while the widget is shown: a filter that leaves some out doesn't paint the others anew. Past
- * the theme's last color, entities are the neutral one.
+ * the theme's last color, entities are the neutral one; or, in a chart that draws an "Other" (`repeat`), which is
+ * the neutral one, the colors again from the first, so none looks like it.
  */
 export class ColorMemory implements SeriesColors {
   private readonly slots = new Map<string, number>();
+
+  constructor(private readonly repeat = false) {}
 
   slot(entity: string): number {
     let slot = this.slots.get(entity);
@@ -409,14 +413,23 @@ export class ColorMemory implements SeriesColors {
     return slot;
   }
 
+  /** The theme's color an entity takes, by its index (the same in light and dark); none: the neutral one. */
+  index(entity: string, count: number): number | null {
+    const slot = this.slot(entity);
+    return slot < count ? slot : this.repeat && count > 0 ? slot % count : null;
+  }
+
   color(entity: string, theme: ChartTheme): string {
-    return theme.series[this.slot(entity)] ?? theme.neutral;
+    const index = this.index(entity, theme.series.length);
+    return index === null ? theme.neutral : theme.series[index];
   }
 }
 
 /**
  * A chart widget's colours: its palette's (none: the theme's, as charts always had), kept while it is shown, and
- * started again when its palette (or the palette's content), or what it colours, changes.
+ * started again when its palette (or the palette's content), or what it colours, changes; and at each step into its
+ * "Other", whose slices or series are others. Drawing an "Other" (grey), the theme's colours repeat rather than
+ * grey what is past them; a palette does as it says (`whenOut`).
  */
 export class WidgetColors {
   private basis: string | null = null;
@@ -430,6 +443,8 @@ export class WidgetColors {
     locale: string,
   ): AssignedColors {
     const series = config.kind === 'pie' ? null : config.series;
+    const other =
+      config.kind === 'pie' ? config.other : !!(series && config.seriesLimit && config.seriesOther);
     const basis = JSON.stringify([
       palette?.basis ?? null,
       config.kind,
@@ -438,22 +453,27 @@ export class WidgetColors {
       config.dimension.bucket,
       series?.field ?? null,
       series?.bucket ?? null,
+      data.offset,
+      other,
     ]);
     if (basis !== this.basis) {
       this.basis = basis;
-      this.memory = palette ? new PaletteMemory(palette) : new ColorMemory();
+      this.memory = palette ? new PaletteMemory(palette) : new ColorMemory(other);
     }
     const entities = coloredEntities(config, data, locale);
     const memory = this.memory;
     return new AssignedColors(
       memory instanceof PaletteMemory
         ? memory.assign(entities, theme, data.colors ?? null)
-        : entities.map((e) => ({
-            ...e,
-            color: memory.color(e.entity, theme),
-            source: 'default' as const,
-            pair: galaxyColors[memory.slot(e.entity)] ?? null,
-          })),
+        : entities.map((e) => {
+            const index = memory.index(e.entity, theme.series.length);
+            return {
+              ...e,
+              color: memory.color(e.entity, theme),
+              source: 'default' as const,
+              pair: index === null ? null : (galaxyColors[index] ?? null),
+            };
+          }),
     );
   }
 }

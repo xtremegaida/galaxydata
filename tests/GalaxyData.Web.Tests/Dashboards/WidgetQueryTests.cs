@@ -87,7 +87,7 @@ public sealed class WidgetQueryTests
       public async Task<CatalogState> StateAsync() => await factory.Services.GetRequiredService<CatalogService>().GetAsync(TestContext.Current.CancellationToken);
 
       public async Task<(WidgetPlan? Plan, IReadOnlyList<DashboardIssue> Issues, Dictionary<string, string[]> Errors)> PlanAsync(DashboardDefinition definition, string widget,
-         DashboardState? state = null, PlanLimits? limits = null)
+         DashboardState? state = null, PlanLimits? limits = null, int skip = 0)
       {
          Dictionary<string, string[]> structure = [];
          DefinitionRules rules = factory.Services.GetRequiredService<DefinitionRules>();
@@ -95,7 +95,7 @@ public sealed class WidgetQueryTests
          structure.ShouldBeEmpty();
          DashboardCatalog resolved = DashboardCatalog.Resolve(checkedDefinition!, (await StateAsync()).Catalog);
          Dictionary<string, string[]> errors = [];
-         WidgetPlan? plan = new WidgetPlanner(resolved, state ?? DashboardState.Empty, limits ?? Signed, Today, errors).Plan(widget, Kinds);
+         WidgetPlan? plan = new WidgetPlanner(resolved, state ?? DashboardState.Empty, limits ?? Signed, Today, errors).Plan(widget, Kinds, skip);
          return (plan, resolved.Issues, errors);
       }
 
@@ -124,6 +124,18 @@ public sealed class WidgetQueryTests
          return text.ToString();
       }
 
+      /// <summary>The first column's values of a query's rows, and its type.</summary>
+      public async Task<(List<object?> Values, GalaxyData.Query.Types.ScalarType Type)> FirstAsync(BuiltQuery query)
+      {
+         CatalogState state = await StateAsync();
+         QueryEngine engine = factory.Services.GetRequiredService<QueryEngines>().For(state);
+         PreparedQuery prepared = engine.Prepare(new QueryRequest(query.Text) { Parameters = query.Parameters });
+         prepared.Success.ShouldBeTrue(string.Join("; ", prepared.Diagnostics.Select(d => d.Message)) + "\n" + query.Text);
+         await using QueryResult result = await prepared.ExecuteAsync(TestContext.Current.CancellationToken);
+         IReadOnlyList<object?[]> rows = await result.ToListAsync(TestContext.Current.CancellationToken);
+         return ([.. rows.Select(r => r[0])], result.Schema.VisibleColumns[0].Type);
+      }
+
       public async ValueTask DisposeAsync() => await factory.DisposeAsync();
    }
 
@@ -136,9 +148,14 @@ public sealed class WidgetQueryTests
    {
       private readonly StringBuilder text = new();
 
-      public async Task CaseAsync(Harness harness, string title, DashboardDefinition definition, string widget, DashboardState? state = null, CategoryValues? categories = null)
+      /// <summary>
+      /// A case: the widget's queries and their rows, as they run one after another (the categories found, unless
+      /// given; the series ranked; the rest of those after the series shown).
+      /// </summary>
+      public async Task CaseAsync(Harness harness, string title, DashboardDefinition definition, string widget, DashboardState? state = null, CategoryValues? categories = null,
+                                  int skip = 0, PlanLimits? limits = null)
       {
-         (WidgetPlan? plan, IReadOnlyList<DashboardIssue> issues, Dictionary<string, string[]> errors) = await harness.PlanAsync(definition, widget, state);
+         (WidgetPlan? plan, IReadOnlyList<DashboardIssue> issues, Dictionary<string, string[]> errors) = await harness.PlanAsync(definition, widget, state, limits, skip);
          text.AppendLine("### " + title);
          foreach (DashboardIssue issue in issues) { text.AppendLine($"issue {issue.Severity} ({issue.Widget}, {issue.Field}): {issue.Message}"); }
          foreach ((string field, string[] messages) in errors) { text.AppendLine($"error {field}: {string.Join("; ", messages)}"); }
@@ -153,8 +170,23 @@ public sealed class WidgetQueryTests
             text.AppendLine("categories: " + first.Text);
             if (first.Parameters.All.Any()) { text.AppendLine("  " + Parameters(first.Parameters)); }
             text.Append(await harness.RowsAsync(first));
+            if (categories == null)
+            {
+               (List<object?> found, GalaxyData.Query.Types.ScalarType type) = await harness.FirstAsync(first);
+               categories = new CategoryValues([.. found.Take(plan.Limit)], type);
+            }
          }
-         BuiltQuery main = plan.Main(categories);
+         PlanFound chain = new(categories);
+         if (plan.Series is { } limited)
+         {
+            BuiltQuery ranking = limited.Ranking(chain);
+            text.AppendLine($"series (the largest {limited.Limit}{(plan.Step is { } step ? $", from {step.Skip}" : string.Empty)}): " + ranking.Text);
+            if (ranking.Parameters.All.Any()) { text.AppendLine("  " + Parameters(ranking.Parameters)); }
+            text.Append(await harness.RowsAsync(ranking));
+            (List<object?> ranked, GalaxyData.Query.Types.ScalarType type) = await harness.FirstAsync(ranking);
+            chain = chain with { Series = new SeriesValues(ranked, type, plan.Step?.Skip ?? 0, limited.Limit) };
+         }
+         BuiltQuery main = plan.Main(chain);
          text.AppendLine("main: " + main.Text);
          if (main.Parameters.All.Any()) { text.AppendLine("  " + Parameters(main.Parameters)); }
          text.Append(await harness.RowsAsync(main));
@@ -162,6 +194,17 @@ public sealed class WidgetQueryTests
          {
             text.AppendLine("total: " + total.Text);
             text.Append(await harness.RowsAsync(total));
+         }
+         if (chain.Series is { } series)
+         {
+            text.AppendLine($"more series: {series.More}; next: {plan.Step?.Next(series.More)?.ToString(CultureInfo.InvariantCulture) ?? "none"}");
+            if (series.More && plan.Series?.Rest is { } rest)
+            {
+               BuiltQuery other = rest(chain);
+               text.AppendLine("rest: " + other.Text);
+               if (other.Parameters.All.Any()) { text.AppendLine("  " + Parameters(other.Parameters)); }
+               text.Append(await harness.RowsAsync(other));
+            }
          }
          if (plan.Underlying.Text != main.Text) { text.AppendLine("underlying: " + plan.Underlying.Text); }
          text.AppendLine();
@@ -261,6 +304,37 @@ public sealed class WidgetQueryTests
       await report.CaseAsync(harness, "The last two months (to 2026-03-01): from 2026-01-02", Dashboard([months], [recent]), "months");
       await report.CaseAsync(harness, "A hidden range of a date-time with an offset, by its UTC days", Dashboard([months], [placed]), "months");
       await report.CaseAsync(harness, "Text through a navigation, ignoring case", Dashboard([months], [who]), "months");
+
+      Golden.Match(report.ToString());
+   }
+
+   /// <summary>
+   /// A chart limited to its largest series: those ranked (over the categories found, for bars), the rows of those
+   /// shown, and the rest (of the series after them) as Other; stepped into Other, the next ones. A pie stepped into
+   /// its Other reads the slices before too.
+   /// </summary>
+   [Fact]
+   public async Task TheLargestSeriesShowAndOtherStepsIntoTheRest()
+   {
+      await using Harness harness = await Harness.CreateAsync();
+      Report report = new();
+      DashboardWidget byCustomer = W("by-customer", Bar("orders", D("status"), D("customer_id")) with { SeriesLimit = 1, SeriesOther = true });
+      DashboardWidget averages = W("averages", Bar("orders", D("status"), D("customer_id"), measures: [Of(Aggregate.Avg, "total")]) with { SeriesLimit = 1, SeriesOther = true });
+      DashboardWidget byCity = W("by-city", Bar("orders", D("status"), D("city", null, "customer")) with { SeriesLimit = 1, SeriesOther = true });
+      DashboardWidget unlimited = W("unlimited", Bar("orders", D("status"), D("customer_id")) with { SeriesLimit = 2 });
+      DashboardWidget days = W("days", Line("orders", D("order_date", Bucket.Day)) with { Series = D("status"), SeriesLimit = 1, SeriesOther = true });
+      DashboardWidget pie = W("pie", Pie("orders", D("status"), other: true, limit: 1));
+      DashboardDefinition definition = Dashboard([byCustomer, averages, byCity, unlimited, days, pie]);
+
+      await report.CaseAsync(harness, "Bars by customer, the largest one, the rest as Other", definition, "by-customer");
+      await report.CaseAsync(harness, "... stepped into Other: the second largest, the rest after it", definition, "by-customer", skip: 1);
+      await report.CaseAsync(harness, "... and again: the last, nothing after it", definition, "by-customer", skip: 2);
+      await report.CaseAsync(harness, "Averages: Other is the average of the rest's rows, not what is left of a total", definition, "averages");
+      await report.CaseAsync(harness, "A series through a navigation, null among them (ranked before an equal value)", definition, "by-city", skip: 1);
+      await report.CaseAsync(harness, "Limited, without Other: it doesn't step, whatever is asked", definition, "unlimited", skip: 1);
+      await report.CaseAsync(harness, "A line by day, the largest status, the rest as Other", definition, "days");
+      await report.CaseAsync(harness, "A pie stepped into its Other: the slice before read too", definition, "pie", skip: 1);
+      await report.CaseAsync(harness, "Deeper than Other may be stepped into", definition, "by-customer", skip: 2, limits: Signed with { MaxOtherDepth = 2 });
 
       Golden.Match(report.ToString());
    }
@@ -370,7 +444,7 @@ public sealed class WidgetQueryTests
       (WidgetPlan? plan, _, Dictionary<string, string[]> errors) = await harness.PlanAsync(definition, "months", Choose("series", SelectionMode.Include, keys),
          Signed with { MaxSelectionKeys = 200 });
       errors.ShouldBeEmpty();
-      BuiltQuery main = plan!.Main(null);
+      BuiltQuery main = plan!.Main(PlanFound.None);
       main.Parameters.All.Count().ShouldBe(200);
       (await harness.RowsAsync(main)).ShouldBe(Lines("d0 | m0", "\"2026-01-01\" | \"1\"", "\"2026-02-01\" | \"1\""), "shipped of customer 1 (1002), open of 2 (1003)");
 
@@ -378,7 +452,7 @@ public sealed class WidgetQueryTests
          sources: [new DashboardSource("orders", "shop.orders", "Orders"), new DashboardSource("again", "shop.orders", "Orders again")],
          links: [new DashboardLink("orders", "again", [])]);
       (WidgetPlan? same, _, _) = await harness.PlanAsync(twice, "by-customer", Choose("by-status", SelectionMode.Include, ["open"]));
-      same!.Main(null).Text.ShouldBe("(shop.orders).where(r0 => r0.status == $f1).groupBy(d0: customer_id).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)");
+      same!.Main(PlanFound.None).Text.ShouldBe("(shop.orders).where(r0 => r0.status == $f1).groupBy(d0: customer_id).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)");
    }
 
    /// <summary>A dashboard is saved whatever the catalog has, and says what doesn't fit it, in the copy the user sees.</summary>

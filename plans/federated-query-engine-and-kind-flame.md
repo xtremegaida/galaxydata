@@ -51,7 +51,7 @@ tests/
 |---|---|
 | DuckDB.NET.Data.Full | 1.5.5 |
 | Npgsql | 10.0.3 |
-| Microsoft.Data.SqlClient | 7.0.3 |
+| Microsoft.Data.SqlClient | 7.1.1 |
 | Microsoft.Data.Sqlite | 10.0.12 |
 | xunit.v3 | current in cache |
 | Verify.XunitV3 | not used: golden files go through the in-house `Golden` helper |

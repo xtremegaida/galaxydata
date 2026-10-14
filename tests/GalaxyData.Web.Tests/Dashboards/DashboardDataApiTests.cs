@@ -145,6 +145,78 @@ public sealed class DashboardDataApiTests
       (Rows(slices), slices.GetProperty("other").GetString()).ShouldBe(("\"open\" \"262.25\"", "99.50"), "shipped and cancelled: 99.50 and 0.00");
    }
 
+   private static long? Next(JsonElement data) => data.TryGetProperty("next", out JsonElement next) ? next.GetInt64() : null;
+
+   private static string Texts(JsonElement data, string name) =>
+      data.TryGetProperty(name, out JsonElement list) ? string.Join(" / ", list.EnumerateArray().Select(v => v.ValueKind == JsonValueKind.Array
+         ? string.Join(" ", v.EnumerateArray().Select(p => p.GetRawText()))
+         : v.GetRawText())) : "(none)";
+
+   [Fact]
+   public async Task PiesStepIntoTheirOther()
+   {
+      (WebAppFactory factory, TestApi admin) = await ShopAsync();
+      await using WebAppFactory _ = factory;
+      PieConfig pie = new("orders", [], true, All, D("status"), new Measure(Aggregate.Count, null, "Orders", null), 1, true, false, true, LegendPosition.Right);
+      DashboardDefinition slice = Slice(("pie", pie), ("bars", Bar("status")));
+      async Task<JsonElement> At(string widget, long offset) =>
+         await (await admin.PostAsync("/api/dashboards/data", new { slice = Definitions.Json(slice), widget, page = new { offset } })).JsonAsync(HttpStatusCode.OK);
+
+      JsonElement first = await At("pie", 0);
+      (Rows(first), first.GetProperty("other").GetString(), Next(first), first.GetProperty("offset").GetInt64()).ShouldBe(("\"open\" \"2\"", "2", 1L, 0L));
+      JsonElement second = await At("pie", 1);
+      (Rows(second), second.GetProperty("other").GetString(), Next(second), second.GetProperty("offset").GetInt64())
+         .ShouldBe(("\"cancelled\" \"1\"", "1", 2L, 1L), "the rest is the total less the slices before and shown");
+      JsonElement last = await At("pie", 2);
+      (Rows(last), last.GetProperty("other").ValueKind, Next(last)).ShouldBe(("\"shipped\" \"1\"", JsonValueKind.Null, (long?)null));
+      (await At("pie", 1)).GetProperty("cached").GetBoolean().ShouldBeTrue("a step is kept as any answer is");
+
+      JsonElement bars = await At("bars", 5);
+      (bars.GetProperty("offset").GetInt64(), Next(bars), Rows(bars)).ShouldBe((0L, (long?)null, "\"open\" \"2\" / \"cancelled\" \"1\" / \"shipped\" \"1\""), "bars without series don't step");
+   }
+
+   [Fact]
+   public async Task SeriesShowTheLargestAndOtherStepsIntoTheRest()
+   {
+      (WebAppFactory factory, TestApi admin) = await ShopAsync(new Dictionary<string, string?> { ["GalaxyData:Dashboards:MaxOtherDepth"] = "2" });
+      await using WebAppFactory _ = factory;
+      Measure count = new(Aggregate.Count, null, "Orders", null);
+      BarConfig bars = Bar("status") with { Series = D("customer_id"), SeriesLimit = 1, SeriesOther = true };
+      LineConfig days = new("orders", [], true, All, D("order_date", Bucket.Day), D("status"), [count], 1000, false, LineGaps.Break, false, LegendPosition.Bottom, null, null,
+         SeriesLimit: 1, SeriesOther: true);
+      DashboardDefinition slice = Slice(("bars", bars), ("days", days), ("cut", days with { Limit = 1 }));
+      async Task<JsonElement> At(string widget, long offset) =>
+         await (await admin.PostAsync("/api/dashboards/data", new { slice = Definitions.Json(slice), widget, page = new { offset } })).JsonAsync(HttpStatusCode.OK);
+
+      JsonElement first = await At("bars", 0);
+      (Rows(first), Texts(first, "series"), first.GetProperty("moreSeries").GetBoolean(), Texts(first, "otherRows"), Next(first))
+         .ShouldBe(("\"open\" \"1\" \"1\" / \"shipped\" \"1\" \"1\"", "\"1\"", true, "\"cancelled\" \"1\" / \"open\" \"1\"", 1L));
+      Texts(first, "categories").ShouldBe("\"open\" / \"cancelled\" / \"shipped\"");
+      JsonElement second = await At("bars", 1);
+      (Rows(second), Texts(second, "series"), Texts(second, "otherRows"), Next(second), second.GetProperty("offset").GetInt64())
+         .ShouldBe(("\"open\" \"2\" \"1\"", "\"2\"", "\"cancelled\" \"1\"", (long?)null, 1L), "two deep at most: no step to the third");
+      JsonElement deep = (await (await admin.PostAsync("/api/dashboards/data", new { slice = Definitions.Json(slice), widget = "bars", page = new { offset = 2 } }))
+         .ProblemAsync(400, ProblemCodes.InvalidRequest)).GetProperty("errors");
+      deep.EnumerateObject().Select(e => e.Name).ShouldBe(["page.offset"]);
+
+      // A line's x values are its points' and its rest's.
+      JsonElement line = await At("days", 0);
+      (Texts(line, "categories"), Rows(line), Texts(line, "otherRows")).ShouldBe(("\"2026-01-05\" / \"2026-01-09\" / \"2026-02-01\" / \"2026-02-14\"",
+         "\"2026-01-05\" \"open\" \"1\" / \"2026-02-01\" \"open\" \"1\"", "\"2026-01-09\" \"1\" / \"2026-02-14\" \"1\""));
+      // Cut short, at the first last value of what was cut: what follows may be missing from it.
+      JsonElement cut = await At("cut", 0);
+      (Texts(cut, "categories"), Rows(cut), Texts(cut, "otherRows"), cut.GetProperty("truncated").GetBoolean())
+         .ShouldBe(("\"2026-01-05\"", "\"2026-01-05\" \"open\" \"1\"", string.Empty, true));
+
+      JsonElement query = await (await admin.PostAsync("/api/dashboards/query", new { slice = Definitions.Json(slice), widget = "bars", page = new { offset = 1 } }))
+         .JsonAsync(HttpStatusCode.OK);
+      query.GetProperty("series").GetProperty("text").GetString()
+         .ShouldBe("(shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).groupBy(s0: customer_id).select(s0, m0: count()).orderBy(desc(m0), s0).take(3)");
+      query.GetProperty("rest").GetProperty("text").GetString()
+         .ShouldBe("(shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).where(r0 => (not (r0.customer_id in [$f4, $f5]) or r0.customer_id == null)).groupBy(d0: status).select(d0, m0: count()).orderBy(d0)");
+      query.GetProperty("main").GetProperty("parameters")[3].GetProperty("value").GetString().ShouldBe("2", "the second largest customer's bars");
+   }
+
    [Fact]
    public async Task FiltersOfferTheirValues()
    {

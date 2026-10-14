@@ -74,7 +74,37 @@ internal static class GroupQueries
    public static IEnumerable<string> Ties(IEnumerable<(string Name, ScalarType Type)> keys, IReadOnlyCollection<string> sorted) =>
       keys.Where(k => k.Type.Kind != ScalarKind.Guid && !sorted.Contains(k.Name)).Select(k => k.Name);
 
+   /// <summary>
+   /// The keys that break ties in a ranking, which "Other" is stepped through: each key, guids as their text (which
+   /// sorts), so the ranks are the same each time.
+   /// </summary>
+   public static IEnumerable<string> RankTies(IEnumerable<(string Name, ScalarType Type)> keys) =>
+      keys.Select(k => k.Type.Kind == ScalarKind.Guid ? $"toString({k.Name})" : k.Name);
+
    public static int Take(int limit, PlanContext context) => Math.Min(limit, context.Limits.MaxChartRows) + 1;
+
+   /// <summary>
+   /// Whether <paramref name="member"/>'s value is among <paramref name="values"/> (of <paramref name="type"/>):
+   /// <c>x in [$f1, …]</c>, or <c>x == null</c> for a null among them (a null listed would never match); none listed,
+   /// <c>false</c>. Not among them (<paramref name="among"/> false), as a list's "not in" is written: rows without a
+   /// value are kept, unless null is among them.
+   /// </summary>
+   public static string Among(string member, IEnumerable<object?> values, ScalarType type, QueryParameterAllocator parameters, bool among = true)
+   {
+      List<object?> all = [.. values];
+      List<string> listed = [.. all.Where(v => v != null).Select(v => parameters.Add(v, type))];
+      bool nulls = all.Any(v => v == null);
+      if (among)
+      {
+         List<string> parts = [];
+         if (listed.Count > 0) { parts.Add($"{member} in [{string.Join(", ", listed)}]"); }
+         if (nulls) { parts.Add($"{member} == null"); }
+         return parts.Count == 0 ? "false" : string.Join(" or ", parts);
+      }
+      if (listed.Count == 0) { return nulls ? $"{member} != null" : "true"; }
+      string list = $"({member} in [{string.Join(", ", listed)}])";
+      return nulls ? $"({member} != null and not {list})" : $"(not {list} or {member} == null)";
+   }
 
    public static List<PlannedColumn> Columns(Dimension dimension, Dimension? series, IReadOnlyList<Measure> measures)
    {
@@ -156,19 +186,25 @@ public sealed class PieKind : WidgetKind<PieConfig>
       check.Palette(config.Palette, path + ".palette");
    }
 
-   /// <summary>The largest slices, largest first (ties by the dimension); the total of every row's for "Other".</summary>
+   /// <summary>
+   /// The largest slices, largest first (ties by the dimension); the total of every row's for "Other". Stepped into
+   /// "Other", the slices before those shown are read too, as what "Other" holds is the total less them all.
+   /// </summary>
    protected override WidgetPlan? Plan(PieConfig config, PlanContext context)
    {
       DimensionExpression? dimension = context.Dimension(config.Dimension, context.Path + ".dimension");
       string? measure = context.Measure(config.Measure, context.Path + ".measure");
       if (dimension == null || measure == null) { return null; }
       string rows = context.Base();
+      int limit = Math.Min(config.Limit, context.Limits.MaxChartRows);
+      OtherStep? step = context.Step(limit, config.Other);
+      int skip = step?.Skip ?? 0;
       List<(string, ScalarType)> keys = [("d0", dimension.Type)];
-      BuiltQuery main = new(GroupQueries.Group(rows, [("d0", dimension.Expression)], [("m0", measure)], ["desc(m0)", .. GroupQueries.Ties(keys, [])],
-         GroupQueries.Take(config.Limit, context)), context.Parameters.Values);
+      BuiltQuery main = new(GroupQueries.Group(rows, [("d0", dimension.Expression)], [("m0", measure)], ["desc(m0)", .. GroupQueries.RankTies(keys)],
+         Math.Min(skip + limit, context.Limits.MaxChartRows) + 1), context.Parameters.Values);
       BuiltQuery? total = config.Other ? new BuiltQuery(GroupQueries.Group(rows, [], [("m0", measure)], [], null), context.Parameters.Values) : null;
       return new WidgetPlan(GroupQueries.Columns(config.Dimension, null, [config.Measure]), null, _ => main, total, new BuiltQuery(rows, context.Parameters.Values),
-         Math.Min(config.Limit, context.Limits.MaxChartRows), Paged: false);
+         limit, Paged: false) { Step = step };
    }
 }
 
@@ -191,11 +227,14 @@ public sealed class BarKind : WidgetKind<BarConfig>
       {
          check.Error(path + ".colorBy", "Bars take their categories' colours with one measure and no series");
       }
+      check.SeriesLimit(config.Series, config.SeriesLimit, config.SeriesOther, path);
    }
 
    /// <summary>
    /// The first categories by the sort; by a series, those categories are found first (with the measure over all
-   /// series), and the bars are then of those (the null category too, when it is among them).
+   /// series), and the bars are then of those (the null category too, when it is among them). Limited to the largest
+   /// series, those are ranked next (by the measure over the categories found), the bars are of those shown, and the
+   /// rest ("Other") is the measure by category over the rows of the series after them.
    /// </summary>
    protected override WidgetPlan? Plan(BarConfig config, PlanContext context)
    {
@@ -216,25 +255,48 @@ public sealed class BarKind : WidgetKind<BarConfig>
       }
       BuiltQuery categories = new(GroupQueries.Group(rows, [("d0", dimension.Expression)], measures, order, take), context.Parameters.Values);
       QueryParameters values = context.Parameters.Values;
-      BuiltQuery Main(CategoryValues? found)
+      string row = context.Row(0);
+
+      // The rows of the categories found, and of the series given (or of the others); with their parameters.
+      (string Text, QueryParameterAllocator Parameters) Rows(PlanFound found, IReadOnlyList<object?>? among, bool within)
       {
          QueryParameterAllocator parameters = new(values, rows);
-         string text = rows;
-         if (found != null)
-         {
-            string row = context.Row(0);
-            string member = dimension.On(row);
-            List<string> listed = [.. found.Values.Where(v => v != null).Select(v => parameters.Add(v, found.Type))];
-            List<string> parts = [];
-            if (listed.Count > 0) { parts.Add($"{member} in [{string.Join(", ", listed)}]"); }
-            if (found.Values.Any(v => v == null)) { parts.Add($"{member} == null"); }
-            text = QueryText.Compose(rows, [$"{row} => " + (parts.Count == 0 ? "false" : string.Join(" or ", parts))]);
-         }
+         List<string> filters = [];
+         if (found.Categories is { } chosen) { filters.Add($"{row} => " + GroupQueries.Among(dimension.On(row), chosen.Values, chosen.Type, parameters)); }
+         if (among != null && found.Series is { } shown) { filters.Add($"{row} => " + GroupQueries.Among(series.On(row), among, shown.Type, parameters, within)); }
+         return (filters.Count == 0 ? rows : QueryText.Compose(rows, filters), parameters);
+      }
+
+      BuiltQuery Main(PlanFound found)
+      {
+         (string text, QueryParameterAllocator parameters) = Rows(found, found.Series?.Shown, within: true);
          List<(string, ScalarType)> keys = [("d0", dimension.Type), ("s0", series.Type)];
          return new BuiltQuery(GroupQueries.Group(text, [("d0", dimension.Expression), ("s0", series.Expression)], measures, [.. GroupQueries.Ties(keys, [])],
             context.Limits.MaxChartRows + 1), parameters.Values);
       }
-      return new WidgetPlan(columns, categories, Main, null, underlying, limit, Paged: false);
+
+      WidgetPlan plan = new(columns, categories, Main, null, underlying, limit, Paged: false);
+      if (config.SeriesLimit is not { } seriesLimit) { return plan; }
+      int size = Math.Min(seriesLimit, DefinitionRules.MaxSeries);
+      OtherStep? step = context.Step(size, config.SeriesOther == true);
+      int skip = step?.Skip ?? 0;
+
+      BuiltQuery Ranking(PlanFound found)
+      {
+         (string text, QueryParameterAllocator parameters) = Rows(found, null, within: true);
+         return new BuiltQuery(GroupQueries.Group(text, [("s0", series.Expression)], [("m0", measures[0].Expression)], ["desc(m0)", .. GroupQueries.RankTies([("s0", series.Type)])],
+            skip + size + 1), parameters.Values);
+      }
+
+      // The categories found bound the rest's rows.
+      BuiltQuery Rest(PlanFound found)
+      {
+         (string text, QueryParameterAllocator parameters) = Rows(found, found.Series?.Before, within: false);
+         return new BuiltQuery(GroupQueries.Group(text, [("d0", dimension.Expression)], [("m0", measures[0].Expression)], [.. GroupQueries.Ties([("d0", dimension.Type)], [])], null),
+            parameters.Values);
+      }
+
+      return plan with { Series = new SeriesPlan(Ranking, size, config.SeriesOther == true ? Rest : null), Step = step };
    }
 }
 
@@ -251,9 +313,14 @@ public sealed class LineKind : WidgetKind<LineConfig>
       check.Label(config.XTitle, path + ".xTitle", required: false);
       check.Label(config.YTitle, path + ".yTitle", required: false);
       check.Palette(config.Palette, path + ".palette");
+      check.SeriesLimit(config.Series, config.SeriesLimit, config.SeriesOther, path);
    }
 
-   /// <summary>Points in the order of x (then the series).</summary>
+   /// <summary>
+   /// Points in the order of x (then the series). Limited to the largest series, those are ranked first (by the
+   /// measure over the rows), the points are of those shown, and the rest ("Other") is the measure along x over the
+   /// rows of the series after them.
+   /// </summary>
    protected override WidgetPlan? Plan(LineConfig config, PlanContext context)
    {
       DimensionExpression? dimension = context.Dimension(config.Dimension, context.Path + ".dimension");
@@ -268,9 +335,53 @@ public sealed class LineKind : WidgetKind<LineConfig>
          keys.Add(("s0", series.Expression));
          typed.Add(("s0", series.Type));
       }
-      BuiltQuery main = new(GroupQueries.Group(rows, keys, measures, [.. GroupQueries.Ties(typed, [])], GroupQueries.Take(config.Limit, context)), context.Parameters.Values);
-      return new WidgetPlan(GroupQueries.Columns(config.Dimension, config.Series, config.Measures), null, _ => main, null, new BuiltQuery(rows, context.Parameters.Values),
-         Math.Min(config.Limit, context.Limits.MaxChartRows), Paged: false);
+      List<PlannedColumn> columns = GroupQueries.Columns(config.Dimension, config.Series, config.Measures);
+      BuiltQuery underlying = new(rows, context.Parameters.Values);
+      int limit = Math.Min(config.Limit, context.Limits.MaxChartRows);
+      int take = GroupQueries.Take(config.Limit, context);
+      if (series == null || config.SeriesLimit is not { } seriesLimit)
+      {
+         BuiltQuery main = new(GroupQueries.Group(rows, keys, measures, [.. GroupQueries.Ties(typed, [])], take), context.Parameters.Values);
+         return new WidgetPlan(columns, null, _ => main, null, underlying, limit, Paged: false);
+      }
+      int size = Math.Min(seriesLimit, DefinitionRules.MaxSeries);
+      OtherStep? step = context.Step(size, config.SeriesOther == true);
+      int skip = step?.Skip ?? 0;
+      QueryParameters values = context.Parameters.Values;
+      string row = context.Row(0);
+
+      // The rows of the series given (or of the others), with their parameters.
+      (string Text, QueryParameterAllocator Parameters) Rows(PlanFound found, IReadOnlyList<object?>? among, bool within)
+      {
+         QueryParameterAllocator parameters = new(values, rows);
+         string text = among != null && found.Series is { } shown
+            ? QueryText.Compose(rows, [$"{row} => " + GroupQueries.Among(series.On(row), among, shown.Type, parameters, within)])
+            : rows;
+         return (text, parameters);
+      }
+
+      // Over every row: a line has no categories found first.
+      BuiltQuery Ranking(PlanFound _) => new(GroupQueries.Group(rows, [("s0", series.Expression)], [("m0", measures[0].Expression)],
+         ["desc(m0)", .. GroupQueries.RankTies([("s0", series.Type)])], skip + size + 1), values);
+
+      BuiltQuery Main(PlanFound found)
+      {
+         (string text, QueryParameterAllocator parameters) = Rows(found, found.Series?.Shown, within: true);
+         return new BuiltQuery(GroupQueries.Group(text, keys, measures, [.. GroupQueries.Ties(typed, [])], take), parameters.Values);
+      }
+
+      BuiltQuery Rest(PlanFound found)
+      {
+         (string text, QueryParameterAllocator parameters) = Rows(found, found.Series?.Before, within: false);
+         return new BuiltQuery(GroupQueries.Group(text, [("d0", dimension.Expression)], [("m0", measures[0].Expression)], [.. GroupQueries.Ties([("d0", dimension.Type)], [])], take),
+            parameters.Values);
+      }
+
+      return new WidgetPlan(columns, null, Main, null, underlying, limit, Paged: false)
+      {
+         Series = new SeriesPlan(Ranking, size, config.SeriesOther == true ? Rest : null),
+         Step = step,
+      };
    }
 }
 

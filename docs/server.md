@@ -95,6 +95,7 @@ parts (`GalaxyData__DataDirectory`).
 | `Dashboards:MaxTabs` | `20` | The most tabs a dashboard may be split into. |
 | `Dashboards:MaxDefinitionLength` | `262144` | The longest a dashboard's definition may be, as JSON, in characters. |
 | `Dashboards:MaxChartRows` | `10000` | The most rows (points, bars, slices) a chart shows. |
+| `Dashboards:MaxOtherDepth` | `1000` | How deep a chart's "Other" may be stepped into: the most slices or series before the last shown (no more than `MaxChartRows`). |
 | `Dashboards:MaxSelectionKeys`, `MaxPublicSelectionKeys` | `50`, `25` | The most slices chosen in a widget, signed in and through a public link. |
 | `Dashboards:MaxFilterValues`, `MaxPublicFilterValues` | `500`, `100` | The most values a condition may list, signed in and through a public link. |
 | `Dashboards:MinRefreshSeconds` | `30` | The shortest a dashboard's refresh interval may be. |
@@ -742,7 +743,9 @@ sources' entities; a forest), `filters` (on a source's field, of a kind: `values
 config's `kind` saying which), `refresh` (`manual`, or `interval` with `seconds`), `public` (`showData`), and
 `palette` (the palette its charts are drawn with; none, the built-in colours). Pie, bar and line charts may have a
 `palette` of their own, and bars `colorBy: category` (each bar its category's colour, with one measure and no
-series). A dashboard may be split into `tabs` (`[{id, label}]`, in order, at most `Dashboards:MaxTabs`), each a grid
+series). Bar and line charts split by a series may show only their largest (`seriesLimit`, 1 to 100: by the measure
+over the chart's rows, those of the bars' categories), and the rest as one, "Other" (`seriesOther`: the measure over
+the rest's rows by the dimension, so it is the rest's average, maximum or distinct count as much as its sum). A dashboard may be split into `tabs` (`[{id, label}]`, in order, at most `Dashboards:MaxTabs`), each a grid
 of its own: every widget then names its `tab`, and its cells are in that tab's grid (the layout is otherwise as it
 was). Those are left out when unset (and no tabs, `[]`, are written as none), so a definition saved before palettes
 or tabs is written as it was. Tabs are only where widgets are shown: nothing a widget reads depends on them.
@@ -806,6 +809,13 @@ left out as `not (…)`.
 **Running.** Widgets' rows run with `Dashboards:WidgetTimeout`, under the `queries` rate limit, and are kept for
 `Dashboards:CacheDuration` by the queries they run (equal queries, by anyone, share them; a refresh reads them
 again). Charts show `Dashboards:MaxChartRows` at most and say when there are more; tables page.
+A chart's "Other" (a pie's, or the rest of a chart's largest series) is stepped into by the request's `page.offset`
+(`?offset=` in public): the slices or series stepped over, at most `Dashboards:MaxOtherDepth` deep (a 400 on
+`page.offset` beyond). The answer says the offset it is at, and `next`, where its "Other" steps to (none at the last,
+or the deepest); a chart limited to its largest series gives them (`series`, the largest first), whether there are
+more (`moreSeries`), and its rest by the dimension (`otherRows`); a line's `categories` are then its x values, its
+points' and its rest's. A chart that doesn't step is at its first whatever the offset. Its queries (`…/query`, with the
+same `page`) give the series' and the rest's too. Steps are kept as any answer is, by their queries.
 
 **Public dashboards.** `GET /api/public/dashboards/{token}` (the published copy without its sources, fields,
 conditions, links or hidden filters), `…/widgets/{w}/data?s=` (the state as base64url JSON, 4 KB at most) and

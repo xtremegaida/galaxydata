@@ -24,7 +24,12 @@ export interface DashboardHost {
     refresh: boolean,
   ): Observable<WidgetData>;
   values(filter: string, state: DashboardState, search: string | null): Observable<FilterValues>;
-  query(widget: string, state: DashboardState): Observable<WidgetQuery> | null;
+  /** A widget's queries as they run (a chart stepped into its "Other" as the page says). */
+  query(
+    widget: string,
+    state: DashboardState,
+    page?: WidgetPage | null,
+  ): Observable<WidgetQuery> | null;
   /** What a widget's rows depend on in the definition: they are asked for again when it changes, and only then. */
   /**
    * What a widget's rows depend on in the definition (with what reaches it): they are asked for again when it
@@ -118,10 +123,14 @@ export class PublishedHost implements DashboardHost {
     );
   }
 
-  query(widget: string, state: DashboardState): Observable<WidgetQuery> {
+  query(
+    widget: string,
+    state: DashboardState,
+    page: WidgetPage | null = null,
+  ): Observable<WidgetQuery> {
     return this.api.post('/api/dashboards/{id}/widgets/{widget}/query', {
       path: { id: this.id, widget },
-      body: { hash: this.hash, state, page: null, refresh: false },
+      body: { hash: this.hash, state, page, refresh: false },
     });
   }
 
@@ -173,13 +182,17 @@ export class InlineHost implements DashboardHost {
     );
   }
 
-  query(widget: string, state: DashboardState): Observable<WidgetQuery> {
+  query(
+    widget: string,
+    state: DashboardState,
+    page: WidgetPage | null = null,
+  ): Observable<WidgetQuery> {
     return this.api.post('/api/dashboards/query', {
       body: {
         slice: sliceOf(this.definition(), widget, state.selections ?? {}),
         widget,
         state,
-        page: null,
+        page,
         refresh: false,
       },
     });

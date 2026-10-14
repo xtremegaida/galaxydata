@@ -533,8 +533,17 @@ the server keeps and checks).
   (ECharts, loaded with the first chart, `ECHARTS_IMPORT`; options built by pure functions; colours from their
   palette, below; a table of the rows instead, with buttons, for the keyboard, and each row's colour); tables. A kind
   the page doesn't know is said so. A new kind is a server `IWidgetKind` and a client `WidgetKind`.
+- **Other.** A pie's rest, and the rest of a chart's largest series (`seriesLimit`, `seriesOther`), is "Other": grey,
+  never chosen (faded while slices are), last in a chart's table. Clicking it (its slice, its bars, its line or its
+  points; on the editor's canvas while trying) steps into it: the next slices or series, asked for with the page's
+  offset as the answer's `next` says. A bar above the chart says which ("Series 9–16"), with Back (a step) and, two
+  steps in, Back to the largest; its table's "Show the next" button is the keyboard's way in. The step is the
+  chart's alone (`WidgetContext.offset`): not in the address, and back to the largest when what the chart is asked
+  with changes (filters, choices, its settings) or the page is read again. Each step is coloured from the first
+  colour again. The editor's series settings say how many at most (8 when a series is first given, as the built-in
+  colours are) and whether the rest is Other; a new pie shows 8 slices too.
 - **Colours** (`charts/series-colors.ts`): a chart is drawn with its own palette, else the dashboard's, else the
-  built-in eight (by order, grey after). `coloredEntities` says what a chart colours (a pie's slices, bars' and
+  built-in eight (by order; grey after, or again from the first in a chart that draws an "Other", which is grey). `coloredEntities` says what a chart colours (a pie's slices, bars' and
   lines' series values or measures, bars' categories when coloured by them), and `WidgetColors` gives them colours:
   a label's own colour first (an override, matched as the palette says: `normalizeLabel`, as the server does), then
   by order, or by label (FNV-1a of the label's text, then a jump consistent hash over the colours, so adding one

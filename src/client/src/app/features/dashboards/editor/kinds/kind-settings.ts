@@ -270,10 +270,16 @@ export class ChartDisplay {
   }
 }
 
-/** The series a bar or line chart may be split by: a second dimension, or none. */
+/** The most series a chart may be limited to (its largest), as the server allows. */
+const maxSeries = 100;
+
+/**
+ * The series a bar or line chart may be split by: a second dimension, or none; and how many it shows (its largest,
+ * or every one), the rest as Other or not.
+ */
 @Component({
   selector: 'gd-series-editor',
-  imports: [DimensionEditor, MatSlideToggle],
+  imports: [DimensionEditor, MatFormField, MatInput, MatLabel, MatSlideToggle],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <mat-slide-toggle
@@ -289,6 +295,27 @@ export class ChartDisplay {
         [dimension]="series"
         (dimensionChange)="this.series.set($event)"
       />
+      <div class="row">
+        <mat-form-field subscriptSizing="dynamic">
+          <mat-label>Series, at most</mat-label>
+          <input
+            matInput
+            type="number"
+            min="1"
+            [max]="max"
+            placeholder="Every one"
+            [value]="limit() ?? ''"
+            (change)="limited($event)"
+          />
+        </mat-form-field>
+        <mat-slide-toggle
+          [checked]="!!other()"
+          [disabled]="!limit()"
+          (change)="other.set($event.checked)"
+        >
+          The rest as Other
+        </mat-slide-toggle>
+      </div>
     }
   `,
   styles: settingsStyles,
@@ -296,7 +323,56 @@ export class ChartDisplay {
 export class SeriesEditor {
   readonly entity = input.required<string | null>();
   readonly series = model.required<Dimension | null>();
+  /** The largest series shown; none: every one. */
+  readonly limit = model<number | null | undefined>(undefined);
+  /** Whether the rest of the series are one, Other (only when they are limited). */
+  readonly other = model<boolean | null | undefined>(undefined);
   protected readonly blank = blankDimension;
+  protected readonly max = maxSeries;
+
+  protected limited(event: Event): void {
+    const text = (event.target as HTMLInputElement).value.trim();
+    if (text === '') {
+      this.limit.set(undefined);
+      return;
+    }
+    const limit = Math.round(Number(text));
+    if (limit >= 1 && limit <= maxSeries) {
+      this.limit.set(limit);
+    }
+  }
+}
+
+/**
+ * A chart's largest series as its series changes: a series given at first shows its 8 largest (the palette's
+ * colours), the rest as Other; another series keeps them; no series, neither (left out of its definition, as the
+ * server writes it).
+ */
+export function seriesLimits(
+  before: Dimension | null,
+  series: Dimension | null,
+  config: { seriesLimit?: number | null; seriesOther?: boolean | null },
+): { seriesLimit?: number; seriesOther?: boolean } {
+  if (!series) {
+    return { seriesLimit: undefined, seriesOther: undefined };
+  }
+  if (!before) {
+    return { seriesLimit: 8, seriesOther: true };
+  }
+  return {
+    seriesLimit: config.seriesLimit ?? undefined,
+    seriesOther: config.seriesOther || undefined,
+  };
+}
+
+/** A chart's largest series as their limit is set: none, and the rest isn't Other either. */
+export function limitedTo(
+  limit: number | null | undefined,
+  other: boolean | null | undefined,
+): { seriesLimit?: number; seriesOther?: boolean } {
+  return limit
+    ? { seriesLimit: limit, seriesOther: other || undefined }
+    : { seriesLimit: undefined, seriesOther: undefined };
 }
 
 /** A bar chart: its categories, series, measures, orientation, stacking, sort, how many bars, and display. */
@@ -324,6 +400,10 @@ export class SeriesEditor {
       [entity]="entity()"
       [series]="config().series"
       (seriesChange)="serieschanged($event)"
+      [limit]="config().seriesLimit"
+      (limitChange)="set(limitedTo($event, config().seriesOther))"
+      [other]="config().seriesOther"
+      (otherChange)="set({ seriesOther: $event || undefined })"
     />
     <gd-measure-list
       [entity]="entity()"
@@ -392,6 +472,7 @@ export class BarSettings {
   readonly entity = input.required<string | null>();
   readonly config = model.required<BarConfig>();
   protected readonly sortKey = sortKey;
+  protected readonly limitedTo = limitedTo;
   protected readonly sorts = computed(() =>
     sortsOf(this.config().measures, [this.config().dimension]),
   );
@@ -411,6 +492,7 @@ export class BarSettings {
       series,
       measures: series ? config.measures.slice(0, 1) : config.measures,
       sort: series && config.sort.by === 'measure' ? { ...config.sort, index: 0 } : config.sort,
+      ...seriesLimits(config.series, series, config),
     });
   }
 
@@ -455,12 +537,11 @@ export class BarSettings {
     <gd-series-editor
       [entity]="entity()"
       [series]="config().series"
-      (seriesChange)="
-        set({
-          series: $event,
-          measures: $event ? config().measures.slice(0, 1) : config().measures,
-        })
-      "
+      (seriesChange)="serieschanged($event)"
+      [limit]="config().seriesLimit"
+      (limitChange)="set(limitedTo($event, config().seriesOther))"
+      [other]="config().seriesOther"
+      (otherChange)="set({ seriesOther: $event || undefined })"
     />
     <gd-measure-list
       [entity]="entity()"
@@ -510,9 +591,19 @@ export class BarSettings {
 export class LineSettings {
   readonly entity = input.required<string | null>();
   readonly config = model.required<LineConfig>();
+  protected readonly limitedTo = limitedTo;
 
   protected set(change: Partial<LineConfig>): void {
     this.config.set({ ...this.config(), ...change });
+  }
+
+  protected serieschanged(series: Dimension | null): void {
+    const config = this.config();
+    this.set({
+      series,
+      measures: series ? config.measures.slice(0, 1) : config.measures,
+      ...seriesLimits(config.series, series, config),
+    });
   }
 
   protected limited(event: Event): void {

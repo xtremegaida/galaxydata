@@ -35,22 +35,70 @@ public sealed record PlannedColumn(string Name, ColumnRole Role, int Index, stri
 public sealed record CategoryValues(IReadOnlyList<object?> Values, ScalarType Type);
 
 /// <summary>
+/// The series a chart split by a series shows, of their type: those ranked (the largest first, one more than those
+/// stepped over and shown, to tell there are more), the first <see cref="Skip"/> stepped over into "Other", then
+/// <see cref="Limit"/> shown.
+/// </summary>
+public sealed record SeriesValues(IReadOnlyList<object?> Ranked, ScalarType Type, int Skip, int Limit)
+{
+   public IReadOnlyList<object?> Shown => [.. Ranked.Skip(Skip).Take(Limit)];
+
+   /// <summary>Those ranked up to the last shown: the rest ("Other") is the series not among them.</summary>
+   public IReadOnlyList<object?> Before => [.. Ranked.Take(Skip + Limit)];
+
+   /// <summary>Whether there are series after those shown.</summary>
+   public bool More => Ranked.Count > Skip + Limit;
+}
+
+/// <summary>What a widget's first queries found: the categories a series' bars are limited to, and the series shown.</summary>
+public sealed record PlanFound(CategoryValues? Categories = null, SeriesValues? Series = null)
+{
+   public static PlanFound None { get; } = new();
+}
+
+/// <summary>
+/// A chart's series limited to its largest <see cref="Limit"/>: the query ranking them (of the categories found), and
+/// its rest ("Other": the measure by the dimension over the rows of the series after those shown), when it has one.
+/// </summary>
+public sealed record SeriesPlan(Func<PlanFound, BuiltQuery> Ranking, int Limit, Func<PlanFound, BuiltQuery>? Rest);
+
+/// <summary>
+/// Where a chart is in its "Other": the slices or series stepped over (<see cref="Skip"/>), how many a step shows
+/// (<see cref="Size"/>), and how deep it may go (<see cref="Depth"/>, those ranked up to the last shown).
+/// </summary>
+public sealed record OtherStep(int Skip, int Size, int Depth)
+{
+   /// <summary>The step "Other" goes to: the next <see cref="Size"/>, when there are more and they aren't too deep.</summary>
+   public long? Next(bool more) => more && Skip + 2L * Size <= Depth ? Skip + Size : null;
+}
+
+/// <summary>
 /// The queries of a widget: its rows (<see cref="Main"/>; for bars by a series, of the categories the first query
-/// found), the total "Other" is worked out from, and its underlying rows (its source with every condition that
-/// reaches it). <see cref="Limit"/> rows (or categories) are shown, one more fetched to tell there are more; tables
-/// are paged by the engine instead.
+/// found; for a chart's largest series, of those shown), the total "Other" is worked out from, and its underlying
+/// rows (its source with every condition that reaches it). <see cref="Limit"/> rows (or categories) are shown, one
+/// more fetched to tell there are more; tables are paged by the engine instead. <see cref="Series"/>: the series
+/// ranked and their rest, for a chart limited to its largest; <see cref="Step"/>: where a chart that steps into its
+/// "Other" is.
 /// </summary>
 public sealed record WidgetPlan(
    IReadOnlyList<PlannedColumn> Columns,
    BuiltQuery? Categories,
-   Func<CategoryValues?, BuiltQuery> Main,
+   Func<PlanFound, BuiltQuery> Main,
    BuiltQuery? Total,
    BuiltQuery Underlying,
    int Limit,
-   bool Paged);
+   bool Paged)
+{
+   public SeriesPlan? Series { get; init; }
 
-/// <summary>How much a state may ask: slices in a selection, values in a condition; rows a chart shows; whether it is a public dashboard's.</summary>
-public sealed record PlanLimits(int MaxSelectionKeys, int MaxFilterValues, int MaxChartRows, bool Public);
+   public OtherStep? Step { get; init; }
+}
+
+/// <summary>
+/// How much a state may ask: slices in a selection, values in a condition; rows a chart shows; whether it is a public
+/// dashboard's; how deep a chart's "Other" may be stepped into.
+/// </summary>
+public sealed record PlanLimits(int MaxSelectionKeys, int MaxFilterValues, int MaxChartRows, bool Public, int MaxOtherDepth = 1_000);
 
 /// <summary>
 /// Writes a widget's queries from its config and the dashboard's state. The rows a widget keeps are its source's
@@ -81,8 +129,11 @@ public sealed class WidgetPlanner
 
    public PlanLimits Limits => limits;
 
-   /// <summary>The widget's queries; null when it has none (text), or can't be planned: then its issues, or <c>errors</c>, say why.</summary>
-   public WidgetPlan? Plan(string widgetId, WidgetKinds kinds)
+   /// <summary>
+   /// The widget's queries, <paramref name="skip"/> slices or series stepped over into its "Other" (charts that step);
+   /// null when it has none (text), or can't be planned: then its issues, or <c>errors</c>, say why.
+   /// </summary>
+   public WidgetPlan? Plan(string widgetId, WidgetKinds kinds, int skip = 0)
    {
       ArgumentNullException.ThrowIfNull(kinds);
       int index = dashboard.Definition.Widgets.FindIndex(w => w.Id == widgetId);
@@ -95,7 +146,7 @@ public sealed class WidgetPlanner
          dashboard.Issue(IssueSeverity.Error, $"Its source {config.Source} isn't in the catalog", widget.Id, $"widgets[{index}].config.source");
          return null;
       }
-      PlanContext context = new(this, widget, index, source, config);
+      PlanContext context = new(this, widget, index, source, config, Math.Max(skip, 0));
       WidgetPlan? plan = kind.Plan(widget.Config, context);
       return ErrorsOf(widget.Id) > before || errors.Count > 0 ? null : plan;
    }
@@ -546,12 +597,13 @@ public sealed class PlanContext
    private string? where;
    private bool written;
 
-   internal PlanContext(WidgetPlanner planner, DashboardWidget widget, int index, ResolvedSource source, DataWidgetConfig config)
+   internal PlanContext(WidgetPlanner planner, DashboardWidget widget, int index, ResolvedSource source, DataWidgetConfig config, int skip = 0)
    {
       this.planner = planner;
       Widget = widget;
       Index = index;
       Source = source;
+      Skip = skip;
       Path = $"widgets[{index}].config";
       Parameters = new QueryParameterAllocator(new QueryParameters(), source.Path);
       Conditions = new ConditionSet(planner, widget.Id, source.Id, Parameters);
@@ -571,6 +623,22 @@ public sealed class PlanContext
    public string Path { get; }
 
    public PlanLimits Limits => planner.Limits;
+
+   /// <summary>The slices or series asked to be stepped over into the chart's "Other" (the page's offset).</summary>
+   public int Skip { get; }
+
+   /// <summary>
+   /// Where a chart that steps into its "Other" (<paramref name="steps"/>) is, <paramref name="size"/> slices or
+   /// series a step; null for one that doesn't (whatever was asked). Deeper than the limits allow is the page's
+   /// problem (400).
+   /// </summary>
+   public OtherStep? Step(int size, bool steps)
+   {
+      if (!steps) { return null; }
+      int depth = Limits.MaxOtherDepth;
+      if (Skip > 0 && (long)Skip + size > depth) { planner.Error("page.offset", $"Other is stepped into {depth:N0} deep at most"); }
+      return new OtherStep(Skip, size, depth);
+   }
 
    public QueryParameterAllocator Parameters { get; }
 

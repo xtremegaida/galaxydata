@@ -71,4 +71,42 @@ describe("a widget's rows as a table", () => {
     expect(swatches.every((s) => s.getAttribute('aria-hidden') === 'true')).toBe(true);
     expect(textOf(table.querySelector('tbody td')!)).toBe('open');
   });
+
+  it("shows a chart's Other last, not chosen, with a button that steps into it", () => {
+    const fixture = TestBed.createComponent(RowsTable);
+    fixture.componentRef.setInput('data', rowsOf('City', [['Cape Town', '5']]));
+    fixture.componentRef.setInput('config', barDefaults('customers'));
+    let stepped = 0;
+    fixture.componentRef.setInput('other', {
+      rows: [[null, '3']],
+      column: 0,
+      name: 'Other',
+      color: '#999999',
+      step: () => stepped++,
+      stepLabel: 'Show the next 10 slices',
+    });
+    fixture.detectChanges();
+    const table = fixture.nativeElement as HTMLElement;
+    const rows = [...table.querySelectorAll('tbody tr')];
+    expect(rows.map((row) => [...row.querySelectorAll('td')].map((cell) => textOf(cell)))).toEqual([
+      ['Cape Town', '5', ''],
+      ['Other', '3', 'arrow_forward'],
+    ]);
+    expect(rows[1].querySelectorAll('[aria-label^="Choose"]')).toHaveLength(0);
+    rows[1].querySelector<HTMLButtonElement>('[aria-label="Show the next 10 slices"]')!.click();
+    expect(stepped).toBe(1);
+
+    // At its last step, it can't be stepped into: no button, nor a column for one.
+    fixture.componentRef.setInput('other', {
+      rows: [[null, '3']],
+      column: 0,
+      name: 'Other',
+      color: '#999999',
+      step: null,
+      stepLabel: 'Show the next 10 slices',
+    });
+    fixture.detectChanges();
+    expect(table.querySelectorAll('button')).toHaveLength(0);
+    expect(table.querySelectorAll('th.actions')).toHaveLength(0);
+  });
 });

@@ -387,6 +387,27 @@ export class WidgetFrame {
     loader: ({ params }) => params.view(),
   });
 
+  /**
+   * What a chart's step into its "Other" holds for: what it is asked with (the filters and choices that reach it,
+   * what its rows depend on in the definition); stepped back to its first when that changes. A refresh keeps it.
+   */
+  private readonly stepBasis = computed(
+    () => {
+      const config = this.config();
+      const host = this.store.host();
+      if (!isChart(config) || !host) {
+        return null;
+      }
+      const id = this.widget().id;
+      return {
+        id,
+        inputs: this.inputs(),
+        basis: host.basis(id, this.store.definition(), this.inputs()),
+      };
+    },
+    { equal: sameJson },
+  );
+
   /** What the rows would be asked for with now: equal as JSON, they aren't asked for again. */
   private readonly live = computed<RowsRequest | undefined>(
     () => {
@@ -438,10 +459,13 @@ export class WidgetFrame {
         return of(null);
       }
       const config = untracked(() => this.config());
+      // A table's page; a chart's step into its "Other" (none at its first).
       const page =
         config.kind === 'table'
           ? { offset: params.offset, limit: config.pageSize, count: false }
-          : null;
+          : params.offset > 0
+            ? { offset: params.offset, count: false }
+            : null;
       // Fresh when the dashboard was refreshed since the rows shown were read (a tab shown again after one, too),
       // or the same rows are asked for again; not for others.
       const answered = this.answered;
@@ -505,16 +529,33 @@ export class WidgetFrame {
     return selection.mode === 'include' ? `${n} chosen` : `${n} left out`;
   });
 
+  /** What a chart doesn't show, when there is more than it does: but what its "Other" holds, which says so itself. */
   protected readonly more = computed(() => {
     const data = this.context.data();
     const config = this.config();
-    if (!data?.truncated || config.kind === 'table') {
+    if (!data || !isChart(config)) {
       return null;
     }
-    return config.kind === 'bar' && config.series
-      ? `The first ${data.categories?.length ?? data.rows.length} categories of more`
-      : `The first ${data.rows.length} of more`;
+    const parts: string[] = [];
+    if (data.truncated && !(config.kind === 'pie' && data.other != null)) {
+      parts.push(
+        config.kind === 'bar' && config.series
+          ? `the first ${data.categories?.length ?? data.rows.length} categories of more`
+          : `the first ${data.rows.length} of more`,
+      );
+    }
+    if (data.moreSeries && !data.otherRows) {
+      parts.push(`the ${data.series?.length ?? 0} largest series of more`);
+    }
+    const text = parts.join('; ');
+    return text ? text[0].toUpperCase() + text.slice(1) : null;
   });
+
+  /** A chart's step into its "Other", as its queries are asked for; none at its first (and for tables). */
+  private page(): { offset: number; count: boolean } | null {
+    const offset = this.context.offset();
+    return isChart(this.config()) && offset > 0 ? { offset, count: false } : null;
+  }
 
   /** Shows the rows read, in a popup; signed in, also the rows they were worked out from. */
   protected async openData(): Promise<void> {
@@ -532,7 +573,7 @@ export class WidgetFrame {
         title: this.title() ?? this.kindLabel(),
         data,
         config: config as DataConfig,
-        query: host.canViewUnderlying ? () => host.query(widget, inputs) : null,
+        query: host.canViewUnderlying ? () => host.query(widget, inputs, this.page()) : null,
       },
       width: '960px',
       maxWidth: '95vw',
@@ -551,7 +592,7 @@ export class WidgetFrame {
   /** Shows the widget's query, as it runs with what reaches it now, and its SQL. */
   protected async openQuery(): Promise<void> {
     const host = this.store.host();
-    const query = host?.query(this.widget().id, this.inputs());
+    const query = host?.query(this.widget().id, this.inputs(), this.page());
     if (!query) {
       return;
     }
@@ -566,6 +607,7 @@ export class WidgetFrame {
 
   constructor() {
     effect(() => this.context.show(this.widget()));
+    this.context.stepsWith(() => this.stepBasis());
     effect(() => this.context.palette.set(this.palette()));
     // On the editor's canvas, what a chart coloured goes to the store, which lists it in the chart's settings.
     if (this.edit) {

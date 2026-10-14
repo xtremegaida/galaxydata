@@ -33,13 +33,17 @@ export interface QueryDialogData {
   readonly query: Observable<WidgetQuery>;
 }
 
-/** Which of a widget's queries: its rows', a series' top categories', a pie's total's. */
-type Which = 'main' | 'categories' | 'total';
+/**
+ * Which of a widget's queries: its rows', a series' top categories', a pie's total's, the largest series' (ranked),
+ * and the rest of them ("Other").
+ */
+type Which = 'main' | 'categories' | 'total' | 'series' | 'rest';
 
 /**
  * A widget's query in GDQ, with its parameters' values; its SQL and its plan, explained when their tabs are first
  * shown; and a way to open it in the query editor, run. A bar chart by a series also has the query of its top
- * categories, and a pie with "Other" that of its total.
+ * categories, a pie with "Other" that of its total, and a chart limited to its largest series those of its series
+ * and of their rest.
  */
 @Component({
   selector: 'gd-query-dialog',
@@ -214,6 +218,8 @@ export class QueryDialog {
       { which: 'main' as const, label: 'Its rows' },
       ...(query.categories ? [{ which: 'categories' as const, label: 'Its top categories' }] : []),
       ...(query.total ? [{ which: 'total' as const, label: 'Its total' }] : []),
+      ...(query.series ? [{ which: 'series' as const, label: 'Its top series' }] : []),
+      ...(query.rest ? [{ which: 'rest' as const, label: 'Its Other' }] : []),
     ];
   });
 

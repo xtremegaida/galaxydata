@@ -3142,6 +3142,9 @@ export interface components {
             /** Format: int32 */
             palette?: null | number;
             colorBy?: components["schemas"]["BarColorBy"];
+            /** Format: int32 */
+            seriesLimit?: null | number;
+            seriesOther?: null | boolean;
             source: string;
             conditions: components["schemas"]["WidgetCondition"][];
             emits: boolean;
@@ -3170,6 +3173,9 @@ export interface components {
             yTitle: null | string;
             /** Format: int32 */
             palette?: null | number;
+            /** Format: int32 */
+            seriesLimit?: null | number;
+            seriesOther?: null | boolean;
             source: string;
             conditions: components["schemas"]["WidgetCondition"][];
             emits: boolean;
@@ -3228,6 +3234,12 @@ export interface components {
             cached: boolean;
             issues: components["schemas"]["DashboardIssue"][];
             colors?: null | components["schemas"]["LabelColorDto"][];
+            series?: null | unknown[];
+            /** @default false */
+            moreSeries: boolean;
+            otherRows?: null | unknown[][];
+            /** Format: int64 */
+            next?: null | number;
         };
         WidgetPage: {
             /**
@@ -3245,6 +3257,8 @@ export interface components {
             categories: null | components["schemas"]["QueryTextDto"];
             total: null | components["schemas"]["QueryTextDto"];
             underlying: components["schemas"]["QueryTextDto"];
+            series?: null | components["schemas"]["QueryTextDto"];
+            rest?: null | components["schemas"]["QueryTextDto"];
         };
         WidgetSort: {
             by: components["schemas"]["SortTarget"];

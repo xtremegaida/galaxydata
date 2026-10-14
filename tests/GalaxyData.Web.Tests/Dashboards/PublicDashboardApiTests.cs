@@ -66,7 +66,7 @@ public sealed class PublicDashboardApiTests
 
    private sealed record Setup(WebAppFactory Factory, TestApi Admin, int Id, string Token, string WebRoot);
 
-   private static async Task<Setup> PublicAsync(Dictionary<string, string?>? settings = null, string[]? origins = null)
+   private static async Task<Setup> PublicAsync(Dictionary<string, string?>? settings = null, string[]? origins = null, DashboardDefinition? definition = null)
    {
       string webRoot = Path.Combine(Path.GetTempPath(), "gd-web-tests", Guid.NewGuid().ToString("N")[..12] + "-root");
       Directory.CreateDirectory(webRoot);
@@ -74,7 +74,7 @@ public sealed class PublicDashboardApiTests
       WebAppFactory factory = new() { WebRoot = webRoot, Settings = settings ?? new Dictionary<string, string?>() };
       TestApi admin = await TestApi.SignedInAsync(factory);
       await TestSources.AddSqliteAsync(admin, "shop", await TestSources.ShopAsync(factory));
-      JsonElement dashboard = await (await admin.PostAsync("/api/dashboards", new { name = "Sales", definition = Definitions.Json(Definition()) })).JsonAsync(HttpStatusCode.Created);
+      JsonElement dashboard = await (await admin.PostAsync("/api/dashboards", new { name = "Sales", definition = Definitions.Json(definition ?? Definition()) })).JsonAsync(HttpStatusCode.Created);
       int id = dashboard.GetProperty("id").GetInt32();
       dashboard = await (await admin.PostAsync($"/api/dashboards/{id}/publish", new { version = 0 })).JsonAsync(HttpStatusCode.OK);
       dashboard = await (await admin.PutAsync($"/api/dashboards/{id}/public", new { enabled = true, origins = origins ?? [], version = dashboard.GetProperty("version").GetInt32() }))
@@ -223,6 +223,47 @@ public sealed class PublicDashboardApiTests
       foreach (string body in bodies)
       {
          foreach (string secret in (string[])["Gamma", "Secret", "Falcon", "Brand", "#e34948", "#4a3aa7", "\"admin\""]) { body.ShouldNotContain(secret, Case.Sensitive, body); }
+      }
+   }
+
+   /// <summary>Anyone steps into a chart's Other as the application does, and sees only the series shown: never those before or after them.</summary>
+   [Fact]
+   public async Task AnyoneStepsIntoOtherAndSeesOnlyTheSeriesShown()
+   {
+      Measure count = new(Aggregate.Count, null, "Orders", null);
+      PieConfig pie = new("sales", [], true, All, new Dimension(new FieldRef([], "status"), null, "State"), count, 1, true, false, true, LegendPosition.Right);
+      BarConfig byBuyer = new("sales", [], true, All, new Dimension(new FieldRef([], "status"), null, "State"), new Dimension(new FieldRef(["customer"], "name"), null, "Buyer"), [count],
+         new WidgetSort(SortTarget.Measure, 0, true), 25, BarOrientation.Vertical, BarStack.Stacked, false, LegendPosition.Bottom, null, null, SeriesLimit: 1, SeriesOther: true);
+      List<DashboardWidget> widgets = [new("pie", null, pie), new("by-buyer", null, byBuyer)];
+      DashboardDefinition definition = Definitions.Blank() with
+      {
+         Sources = [new DashboardSource("sales", "shop.orders", "Sales")],
+         Widgets = widgets,
+         Layout = DashboardLayout.Default() with { Items = widgets.Select((w, i) => (w.Id, new Placement(0, i, 12, 2))).ToDictionary(p => p.Id, p => p.Item2) },
+      };
+      Setup setup = await PublicAsync(definition: definition);
+      await using WebAppFactory factory = setup.Factory;
+      TestApi anyone = new(setup.Factory);
+      List<string> bodies = [];
+      async Task<JsonElement> DataAsync(string widget, string query = "")
+      {
+         HttpResponseMessage response = await anyone.Client.GetAsync($"/api/public/dashboards/{setup.Token}/widgets/{widget}/data{query}", Token);
+         bodies.Add(await response.Content.ReadAsStringAsync(Token));
+         return await response.JsonAsync(HttpStatusCode.OK);
+      }
+
+      JsonElement stepped = await DataAsync("pie", "?offset=1");
+      (Rows(stepped), stepped.GetProperty("other").GetString(), stepped.GetProperty("offset").GetInt64(), stepped.GetProperty("next").GetInt64())
+         .ShouldBe(("\"cancelled\" \"1\"", "1", 1L, 2L));
+
+      JsonElement first = await DataAsync("by-buyer");
+      (first.GetProperty("series").GetRawText(), first.GetProperty("otherRows").GetRawText()).ShouldBe(("""["Acme Ltd"]""", """[["cancelled","1"],["open","1"]]"""));
+      bodies.Clear();
+      JsonElement second = await DataAsync("by-buyer", "?offset=1");
+      second.GetProperty("series").GetRawText().ShouldBe("""["Beta Corp"]""");
+      foreach (string body in bodies)
+      {
+         foreach (string other in (string[])["Acme", "Gamma"]) { body.ShouldNotContain(other, Case.Sensitive, "neither the series before those shown, nor the next one ranked"); }
       }
    }
 

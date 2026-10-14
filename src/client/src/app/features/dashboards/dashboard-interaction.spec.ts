@@ -308,6 +308,91 @@ describe('choosing and filtering on a dashboard', () => {
     chosen.flush(rowsOf('City', []));
   });
 
+  it("steps into a chart's Other as it is clicked, and back as its bar says; afresh as what reaches it changes", async () => {
+    const { page, http, bars, harness } = await open();
+    const pie = charts.chartIn(page.querySelector('[data-gd-cell="6,1,6,6"]')!)!;
+    const cityRequests = () => http.match((r) => r.url === widgetDataUrl(1, 'by-city'));
+    // Nothing further: clicking Other does nothing (and never chooses it).
+    pie.emit('click', { key: null, other: true });
+    await settle();
+    expect(cityRequests()).toEqual([]);
+
+    // Read again, Other says there are more: clicking it asks for the next eight slices.
+    [...page.querySelectorAll<HTMLButtonElement>('button')]
+      .find((b) => textOf(b).endsWith('Refresh'))!
+      .click();
+    harness.detectChanges();
+    (await next(http, 'by-status')).flush(rowsOf('Status', [['open', '2']]));
+    (await next(http, 'by-city')).flush(
+      rowsOf('City', [['Cape Town', '5']], { truncated: true, other: '3', next: 8 }),
+    );
+    await settle();
+    pie.emit('click', { key: null, other: true });
+    await settle();
+    const stepped = await next(http, 'by-city');
+    expect(stepped.request.body.page).toEqual({ offset: 8, count: false });
+    expect(stepped.request.body.state.selections).toEqual({});
+    stepped.flush(
+      rowsOf(
+        'City',
+        [
+          ['Durban', '2'],
+          ['Pretoria', '1'],
+        ],
+        { offset: 8, truncated: true, other: '1', next: 16 },
+      ),
+    );
+    await settle();
+    harness.detectChanges();
+    const bar = () => page.querySelector('[data-gd-cell="6,1,6,6"] .step');
+    expect(wordsOf(bar()!)).toContain('Slices 9–10');
+    expect(bar()!.querySelector('[aria-label="Back to slices 1–8"]')).not.toBeNull();
+    expect(bar()!.querySelector('[aria-label="Back to the largest slices"]')).toBeNull();
+
+    // Two steps in: back to the largest, at once.
+    pie.emit('click', { key: null, other: true });
+    await settle();
+    const deeper = await next(http, 'by-city');
+    expect(deeper.request.body.page).toEqual({ offset: 16, count: false });
+    deeper.flush(rowsOf('City', [['Soweto', '1']], { offset: 16, other: null, next: null }));
+    await settle();
+    harness.detectChanges();
+    expect(wordsOf(bar()!)).toContain('Slice 17');
+    bar()!.querySelector<HTMLButtonElement>('[aria-label="Back to the largest slices"]')!.click();
+    harness.detectChanges();
+    const top = await next(http, 'by-city');
+    expect(top.request.body.page).toBeNull();
+    top.flush(rowsOf('City', [['Cape Town', '5']], { truncated: true, other: '3', next: 8 }));
+    await settle();
+    harness.detectChanges();
+    expect(bar()).toBeNull();
+
+    // Stepped in, then a slice chosen elsewhere: the pie is asked for afresh, from its largest.
+    pie.emit('click', { key: null, other: true });
+    await settle();
+    (await next(http, 'by-city')).flush(
+      rowsOf('City', [['Durban', '2']], { offset: 8, other: '1', next: 16 }),
+    );
+    await settle();
+    bars.emit('click', { key: ['open'] });
+    await settle();
+    const chosen = await next(http, 'by-city');
+    expect(chosen.request.body.page).toBeNull();
+    chosen.flush(rowsOf('City', [['Cape Town', '1']], { truncated: true, other: '3', next: 8 }));
+    await settle();
+
+    // Its query is shown as it runs: stepped in.
+    pie.emit('click', { key: null, other: true });
+    await settle();
+    (await next(http, 'by-city')).flush(
+      rowsOf('City', [['Durban', '2']], { offset: 8, other: '1', next: 16 }),
+    );
+    await settle();
+    await fromMenu(page, harness, 'Customers by city', 'View query');
+    const query = await requestTo(http, '/api/dashboards/1/widgets/by-city/query', 'POST');
+    expect(query.request.body.page).toEqual({ offset: 8, count: false });
+  });
+
   /** Opens a widget's menu and chooses an item of it. */
   async function fromMenu(
     page: HTMLElement,

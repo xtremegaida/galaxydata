@@ -127,6 +127,7 @@ export function rowsOf(
     refreshedAt: '2026-03-01T10:00:00Z',
     cached: false,
     issues: [],
+    moreSeries: false,
     ...extra,
   } as WidgetData;
 }

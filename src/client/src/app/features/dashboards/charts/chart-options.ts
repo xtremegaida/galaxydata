@@ -36,13 +36,77 @@ export interface ChartContext {
   readonly narrow: boolean;
 }
 
-/** A chart's item as the chart keeps it: its value drawn, its key (for choosing it), and its value as it came. */
+/**
+ * A chart's item as the chart keeps it: its value drawn, its key (for choosing it), and its value as it came. One of
+ * "Other" (the rest of the slices or series) has no key, and is marked: clicking it steps into the rest.
+ */
 interface Item {
   value: number | null;
   name?: string;
   key: Key | null;
   raw: unknown;
+  other?: true;
   itemStyle?: Record<string, unknown>;
+}
+
+/**
+ * How many slices or series a step into a chart's "Other" shows: a pie's limit, or the largest series of a chart
+ * split by a series; none for a chart without an "Other" to step into.
+ */
+export function stepOf(config: ChartConfig): number | null {
+  if (config.kind === 'pie') {
+    return config.other ? config.limit : null;
+  }
+  return config.series && config.seriesLimit && config.seriesOther ? config.seriesLimit : null;
+}
+
+/** The id of a chart's "Other" series: a click anywhere on its line (not only its points) steps into it. */
+export const otherSeries = 'gd-other';
+
+/** What "Other" is called beside the names shown: told apart from a value of that name. */
+export function otherName(names: readonly string[]): string {
+  return names.includes('Other') ? 'Other (the rest)' : 'Other';
+}
+
+/** What a step into a chart's "Other" shows, one and many: a pie's slices, the others' series. */
+export function stepNoun(config: ChartConfig): { one: string; many: string } {
+  return config.kind === 'pie'
+    ? { one: 'slice', many: 'slices' }
+    : { one: 'series', many: 'series' };
+}
+
+/** The slices or series from the first to the last (counted from 1): "slices 11–20", "slice 2". */
+export function stepRange(config: ChartConfig, first: number, last: number): string {
+  const noun = stepNoun(config);
+  return last > first ? `${noun.many} ${first}–${last}` : `${noun.one} ${first}`;
+}
+
+/** How many slices or series a chart shows: those of a step into its "Other". */
+export function stepShown(config: ChartConfig, data: WidgetData): number {
+  return config.kind === 'pie' ? data.rows.length : (data.series?.length ?? 0);
+}
+
+/** What a tooltip on "Other" adds: that clicking it shows the next ones, when it does. */
+function otherHint(config: ChartConfig, data: WidgetData): string {
+  const size = stepOf(config);
+  if (size === null || data.next === null || data.next === undefined) {
+    return '';
+  }
+  const noun = stepNoun(config);
+  return `<br>${escapeHtml(`Click to see the next ${size === 1 ? noun.one : `${size} ${noun.many}`}`)}`;
+}
+
+/** Where a chart stepped into its "Other" is, for screen readers: the slices or series shown, and the rest as Other. */
+function stepped(config: ChartConfig, data: WidgetData, other: boolean): string[] {
+  const parts: string[] = [];
+  if (stepOf(config) !== null && data.offset > 0) {
+    const shown = Math.max(stepShown(config, data), 1);
+    parts.push(stepRange(config, data.offset + 1, data.offset + shown));
+  }
+  if (other) {
+    parts.push('the rest as Other');
+  }
+  return parts;
 }
 
 export function chartOption(
@@ -81,13 +145,15 @@ export function pieOption(
       itemStyle: { color: context.colors.color(keyText(key), theme), ...look(key, context) },
     };
   });
-  if (data.other !== null && data.other !== undefined) {
+  const other = data.other !== null && data.other !== undefined;
+  if (other) {
     items.push({
-      name: 'Other',
+      name: otherName(items.map((i) => i.name ?? '')),
       value: chartNumber(data.other),
       key: null,
       raw: data.other,
-      itemStyle: { color: theme.neutral },
+      other: true,
+      itemStyle: { color: theme.neutral, ...lookOther(context) },
     });
   }
   // Labels outside the pie need room beside it, more so with the legend at a side.
@@ -103,6 +169,8 @@ export function pieOption(
         format,
         locale,
         context.selection,
+        undefined,
+        stepped(config, data, other),
       ),
     ),
     tooltip: {
@@ -110,7 +178,8 @@ export function pieOption(
       trigger: 'item',
       formatter: (p: unknown) => {
         const params = p as { name: string; percent: number; data: Item; marker: string };
-        return `${params.marker}${escapeHtml(params.name)}<br>${escapeHtml(formatNumber(params.data.raw, format, locale))} (${formatNumber(params.percent, { decimals: 1, prefix: null, suffix: '%', compact: false }, locale)})`;
+        const hint = params.data.other ? otherHint(config, data) : '';
+        return `${params.marker}${escapeHtml(params.name)}<br>${escapeHtml(formatNumber(params.data.raw, format, locale))} (${formatNumber(params.percent, { decimals: 1, prefix: null, suffix: '%', compact: false }, locale)})${hint}`;
       },
     },
     legend:
@@ -190,21 +259,28 @@ export function barOption(
   } else {
     categories = data.categories ? [...data.categories] : unique(data.rows.map((row) => row[d]));
     const m = measures[0];
-    const values = unique(data.rows.map((row) => row[s]));
-    const totals = categories.map((category) =>
-      data.rows
-        .filter((row) => same(row[d], category))
-        .reduce((sum, row) => sum + (chartNumber(row[m.i]) ?? 0), 0),
+    // The largest first, when they are limited; as they came otherwise.
+    const values = data.series ? [...data.series] : unique(data.rows.map((row) => row[s]));
+    const rest = data.otherRows ?? null;
+    const totals = categories.map(
+      (category) =>
+        data.rows
+          .filter((row) => same(row[d], category))
+          .reduce((sum, row) => sum + (chartNumber(row[m.i]) ?? 0), 0) +
+        (rest ?? [])
+          .filter((row) => same(row[0], category))
+          .reduce((sum, row) => sum + (chartNumber(row[1]) ?? 0), 0),
     );
+    const percent = (number: number | null, ci: number) =>
+      config.stack === 'percent' && number !== null && totals[ci] !== 0
+        ? (number / totals[ci]) * 100
+        : number;
     series = values.map((value) => {
       const items: Item[] = categories.map((category, ci) => {
         const row = data.rows.find((r) => same(r[d], category) && same(r[s], value));
         const number = row ? chartNumber(row[m.i]) : null;
         return {
-          value:
-            config.stack === 'percent' && number !== null && totals[ci] !== 0
-              ? (number / totals[ci]) * 100
-              : number,
+          value: percent(number, ci),
           key: [category, value],
           raw: row ? row[m.i] : null,
           itemStyle: look([category, value], context),
@@ -227,6 +303,36 @@ export function barOption(
         data: items,
       };
     });
+    if (rest) {
+      // The rest of the series, as one: not chosen, but stepped into.
+      const items: Item[] = categories.map((category, ci) => {
+        const row = rest.find((r) => same(r[0], category));
+        const number = row ? chartNumber(row[1]) : null;
+        return {
+          value: percent(number, ci),
+          key: null,
+          raw: row ? row[1] : null,
+          other: true,
+          itemStyle: lookOther(context),
+        };
+      });
+      all = all.concat(items);
+      series.push({
+        type: 'bar',
+        id: otherSeries,
+        name: otherName(series.map((one) => String(one['name']))),
+        stack: stacked ? 'total' : undefined,
+        barMaxWidth: 24,
+        itemStyle: {
+          color: theme.neutral,
+          borderRadius: stacked ? 0 : radius,
+          borderColor: stacked ? theme.surface : undefined,
+          borderWidth: stacked ? 1 : 0,
+        },
+        label: label(config.labels, horizontal, m.c.format, locale, theme),
+        data: items,
+      });
+    }
   }
   const names = categories.map((category) =>
     categoryText(category, type, config.dimension.bucket, locale),
@@ -267,6 +373,7 @@ export function barOption(
         locale,
         context.selection,
         names,
+        stepped(config, data, !!data.otherRows),
       ),
     ),
     tooltip: {
@@ -276,7 +383,8 @@ export function barOption(
         const params = p as { name: string; seriesName: string; data: Item; marker: string };
         const shown =
           series.length > 1 ? `${params.marker}${escapeHtml(params.seriesName)}: ` : params.marker;
-        return `${escapeHtml(params.name)}<br>${shown}${escapeHtml(formatNumber(params.data.raw, format, locale))}`;
+        const hint = params.data.other ? otherHint(config, data) : '';
+        return `${escapeHtml(params.name)}<br>${shown}${escapeHtml(formatNumber(params.data.raw, format, locale))}${hint}`;
       },
     },
     legend:
@@ -306,7 +414,8 @@ export function lineOption(
   const s = column(data, 'series');
   const type = data.columns[d].type;
   const measures = data.columns.map((c, i) => ({ c, i })).filter(({ c }) => c.role === 'measure');
-  let categories = unique(data.rows.map((row) => row[d]));
+  // Its points' x values; with its rest drawn, the server's (some may be the rest's alone).
+  let categories = data.categories ? [...data.categories] : unique(data.rows.map((row) => row[d]));
   // Periods without rows are there all the same: as zero, or a gap (or the line goes on over them).
   const present = categories.filter((c) => c !== null);
   if (config.gaps !== 'connect' && present.length >= 2) {
@@ -320,7 +429,7 @@ export function lineOption(
     }
   }
   const zero = config.gaps === 'zero';
-  const lines: { name: string; entity: string; items: Item[] }[] = [];
+  const lines: { name: string; entity: string | null; items: Item[]; other?: true }[] = [];
   if (s < 0) {
     for (const { c, i } of measures) {
       lines.push({
@@ -340,7 +449,8 @@ export function lineOption(
     }
   } else {
     const m = measures[0];
-    for (const value of unique(data.rows.map((row) => row[s]))) {
+    // The largest first, when they are limited; as they came otherwise.
+    for (const value of data.series ? [...data.series] : unique(data.rows.map((row) => row[s]))) {
       lines.push({
         name: categoryText(value, data.columns[s].type, config.series?.bucket, locale),
         entity: 'series:' + keyText([value]),
@@ -352,6 +462,26 @@ export function lineOption(
             key: [category, value],
             raw: row ? row[m.i] : null,
             itemStyle: look([category, value], context),
+          };
+        }),
+      });
+    }
+    const rest = data.otherRows;
+    if (rest) {
+      // The rest of the series, as one: not chosen, but stepped into.
+      lines.push({
+        name: otherName(lines.map((line) => line.name)),
+        entity: null,
+        other: true,
+        items: categories.map((category) => {
+          const row = rest.find((r) => same(r[0], category));
+          const number = row ? chartNumber(row[1]) : null;
+          return {
+            value: number ?? (zero ? 0 : null),
+            key: null,
+            raw: row ? row[1] : null,
+            other: true,
+            itemStyle: lookOther(context),
           };
         }),
       });
@@ -373,6 +503,7 @@ export function lineOption(
         locale,
         context.selection,
         names,
+        stepped(config, data, !!data.otherRows),
       ),
     ),
     tooltip: {
@@ -388,7 +519,8 @@ export function lineOption(
           (point) =>
             `${point.marker}${lines.length > 1 ? escapeHtml(point.seriesName) + ': ' : ''}${escapeHtml(formatNumber(point.data.raw, format, locale))}`,
         );
-        return `${escapeHtml(points[0].name)}<br>${rows.join('<br>')}`;
+        const hint = points.some((point) => point.data.other) ? otherHint(config, data) : '';
+        return `${escapeHtml(points[0].name)}<br>${rows.join('<br>')}${hint}`;
       },
     },
     legend:
@@ -424,9 +556,10 @@ export function lineOption(
       splitLine: { lineStyle: { color: theme.grid, width: 1, type: 'solid' } },
     },
     series: lines.map((line) => {
-      const color = context.colors.color(line.entity, theme);
+      const color = line.entity === null ? theme.neutral : context.colors.color(line.entity, theme);
       return {
         type: 'line',
+        ...(line.other ? { id: otherSeries, triggerEvent: true } : {}),
         name: line.name,
         data: line.items,
         connectNulls: config.gaps === 'connect',
@@ -474,6 +607,14 @@ function look(key: Key, context: ChartContext): Record<string, unknown> {
           color: context.theme.text,
         },
       }
+    : {};
+}
+
+/** How "Other" looks for the chart's selection: never chosen, so faded while slices are. */
+function lookOther(context: ChartContext): Record<string, unknown> {
+  const selection = context.selection;
+  return selection && selection.mode === 'include' && selection.keys.length > 0
+    ? { opacity: 0.3 }
     : {};
 }
 
@@ -560,8 +701,10 @@ function summary(
   locale: string,
   selection: Selection | null,
   names?: readonly string[],
+  more: readonly string[] = [],
 ): string {
-  const values = items.filter((i) => i.value !== null);
+  // The highest of those shown: "Other" is the rest of them, not one.
+  const values = items.filter((i) => i.value !== null && !i.other);
   const highest = values.reduce<Item | null>(
     (best, item) => (best === null || (item.value ?? 0) > (best.value ?? 0) ? item : best),
     null,
@@ -576,6 +719,7 @@ function summary(
       (names && highest.key ? names[items.indexOf(highest) % names.length] : undefined);
     parts.push(`highest ${at ? at + ' ' : ''}${formatNumber(highest.raw, format, locale)}`);
   }
+  parts.push(...more);
   if (selection && selection.keys.length > 0) {
     parts.push(`${selection.mode === 'include' ? 'chosen' : 'left out'}: ${selection.keys.length}`);
   }

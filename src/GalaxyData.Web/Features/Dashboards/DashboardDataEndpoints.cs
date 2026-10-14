@@ -64,7 +64,7 @@ internal static class DashboardDataEndpoints
       Answer(() => runner.DataAsync(Slice(request.Slice, rules), request.Widget, request.State, request.Page, request.Refresh, RunMode.SignedIn, response, cancellationToken));
 
    private static Task<IResult> InlineQueryAsync(InlineWidgetRequest request, HttpResponse response, DefinitionRules rules, WidgetRunner runner, CancellationToken cancellationToken) =>
-      Answer(() => runner.QueryAsync(Slice(request.Slice, rules), request.Widget, request.State, response, cancellationToken));
+      Answer(() => runner.QueryAsync(Slice(request.Slice, rules), request.Widget, request.State, request.Page, response, cancellationToken));
 
    private static Task<IResult> InlineValuesAsync(InlineFilterRequest request, HttpResponse response, DefinitionRules rules, WidgetRunner runner, CancellationToken cancellationToken) =>
       Answer(() => runner.FilterValuesAsync(Slice(request.Slice, rules), request.Filter, request.State, request.Search, RunMode.SignedIn, response, cancellationToken));
@@ -76,7 +76,7 @@ internal static class DashboardDataEndpoints
 
    private static Task<IResult> PublishedQueryAsync(int id, string widget, PublishedWidgetRequest request, ClaimsPrincipal me, MetadataDb db, HttpResponse response,
       WidgetRunner runner, CancellationToken cancellationToken) =>
-      Answer(async () => await runner.QueryAsync(await PublishedAsync(db, me, id, request.Hash, cancellationToken), widget, request.State, response, cancellationToken));
+      Answer(async () => await runner.QueryAsync(await PublishedAsync(db, me, id, request.Hash, cancellationToken), widget, request.State, request.Page, response, cancellationToken));
 
    private static Task<IResult> PublishedValuesAsync(int id, string filter, PublishedFilterRequest request, ClaimsPrincipal me, MetadataDb db, HttpResponse response,
       WidgetRunner runner, CancellationToken cancellationToken) =>

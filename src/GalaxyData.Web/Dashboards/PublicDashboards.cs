@@ -125,6 +125,8 @@ public sealed partial class PublicDashboards(IOptions<GalaxyDataOptions> options
          if (column.Role is ColumnRole.Dimension or ColumnRole.Series) { labels.AddRange(data.Rows.Select(row => LabelText.Of(row[c]))); }
          else if (column.Role == ColumnRole.Measure) { labels.Add(column.Label); }
       }
+      // The series shown, first by rank: a line cut short may have no points of some.
+      if (data.Series is { } series) { labels.AddRange(series.Select(LabelText.Of)); }
       return data with { Colors = palette.Colors(labels) };
    }
 
