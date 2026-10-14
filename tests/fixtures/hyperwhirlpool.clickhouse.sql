@@ -46,6 +46,28 @@ INSERT INTO {web}.session VALUES
    ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000d1', '2026-02-03 17:00:00.000', '2026-02-03 17:00:00.000', 1, 1, NULL, 'direct'),
    ('00000000-0000-0000-0000-0000000000a3', '00000000-0000-0000-0000-0000000000d2', '2026-02-11 19:00:00.000', '2026-02-11 19:20:00.000', 2, 2, 1200000, 'social');
 
+-- Page views carry columns of their session (copied when the warehouse finalizes them). One refers to a session
+-- the warehouse doesn't have, and carries nulls.
+CREATE TABLE {web}.page_view (
+   page_view_id UUID,
+   session_id UUID,
+   first_seen DateTime64(3, 'UTC'),
+   last_seen DateTime64(3, 'UTC'),
+   events UInt64,
+   url String,
+   session_traffic_type LowCardinality(Nullable(String)),
+   session_page_views Nullable(UInt64)
+) ENGINE = MergeTree ORDER BY page_view_id;
+
+INSERT INTO {web}.page_view VALUES
+   ('00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-0000000000a1', '2026-01-05 08:00:00.000', '2026-01-05 08:04:00.000', 2, 'https://example.ac.za/', 'search', 3),
+   ('00000000-0000-0000-0000-0000000000f2', '00000000-0000-0000-0000-0000000000a1', '2026-01-05 08:05:00.000', '2026-01-05 08:11:00.000', 1, 'https://example.ac.za/apply', 'search', 3),
+   ('00000000-0000-0000-0000-0000000000f3', '00000000-0000-0000-0000-0000000000a1', '2026-01-05 08:12:00.000', '2026-01-05 08:12:00.000', 1, 'https://example.ac.za/fees', 'search', 3),
+   ('00000000-0000-0000-0000-0000000000f4', '00000000-0000-0000-0000-0000000000a2', '2026-02-03 17:00:00.000', '2026-02-03 17:00:00.000', 1, 'https://example.ac.za/', 'direct', 1),
+   ('00000000-0000-0000-0000-0000000000f5', '00000000-0000-0000-0000-0000000000a3', '2026-02-11 19:00:00.000', '2026-02-11 19:19:00.000', 3, 'https://example.ac.za/', 'social', 2),
+   ('00000000-0000-0000-0000-0000000000f6', '00000000-0000-0000-0000-0000000000a3', '2026-02-11 19:20:00.000', '2026-02-11 19:20:00.000', 1, 'https://example.ac.za/apply', 'social', 2),
+   ('00000000-0000-0000-0000-0000000000f7', '00000000-0000-0000-0000-0000000000a9', '2026-02-12 10:00:00.000', '2026-02-12 10:00:00.000', 1, 'https://example.ac.za/', NULL, NULL);
+
 CREATE TABLE {web}.page_view_events (
    log_day Date,
    event_id UUID,

@@ -1412,6 +1412,10 @@ export interface components {
             insertReason?: null | string;
             changeReason?: null | string;
         };
+        CarriedColumn: {
+            foreignKey: string;
+            column: string;
+        };
         CatalogDiagnosticDto: {
             code: string;
             severity: components["schemas"]["DiagnosticSeverity"];
@@ -1546,6 +1550,7 @@ export interface components {
             comment?: null | string;
             values?: null | string[];
             aggregate?: null | components["schemas"]["AggregateHint"];
+            carriedFrom?: null | components["schemas"]["CarriedColumn"];
         };
         ColumnSettingDto: {
             name: string;
@@ -2937,6 +2942,8 @@ export interface components {
             comment?: null | string;
             timeColumn?: null | string;
             timeEndColumn?: null | string;
+            /** Format: int32 */
+            timeSpanDays?: null | number;
         };
         TestConnectionRequest: {
             kind: string;
@@ -3270,6 +3277,7 @@ export type BrowseTrailDto = components['schemas']['BrowseTrailDto'];
 export type BrowseTrailRequest = components['schemas']['BrowseTrailRequest'];
 export type Bucket = components['schemas']['Bucket'];
 export type CapabilitiesDto = components['schemas']['CapabilitiesDto'];
+export type CarriedColumn = components['schemas']['CarriedColumn'];
 export type CatalogDiagnosticDto = components['schemas']['CatalogDiagnosticDto'];
 export type CatalogDto = components['schemas']['CatalogDto'];
 export type CatalogOverlay = components['schemas']['CatalogOverlay'];

@@ -355,6 +355,15 @@ public abstract class SqlDialect
    protected internal virtual bool BuildsJoinsFromRight => false;
 
    /// <summary>
+   /// Whether the database looks a semi join's key up in the set of the other side's keys
+   /// (<c>WHERE key IN (SELECT …)</c>) far faster than it runs a correlated <c>EXISTS</c> or an inner join, as
+   /// ClickHouse does: a semi join on one key is written so, and so is an inner join that only filters the rows (each
+   /// finds at most one row, whose columns nothing reads), such as the join of the rows a filter on a navigation's
+   /// target keeps.
+   /// </summary>
+   protected internal virtual bool LooksUpSemiJoinKeys => false;
+
+   /// <summary>
    /// Whether a column selected from a join without a name of its own is named by its table too (<c>d.id</c>) where
    /// both sides have one of its name; a derived table's columns are then named, for the query around it to read.
    /// </summary>

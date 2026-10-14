@@ -77,7 +77,7 @@ public sealed class HyperWhirlpoolConnectionTests
       (source.GetProperty("isReadOnly").GetBoolean(), source.GetProperty("sourceKindName").GetString()).ShouldBe((true, "HyperWhirlpool"));
       nodes = (await (await api.GetAsync("/api/catalog/tree/children?parent=hw")).JsonAsync(HttpStatusCode.OK)).GetProperty("nodes");
       nodes.EnumerateArray().Select(n => $"{n.GetProperty("kind").GetString()} {n.GetProperty("id").GetString()}").ShouldBe(
-         [$"schema hw.{warehouse.Crm}", "view hw.device", "view hw.link_device_contact", "view hw.page_view_events", "view hw.session"]);
+         [$"schema hw.{warehouse.Crm}", "view hw.device", "view hw.link_device_contact", "view hw.page_view", "view hw.page_view_events", "view hw.session"]);
 
       JsonElement events = await (await api.GetAsync("/api/catalog/entity?name=hw.page_view_events")).JsonAsync(HttpStatusCode.OK);
       events.GetProperty("comment").GetString().ShouldBe("A page shown in a browser.");

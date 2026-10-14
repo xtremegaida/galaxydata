@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using GalaxyData.Query.Binding;
 using GalaxyData.Query.Catalog;
@@ -133,6 +134,13 @@ internal sealed class RowValue
          return made;
       }
       throw new InvalidOperationException($"The row has no column '{name}'; it has {string.Join(", ", members.Keys)}");
+   }
+
+   /// <summary>The column of that name, when the row has one already (a lazy row's aren't made).</summary>
+   public bool TryColumn(string name, [NotNullWhen(true)] out PlanColumnRef? column)
+   {
+      column = members.TryGetValue(name, out object? value) ? value as PlanColumnRef : null;
+      return column != null;
    }
 
    public RowValue Record(string name) =>

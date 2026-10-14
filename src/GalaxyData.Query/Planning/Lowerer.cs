@@ -973,11 +973,30 @@ internal sealed class Lowerer
             return access.IsScalar ? FirstValue(first, members, access.Scalar) : throw WholeFirstRow();
          case BoundFirst:
             throw WholeFirstRow();
+         case BoundMemberAccess access when Carried(access) is { } carried:
+            return carried;
          case BoundMemberAccess access:
             return Member((RowValue)Value(access.Target), access.Member, access.IsScalar ? access.Scalar : null);
          default:
             return Scalar(expr);
       }
+   }
+
+   /// <summary>
+   /// A column of the row a many-to-one navigation finds, when the row it is followed from holds a copy of it
+   /// (<see cref="ColumnDef.Carries"/>): the copy, so the row isn't joined for it. A copy is null where the navigation
+   /// finds no row, as the column joined would be.
+   /// </summary>
+   private PlanColumnRef? Carried(BoundMemberAccess access)
+   {
+      if (access is not { Member: ColumnMember column, Target: BoundMemberAccess { Member: NavigationMember { Navigation: { IsInverse: false, IsCollection: false } navigation } } via } ||
+          navigation.Target.FindColumn(column.Name) is not { IsFound: true, Item: { } original } ||
+          navigation.Owner.CarriedColumn(navigation.Relation, original) is not { } copy ||
+          Value(via.Target) is not RowValue owner || !owner.TryColumn(copy.Name, out PlanColumnRef? value))
+      {
+         return null;
+      }
+      return access.IsScalar ? new PlanColumnRef(value.Column, access.Scalar) : value;
    }
 
    private object Member(RowValue target, ShapeMember member, ScalarType? type = null) => member switch

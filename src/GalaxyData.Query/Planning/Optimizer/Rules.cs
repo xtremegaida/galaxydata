@@ -454,9 +454,12 @@ internal sealed class PushFilterIntoJoin : IRewriteRule
 /// A navigation whose rows' time falls within the time span of the row it finds (an event happens while its session
 /// lasts: <see cref="Catalog.RelationDef.IsWithinTimeSpan"/>) finds rows whose span reaches the times the rows are
 /// filtered to: <c>v.first_seen >= x</c> gives <c>s.last_seen >= x</c>, and <c>v.first_seen &lt; y</c> gives
-/// <c>s.first_seen &lt; y</c>; page views of a month are of sessions seen in that month. A database then joins only
-/// those, not every row of the target (a hash join's table holds a month's sessions, not every session there is).
-/// Every row the join found still passes, so it stays the navigation it was.
+/// <c>s.first_seen &lt; y</c>; page views of a month are of sessions seen in that month. When spans last at most
+/// so many days (<see cref="Catalog.EntityDef.TimeSpanDays"/>), <c>v.first_seen >= x</c> also gives
+/// <c>s.first_seen >= addDays(x, -days)</c>, a bound on the column a table is commonly partitioned by. A database
+/// then joins only those, not every row of the target (a hash join's table holds a month's sessions, not every
+/// session there is), and reads only their days. Every row the join found still passes, so it stays the navigation it
+/// was.
 /// </summary>
 internal sealed class BoundJoinedTimeSpans : IRewriteRule
 {
@@ -486,14 +489,24 @@ internal sealed class BoundJoinedTimeSpans : IRewriteRule
       if (!right.Contains(spanStart) || !right.Contains(spanEnd)) { return null; }
       HashSet<string> present = [.. Conditions(join.Right).Select(PlanPrinter.Expr)];
       List<PlanExpr> bounds = [];
+      void Add(PlanBinary bound)
+      {
+         if (present.Add(PlanPrinter.Expr(bound))) { bounds.Add(bound); }
+      }
       foreach (PlanExpr condition in conditions)
       {
          foreach ((BinaryOp op, bool after, PlanExpr value) in Limits(condition, rowTime))
          {
             // A row after x is of a span that ends after x; a row before y, of one that starts before y.
             PlanColumn column = after ? spanEnd : spanStart;
-            PlanBinary bound = new(op, new PlanColumnRef(column, column.Type), value, ScalarType.Boolean.WithNullable(column.Type.Nullable || value.Type.Nullable));
-            if (present.Add(PlanPrinter.Expr(bound))) { bounds.Add(bound); }
+            Add(new PlanBinary(op, new PlanColumnRef(column, column.Type), value, ScalarType.Boolean.WithNullable(column.Type.Nullable || value.Type.Nullable)));
+            // A span that ends after x, and lasts at most so many days, starts after x less those days.
+            if (after && navigation.Target.TimeSpanDays is { } days && FunctionRegistry.Default.TryGet("addDays", out FunctionDef addDays))
+            {
+               PlanExpr earliest = new PlanFunction(addDays, [value, new PlanLiteral(-days, ScalarType.Int32.AsNonNullable())], value.Type, null);
+               Add(new PlanBinary(BinaryOp.GreaterOrEqual, new PlanColumnRef(spanStart, spanStart.Type), earliest,
+                                  ScalarType.Boolean.WithNullable(spanStart.Type.Nullable || value.Type.Nullable)));
+            }
          }
       }
       return bounds.Count == 0

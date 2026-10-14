@@ -9733,6 +9733,21 @@
           }
         }
       },
+      "CarriedColumn": {
+        "required": [
+          "foreignKey",
+          "column"
+        ],
+        "type": "object",
+        "properties": {
+          "foreignKey": {
+            "type": "string"
+          },
+          "column": {
+            "type": "string"
+          }
+        }
+      },
       "CatalogDiagnosticDto": {
         "required": [
           "code",
@@ -10339,6 +10354,16 @@
               },
               {
                 "$ref": "#/components/schemas/AggregateHint"
+              }
+            ]
+          },
+          "carriedFrom": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CarriedColumn"
               }
             ]
           }
@@ -16292,6 +16317,13 @@
               "null",
               "string"
             ]
+          },
+          "timeSpanDays": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
           }
         }
       },

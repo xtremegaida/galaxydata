@@ -74,16 +74,19 @@ internal sealed record SchemaDocument(string Format, ModelVersion Model, IReadOn
 
    private static TableSchema Table(ObjectEntry entry)
    {
+      HashSet<string> references = (entry.References ?? []).Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
       List<ColumnSchema> columns = entry.Columns.Select((c, i) => new ColumnSchema(c.Name, i, c.Type, ClickHouseTypeMapper.Map(c.Type))
       {
          ReadAs = ClickHouseTypeMapper.ReadAs(c.Type),
          Comment = c.Description,
          Values = c.Values is { Count: > 0 } values ? values : null,
          Aggregate = AggregateOf(c),
+         CarriedFrom = c.Carried is { } carried && references.Contains(carried.Reference) ? new CarriedColumn(carried.Reference, carried.Column) : null,
       }).ToList();
       HashSet<string> names = columns.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
       IReadOnlyList<string> key = entry.Key ?? [];
       string? time = entry.Time != null && names.Contains(entry.Time) ? entry.Time : null;
+      string? timeEnd = time != null && entry.TimeEnd != null && names.Contains(entry.TimeEnd) ? entry.TimeEnd : null;
       return new TableSchema(entry.Database, entry.Name, TableKind.View, columns)
       {
          PrimaryKey = key.Count > 0 && key.All(names.Contains) ? new KeySchema(null, key) : null,
@@ -93,7 +96,8 @@ internal sealed record SchemaDocument(string Format, ModelVersion Model, IReadOn
             .ToList(),
          Comment = entry.Description,
          TimeColumn = time,
-         TimeEndColumn = time != null && entry.TimeEnd != null && names.Contains(entry.TimeEnd) ? entry.TimeEnd : null,
+         TimeEndColumn = timeEnd,
+         TimeSpanDays = timeEnd != null && entry.TimeSpanDays is > 0 ? entry.TimeSpanDays : null,
       };
    }
 
@@ -125,13 +129,21 @@ internal sealed record DomainEntry(string Name, string Database, string? Descrip
 
 /// <summary>
 /// A public view: what one row of it is (<see cref="Kind"/>), its columns, key and references, the column its rows are
-/// dated by, and the one a row's time span ends at.
+/// dated by, the one a row's time span ends at, and the most days a span lasts.
 /// </summary>
 internal sealed record ObjectEntry(string Database, string Name, string Kind, IReadOnlyList<ColumnEntry> Columns, string? Declaration = null, string? Description = null,
-                                   IReadOnlyList<string>? Key = null, string? Time = null, IReadOnlyList<ReferenceEntry>? References = null, string? TimeEnd = null);
+                                   IReadOnlyList<string>? Key = null, string? Time = null, IReadOnlyList<ReferenceEntry>? References = null, string? TimeEnd = null,
+                                   int? TimeSpanDays = null);
 
-/// <summary>A column: its ClickHouse type, what it holds (<see cref="Role"/>), and for attributes and classified columns, how they come about.</summary>
-internal sealed record ColumnEntry(string Name, string Type, string? Role = null, string? Description = null, string? Aggregate = null, IReadOnlyList<string>? Values = null);
+/// <summary>
+/// A column: its ClickHouse type, what it holds (<see cref="Role"/>), for attributes and classified columns how they
+/// come about, and for carried ones which reference's column it is a copy of.
+/// </summary>
+internal sealed record ColumnEntry(string Name, string Type, string? Role = null, string? Description = null, string? Aggregate = null, IReadOnlyList<string>? Values = null,
+                                   CarriedEntry? Carried = null);
+
+/// <summary>The column of the row a reference (<see cref="ReferenceEntry.Name"/>) finds that a carried column is a copy of.</summary>
+internal sealed record CarriedEntry(string Reference, string Column);
 
 /// <summary>
 /// Columns of an object that hold the key of another; <see cref="Within"/> when the referring row's time falls within

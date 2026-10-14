@@ -353,6 +353,12 @@ internal sealed class SqlBuilder
       bool page = left.HasPaging || left.IsPage;
       if (left.HasPaging || left.DistinctColumns != null || left.Aggregated) { left = Wrap(left, join.Left.Output, leftNeeded); }
       if (join.Kind is JoinKind.Semi or JoinKind.Anti) { return SemiJoin(join, left); }
+      // An inner join that finds at most one row each, and whose columns nothing reads, only filters the rows.
+      if (join.Kind == JoinKind.Inner && dialect.LooksUpSemiJoinKeys && !needed.Overlaps(rightOutput) && PlanAnalysis.MatchesAtMostOnce(join) &&
+          KeyLookup(join) is { } filtering)
+      {
+         return InJoin(join, left, filtering.Key, filtering.Conditions);
+      }
       // A page goes on the side a database builds the join from (BuildsJoinsFromRight), in a derived table of its own
       // once it is joined already or found by its keys: the join isn't built from all the rows it is joined to.
       bool swap = page && dialect.BuildsJoinsFromRight && join.Condition != null;
@@ -382,9 +388,14 @@ internal sealed class SqlBuilder
       return left;
    }
 
-   /// <summary>A semi join is <c>WHERE EXISTS (...)</c>, an anti join <c>WHERE NOT EXISTS (...)</c>, correlated on the condition.</summary>
+   /// <summary>
+   /// A semi join is <c>WHERE EXISTS (...)</c>, an anti join <c>WHERE NOT EXISTS (...)</c>, correlated on the condition;
+   /// where the database looks keys up instead (<see cref="SqlDialect.LooksUpSemiJoinKeys"/>), a semi join on one key is
+   /// <c>WHERE key IN (...)</c>.
+   /// </summary>
    private Frame SemiJoin(JoinNode join, Frame left)
    {
+      if (join.Kind == JoinKind.Semi && dialect.LooksUpSemiJoinKeys && KeyLookup(join) is { } lookup) { return InJoin(join, left, lookup.Key, lookup.Conditions); }
       if (join.Condition != null && dialect.MaxCorrelationDepth < 1) { throw TooCorrelated(); }
       SqlSelect select = Nested(left.Columns, () =>
       {
@@ -401,6 +412,49 @@ internal sealed class SqlBuilder
          return right.Select;
       });
       left.Select.Where = AndAlso(left.Select.Where, new SqlExists(select, join.Kind == JoinKind.Anti));
+      return left;
+   }
+
+   /// <summary>
+   /// The left and right columns a join's condition equates, when it equates one pair and says nothing else but what
+   /// the right rows must be (and the right side doesn't depend on the left row): what <c>left IN (SELECT right …)</c>
+   /// keeps. Null otherwise.
+   /// </summary>
+   private static ((PlanColumn Left, PlanColumn Right) Key, List<PlanExpr> Conditions)? KeyLookup(JoinNode join)
+   {
+      HashSet<PlanColumn> leftOutput = [.. join.Left.Output];
+      HashSet<PlanColumn> rightOutput = [.. join.Right.Output];
+      if (join.Condition == null || PlanAnalysis.FreeColumns(join.Right).Overlaps(leftOutput)) { return null; }
+      (PlanColumn, PlanColumn)? key = null;
+      List<PlanExpr> conditions = [];
+      foreach (PlanExpr part in PlanAnalysis.Conjuncts(join.Condition))
+      {
+         if (part is PlanBinary { Op: BinaryOp.Equal, Left: PlanColumnRef a, Right: PlanColumnRef b } && key == null)
+         {
+            if (leftOutput.Contains(a.Column) && rightOutput.Contains(b.Column)) { key = (a.Column, b.Column); continue; }
+            if (leftOutput.Contains(b.Column) && rightOutput.Contains(a.Column)) { key = (b.Column, a.Column); continue; }
+         }
+         if (PlanRewriter.ContainsSubquery(part) || !PlanAnalysis.Columns(part).IsSubsetOf(rightOutput)) { return null; }
+         conditions.Add(part);
+      }
+      return key is { } found ? (found, conditions) : null;
+   }
+
+   /// <summary>The left rows whose key is among the right side's keys: <c>WHERE key IN (SELECT key FROM … WHERE …)</c>.</summary>
+   private Frame InJoin(JoinNode join, Frame left, (PlanColumn Left, PlanColumn Right) key, List<PlanExpr> conditions)
+   {
+      SqlSelect select = Nested(left.Columns, () =>
+      {
+         HashSet<PlanColumn> rightNeeded = With([key.Right], conditions);
+         Frame right = Build(join.Right, rightNeeded);
+         if (right.HasPaging || right.DistinctColumns != null || right.Aggregated) { right = Wrap(right, join.Right.Output, rightNeeded); }
+         right.Select.OrderBy.Clear();
+         foreach (PlanExpr condition in conditions) { right.Select.Where = AndAlso(right.Select.Where, Condition(condition, right.Columns)); }
+         right.Select.Items.Clear();
+         right.Select.Items.Add(new SqlSelectItem(right.Columns[key.Right], null));
+         return right.Select;
+      }, values: true);
+      left.Select.Where = AndAlso(left.Select.Where, new SqlInSubquery(left.Columns[key.Left], select));
       return left;
    }
 

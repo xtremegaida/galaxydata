@@ -134,6 +134,7 @@ public sealed class CatalogBuilder
                if (table.TimeEndColumn != null && entity.FindColumn(table.TimeEndColumn) is { IsFound: true, Item: { } end } && end.Type.Kind == entity.TimeColumn?.Type.Kind)
                {
                   entity.TimeEndColumn = end;
+                  entity.TimeSpanDays = table.TimeSpanDays is > 0 ? table.TimeSpanDays : null;
                }
             }
             foreach (KeySchema unique in table.UniqueKeys)
@@ -341,13 +342,35 @@ public sealed class CatalogBuilder
                   continue;
                }
                bool enforced = fk.IsEnforced || dependent.Source.TrustForeignKeys;
-               relations.Add(new RelationDef(fk.Name, RelationOrigin.ForeignKey, dependent, fromColumns, principal, toColumns, enforced)
+               RelationDef relation = new(fk.Name, RelationOrigin.ForeignKey, dependent, fromColumns, principal, toColumns, enforced)
                {
                   // Times compared as they are: of one kind (a date with a date, a date-time with a date-time).
                   IsWithinTimeSpan = fk.IsWithinTimeSpan && dependent.TimeColumn is { } time && principal.TimeEndColumn != null &&
                                      principal.TimeColumn!.Type.Kind == time.Type.Kind,
-               });
+               };
+               relations.Add(relation);
+               if (fk.Name != null) { Carry(table, relation); }
             }
+         }
+      }
+
+      /// <summary>
+      /// The dependent's columns the source says are copies of the principal's (<see cref="ColumnSchema.CarriedFrom"/>),
+      /// for the relation's foreign key: they stand for those columns through its navigation, which offers them, so they
+      /// are hidden. A copy of another kind of value than its original's is a column like any other.
+      /// </summary>
+      private static void Carry(TableSchema table, RelationDef relation)
+      {
+         foreach (ColumnSchema column in table.Columns)
+         {
+            if (column.CarriedFrom is not { } carried || !string.Equals(carried.ForeignKey, relation.Name, StringComparison.Ordinal)) { continue; }
+            if (relation.From.FindColumn(column.Name) is not { IsFound: true, Item: { } copy } ||
+                relation.To.FindColumn(carried.Column) is not { IsFound: true, Item: { } original } || copy.Type.Kind != original.Type.Kind)
+            {
+               continue;
+            }
+            copy.Carries = new CarriedValue(relation, original);
+            copy.Hidden = true;
          }
       }
 

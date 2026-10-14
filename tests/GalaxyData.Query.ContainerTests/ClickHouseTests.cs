@@ -74,7 +74,8 @@ public sealed class ClickHouseTests(Servers servers)
 
    /// <summary>
    /// A subquery that gives a value and reads the query around it runs in the merge engine (ClickHouse's gives null for
-   /// no rows), with the same rows; others run in ClickHouse whole.
+   /// no rows), with the same rows; others run in ClickHouse whole (a semi join on a key as an IN, which it runs faster
+   /// than an EXISTS).
    /// </summary>
    [Fact]
    public async Task WhatClickHouseCantWriteRunsInTheMergeEngine()
@@ -89,7 +90,7 @@ public sealed class ClickHouseTests(Servers servers)
       split.Merge.ShouldNotBeNull();
       PreparedQuery single = sources.Engine().Prepare(whole);
       (single.Merge, single.Fragments.Count).ShouldBe((null, 1));
-      single.Fragments[0].Statement.Text.ShouldContain("EXISTS");
+      single.Fragments[0].Statement.Text.ShouldContain(".id IN (");
 
       foreach (string query in new[] { correlated, whole })
       {

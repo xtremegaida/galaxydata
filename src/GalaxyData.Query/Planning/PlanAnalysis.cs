@@ -212,13 +212,14 @@ internal static class PlanAnalysis
    }
 
    /// <summary>
-   /// Whether each left row finds at most one right row: the join follows a many-to-one navigation, or the right side
-   /// is grouped and the condition equates each of its keys with a value of the left row.
+   /// Whether each left row finds at most one right row: the join follows a many-to-one navigation, or the condition
+   /// equates each key of the right side with a value of the left row, where the right side is (filtered) grouped rows
+   /// or a (filtered) table's rows and their key: a navigation's join still, after a filter on its target went into it.
    /// </summary>
    public static bool MatchesAtMostOnce(JoinNode join)
    {
       if (join.Navigation is { IsCollection: false }) { return true; }
-      if (join.Right is not AggregateNode { Keys.Count: > 0 } group || join.Condition == null) { return false; }
+      if (join.Condition == null) { return false; }
       HashSet<PlanColumn> left = [.. join.Left.Output];
       HashSet<PlanColumn> matched = [];
       foreach (PlanExpr part in Conjuncts(join.Condition))
@@ -227,7 +228,14 @@ internal static class PlanAnalysis
          if (left.Contains(a.Column)) { matched.Add(b.Column); }
          else if (left.Contains(b.Column)) { matched.Add(a.Column); }
       }
-      return group.Keys.All(k => matched.Contains(k.Column));
+      PlanNode right = join.Right;
+      while (right is FilterNode filter) { right = filter.Input; }
+      return right switch
+      {
+         AggregateNode { Keys.Count: > 0 } group => group.Keys.All(k => matched.Contains(k.Column)),
+         ScanNode { Entity.Key: { } key } scan => key.Columns.All(c => scan.Columns.FirstOrDefault(s => ReferenceEquals(s.Column, c)) is { } s && matched.Contains(s.Output)),
+         _ => false,
+      };
    }
 
    /// <summary>The conjuncts joined with <c>and</c>; null for none.</summary>

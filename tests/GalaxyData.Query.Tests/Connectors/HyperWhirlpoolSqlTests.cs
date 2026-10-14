@@ -58,6 +58,11 @@ public sealed class HyperWhirlpoolSqlTests
       // A device's view is a snapshot, and a contact isn't built from the events: neither is bounded.
       "hw.session.where(first_seen >= $f1).groupBy(b: device.browser).select(b, n: count())",
       "hw.page_view_events.where(ts >= $f1).select(event_id, c: crm_contact.country)",
+      // Page views carry their session's traffic type: charted and filtered by it, they join no session; by a column
+      // they don't carry, they join the sessions of the days those can have started on.
+      "hw.page_view.where(r0 => (r0.first_seen >= $f1 and r0.first_seen < $f2)).groupBy(d0: startOfMonth(first_seen), s0: session.traffic_type).select(d0, s0, m0: count()).orderBy(d0, s0).take(1001)",
+      "hw.page_view.where(r0 => r0.first_seen >= $f1 and r0.session.traffic_type == 'search').select(page_view_id, n: session.page_views)",
+      "hw.page_view.where(r0 => r0.first_seen >= $f1).groupBy(b: session.device.browser).select(b, n: count())",
    ];
 
    [Fact]

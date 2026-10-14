@@ -79,7 +79,7 @@ public sealed class HyperWhirlpoolTests(Servers servers) : IAsyncLifetime
       schema.ServerVersion.ShouldNotBeNull().ShouldStartWith($"HyperWhirlpool model {HyperWhirlpoolWarehouse.Version}, ClickHouse ");
       schema.DefaultSchema.ShouldBe(Warehouse.Web);
       schema.Tables.Select(t => $"{t.Schema}.{t.Name}").ShouldBe(
-         [$"{Warehouse.Crm}.contact", $"{Warehouse.Web}.device", $"{Warehouse.Web}.link_device_contact", $"{Warehouse.Web}.page_view_events", $"{Warehouse.Web}.session"]);
+         [$"{Warehouse.Crm}.contact", $"{Warehouse.Web}.device", $"{Warehouse.Web}.link_device_contact", $"{Warehouse.Web}.page_view", $"{Warehouse.Web}.page_view_events", $"{Warehouse.Web}.session"]);
       TableSchema events = schema.Tables.Single(t => t.Name == "page_view_events");
       events.PrimaryKey.ShouldNotBeNull().Columns.ShouldBe(["event_id"]);
       events.ForeignKeys.Select(f => $"{f.Name}: {f.RefSchema}.{f.RefTable} {f.IsEnforced}").ShouldBe(
@@ -112,7 +112,7 @@ public sealed class HyperWhirlpoolTests(Servers servers) : IAsyncLifetime
          await using DbConnection connection = Servers.OpenClickHouse(connectionString);
          await HyperWhirlpoolSourceProvider.Instance.PrepareConnectionAsync(connection, Token);
          SourceSchema schema = await HyperWhirlpoolSourceProvider.Instance.Introspector.IntrospectAsync(connection, IntrospectionOptions.Default, Token);
-         schema.Tables.Count.ShouldBe(5);
+         schema.Tables.Count.ShouldBe(6);
          schema.ServerVersion.ShouldNotBeNull().ShouldStartWith($"HyperWhirlpool model {HyperWhirlpoolWarehouse.Version}");
       }
       finally
@@ -172,8 +172,8 @@ public sealed class HyperWhirlpoolTests(Servers servers) : IAsyncLifetime
    }
 
    /// <summary>
-   /// A chart's dates bound the sessions its events are joined to, as an event falls within its session's span: an
-   /// event at its session's very start or end still finds it.
+   /// A chart's dates bound the sessions its events are joined to, as an event falls within its session's span (which
+   /// lasts at most 10 days): an event at its session's very start or end still finds it.
    /// </summary>
    [Fact]
    public async Task AChartsDatesBoundTheSessionsItsEventsAreJoinedTo()
@@ -182,12 +182,34 @@ public sealed class HyperWhirlpoolTests(Servers servers) : IAsyncLifetime
       const string Chart = "hw.page_view_events.where(r0 => (r0.ts >= $f1 and r0.ts < $f2)).groupBy(d0: startOfMonth(ts), s0: session.traffic_type).select(d0, s0, m0: count()).orderBy(d0, s0)";
       static QueryParameters Dates(DateTime from, DateTime to) => new QueryParameters().Add("f1", from).Add("f2", to);
       engine.Prepare(new QueryRequest(Chart) { Parameters = Dates(DateTime.UnixEpoch, DateTime.UnixEpoch) }).Fragments.ShouldHaveSingleItem()
-         .Statement.Text.ShouldContain(".last_seen >= @p0 AND s.first_seen < @p1");
+         .Statement.Text.ShouldContain(".last_seen >= @p0 AND s.first_seen >= addDays(@p0, -10) AND s.first_seen < @p1");
       // The last event of the first visit (at its last_seen) and the only one of the second; not the third's first.
       (await RunAsync(engine, Chart, parameters: Dates(new DateTime(2026, 1, 5, 8, 12, 0, DateTimeKind.Utc), new DateTime(2026, 2, 11, 19, 0, 0, DateTimeKind.Utc))))
          .ShouldBe("2026-01-01 | 'search' | 1\n2026-02-01 | 'direct' | 1");
       (await RunAsync(engine, Chart, parameters: Dates(new DateTime(2026, 2, 11, 19, 20, 0, DateTimeKind.Utc), new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc))))
          .ShouldBe("2026-02-01 | 'social' | 1");
+   }
+
+   /// <summary>
+   /// Page views carry columns of their session: charted or filtered by those, they join no session, and give what
+   /// joining it gives (nulls for a page view whose session the warehouse doesn't have). Filtered by a session's
+   /// column they don't carry, they are looked up among the sessions that have it.
+   /// </summary>
+   [Fact]
+   public async Task CarriedColumnsAreReadInsteadOfJoiningTheRowsTheyCopy()
+   {
+      (QueryEngine engine, _) = await EngineAsync();
+      const string Chart = "hw.page_view.groupBy(t: session.traffic_type).select(t, n: count(), pages: max(session.page_views)).orderBy(t)";
+      string chart = engine.Prepare(Chart).Fragments.ShouldHaveSingleItem().Statement.Text;
+      chart.ShouldNotContain(" JOIN ", Case.Sensitive);
+      chart.ShouldNotContain(".session ");
+      (await RunAsync(engine, Chart)).ShouldBe("null | 1 | null\n'direct' | 1 | 1\n'search' | 3 | 3\n'social' | 2 | 2");
+      (await RunAsync(engine, "hw.page_view.where(session.traffic_type == 'search').count()")).ShouldBe("3");
+      string looked = engine.Prepare("hw.page_view.where(session.duration_ms > 1000000).select(url)").Fragments.ShouldHaveSingleItem().Statement.Text;
+      looked.ShouldContain(".session_id IN (");
+      looked.ShouldNotContain(" JOIN ", Case.Sensitive);
+      (await RunAsync(engine, "hw.page_view.where(session.duration_ms > 1000000).select(url).orderBy(url)"))
+         .ShouldBe("'https://example.ac.za/'\n'https://example.ac.za/apply'");
    }
 
    [Fact]

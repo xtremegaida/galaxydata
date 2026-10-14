@@ -103,6 +103,12 @@ public abstract class EntityDef : CatalogItem
    /// </summary>
    public ColumnDef? TimeEndColumn { get; internal set; }
 
+   /// <summary>
+   /// The most days a row's time span (<see cref="TimeColumn"/> to <see cref="TimeEndColumn"/>) lasts, when the source
+   /// says (<see cref="TableSchema.TimeSpanDays"/>): a row whose span ends after x starts after x less that many days.
+   /// </summary>
+   public int? TimeSpanDays { get; internal set; }
+
    public bool Hidden { get; internal set; }
 
    /// <summary>The overlay's settings for it, whether or not all of them could be applied.</summary>
@@ -111,6 +117,10 @@ public abstract class EntityDef : CatalogItem
    public string? Comment { get; internal set; }
 
    public NameMatch<ColumnDef> FindColumn(string name) => columnsByName.Find(name);
+
+   /// <summary>The column that holds a copy of <paramref name="column"/> of the row <paramref name="relation"/> finds, if one does (<see cref="ColumnDef.Carries"/>).</summary>
+   public ColumnDef? CarriedColumn(RelationDef relation, ColumnDef column) =>
+      columns.FirstOrDefault(c => c.Carries is { } carried && ReferenceEquals(carried.Relation, relation) && ReferenceEquals(carried.Column, column));
 
    public NameMatch<NavigationDef> FindNavigation(string name) => navigationsByName.Find(name);
 
@@ -308,10 +318,19 @@ public sealed class ColumnDef
    /// <summary>How the column's values are summed up over many rows (<see cref="ColumnSchema.Aggregate"/>); null when the source doesn't say.</summary>
    public AggregateHint? Aggregate { get; }
 
+   /// <summary>
+   /// The column of the row a relation of its entity finds that this one holds a copy of (<see cref="ColumnSchema.CarriedFrom"/>),
+   /// null where the relation finds none: the navigation's value of that column, read without joining the row.
+   /// </summary>
+   public CarriedValue? Carries { get; internal set; }
+
    public bool IsKey => Owner.Key?.Columns.Contains(this) ?? false;
 
    public override string ToString() => QueryText.AppendMember(new StringBuilder(Owner.DisplayName), Name).ToString();
 }
+
+/// <summary>A copy of <see cref="Column"/> of the row <see cref="Relation"/> finds (<see cref="ColumnDef.Carries"/>).</summary>
+public sealed record CarriedValue(RelationDef Relation, ColumnDef Column);
 
 public sealed class KeyDef
 {

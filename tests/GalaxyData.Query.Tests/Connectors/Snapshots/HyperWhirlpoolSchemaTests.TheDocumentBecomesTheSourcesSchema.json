@@ -213,6 +213,98 @@
     },
     {
       "schema": "web",
+      "name": "page_view",
+      "kind": "View",
+      "columns": [
+        {
+          "name": "page_view_id",
+          "nativeType": "UUID",
+          "type": "guid"
+        },
+        {
+          "name": "session_id",
+          "ordinal": 1,
+          "nativeType": "UUID",
+          "type": "guid"
+        },
+        {
+          "name": "first_seen",
+          "ordinal": 2,
+          "nativeType": "DateTime64(3, 'UTC')",
+          "type": "datetimeoffset"
+        },
+        {
+          "name": "last_seen",
+          "ordinal": 3,
+          "nativeType": "DateTime64(3, 'UTC')",
+          "type": "datetimeoffset"
+        },
+        {
+          "name": "events",
+          "ordinal": 4,
+          "nativeType": "UInt64",
+          "type": "decimal(20,0)",
+          "aggregate": "Sum"
+        },
+        {
+          "name": "url",
+          "ordinal": 5,
+          "nativeType": "String",
+          "type": "string",
+          "comment": "The page's address."
+        },
+        {
+          "name": "session_traffic_type",
+          "ordinal": 6,
+          "nativeType": "LowCardinality(Nullable(String))",
+          "type": "string?",
+          "comment": "The session's traffic_type, carried onto each row.",
+          "carriedFrom": {
+            "foreignKey": "session",
+            "column": "traffic_type"
+          }
+        },
+        {
+          "name": "session_page_views",
+          "ordinal": 7,
+          "nativeType": "Nullable(UInt64)",
+          "type": "decimal(20,0)?",
+          "comment": "The session's page_views, carried onto each row.",
+          "carriedFrom": {
+            "foreignKey": "session",
+            "column": "page_views"
+          }
+        }
+      ],
+      "primaryKey": {
+        "columns": [
+          "page_view_id"
+        ]
+      },
+      "uniqueKeys": [],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "name": "session",
+          "columns": [
+            "session_id"
+          ],
+          "refSchema": "web",
+          "refTable": "session",
+          "refColumns": [
+            "session_id"
+          ],
+          "isEnforced": false,
+          "isWithinTimeSpan": true
+        }
+      ],
+      "comment": "A page shown in a browser.",
+      "timeColumn": "first_seen",
+      "timeEndColumn": "last_seen",
+      "timeSpanDays": 10
+    },
+    {
+      "schema": "web",
       "name": "page_view_events",
       "kind": "View",
       "columns": [
@@ -421,7 +513,8 @@
       ],
       "comment": "A visit; it ends after 30 minutes without user activity.",
       "timeColumn": "first_seen",
-      "timeEndColumn": "last_seen"
+      "timeEndColumn": "last_seen",
+      "timeSpanDays": 10
     }
   ]
 }

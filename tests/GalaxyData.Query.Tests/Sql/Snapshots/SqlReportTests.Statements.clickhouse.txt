@@ -12,8 +12,11 @@ FROM orders AS o
 ### sales.main.orders.where(o => o.total > 100 and o.customer.city == 'Cape Town')
 SELECT o.id, o.customer_id, o.status, o.total, o.order_date, o.shipped_at, o.ship_customer_id, o.attachment
 FROM orders AS o
-INNER JOIN customers AS c ON o.customer_id = c.id
-WHERE o.total > @p0 AND c.city = @p1
+WHERE o.total > @p0 AND o.customer_id IN (
+   SELECT c.id
+   FROM customers AS c
+   WHERE c.city = @p1
+)
 -- p0 decimal(10,2) = 100
 -- p1 string = 'Cape Town'
 
@@ -279,10 +282,10 @@ GROUP BY c.name
 ### x := sales.orders.where(total > 3); sales.customers.where(cust => x.any(order => cust.id == order.customer_id))
 SELECT c.id, c.name, c.city, c.credit_limit, c.created, c.region_code, c.uid, c.notes
 FROM customers AS c
-WHERE EXISTS (
-   SELECT 1
+WHERE c.id IN (
+   SELECT o.customer_id
    FROM orders AS o
-   WHERE o.total > @p0 AND c.id = o.customer_id
+   WHERE o.total > @p0
 )
 -- p0 decimal(10,2) = 3
 
@@ -352,10 +355,10 @@ LEFT JOIN (
 ### sales.customers.where(orders_by_customer.any(status == 'open')).select(name)
 SELECT c.name, c.id
 FROM customers AS c
-WHERE EXISTS (
-   SELECT 1
+WHERE c.id IN (
+   SELECT o.customer_id
    FROM orders AS o
-   WHERE o.status = @p0 AND o.customer_id = c.id
+   WHERE o.status = @p0
 )
 -- p0 string(20,ansi) = 'open'
 
@@ -381,10 +384,10 @@ WHERE NOT EXISTS (
 ### sales.orders.where(customer_id in sales.customers.where(city == 'Cape Town').select(id))
 SELECT o.id, o.customer_id, o.status, o.total, o.order_date, o.shipped_at, o.ship_customer_id, o.attachment
 FROM orders AS o
-WHERE EXISTS (
-   SELECT 1
+WHERE o.customer_id IN (
+   SELECT c.id
    FROM customers AS c
-   WHERE c.city = @p0 AND o.customer_id = c.id
+   WHERE c.city = @p0
 )
 -- p0 string = 'Cape Town'
 

@@ -77,7 +77,10 @@ engine), and no database driver.
    known to take, in order) and `Aggregate` (how its values add up over many rows). The dashboard editor uses them.
    A table's `TimeEndColumn` (where a row's time span ends) and a foreign key's `IsWithinTimeSpan` (each row's time
    falls within the span of the row it refers to) let the optimizer bound the rows a navigation joins by the dates
-   its rows are filtered to: page views of a month are of sessions seen in that month.
+   its rows are filtered to: page views of a month are of sessions seen in that month. A table's `TimeSpanDays` (the
+   most days a span lasts) bounds their start too, which is what such tables are commonly partitioned by. A column's
+   `CarriedFrom` (it holds a copy of a column of the row a foreign key finds, null where it finds none) is read in
+   place of that column through the key's navigation, which then isn't joined; the copy is hidden.
 
 5. **The kind of connection.** Derive `ConnectionKind`: `Id` (the provider's kind), `DisplayName`, `Icon`, `Fields`
    and `Options` (the form, its keys the driver's keywords as its connection string builder writes them), `NewBuilder`,
@@ -142,8 +145,15 @@ engine), and no database driver.
 - **A join of a large view needs a bound, or disk.** The same hash table, for a chart's events joined to the sessions
   they belong to, holds every session there is. Where the source says an event falls within its session's span
   (`IsWithinTimeSpan`), the chart's dates bound the sessions joined (`… ON e.session_id = s.session_id AND
-  s.last_seen >= @p0 AND s.first_seen < @p1`): a month's, not all of them. Joins that are still too large take
-  ClickHouse's `max_bytes_before_external_join`, which the login's profile or the connection (`set_…`) can give.
+  s.last_seen >= @p0 AND s.first_seen < @p1`): a month's, not all of them; where it says how long a span lasts
+  (`TimeSpanDays`), their start too (`s.first_seen >= addDays(@p0, -10)`), so ClickHouse reads only those days'
+  partitions. Joins that are still too large take ClickHouse's `max_bytes_before_external_join`, which the login's
+  profile or the connection (`set_…`) can give.
+- **Keys are looked up, not joined.** ClickHouse runs a correlated `EXISTS` as a join, slower than an inner join, but
+  filters by `IN` with a set of the keys. So a semi join on one key (`any()`, `in`) is `WHERE o.customer_id IN
+  (SELECT c.id …)`, and so is an inner join that only filters, each row finding at most one whose columns nothing
+  reads (a filter on a navigation's target): page views of paid visits of four years took 7 s so, against 21 s
+  joined and 43 s with `EXISTS`.
 - **What runs in the merge engine.** A subquery may read columns of the query it is in only to test whether rows
   exist (`EXISTS`): ClickHouse's subqueries that give values read null where they find no rows (a count of none is
   null), so `first()` of a navigation, and counts and sums over one, run in the merge engine, over the rows they read.
@@ -188,8 +198,14 @@ SQL (`ClickHouseDialect`), and sends and reads values as its provider does, as t
   was any, a count of distinct values) say nothing of how they add up.
 - **Time spans.** A view's `time_end` is its `TimeEndColumn`, and a reference marked `within` (to a bounded entity,
   from the events it is built from or its child entities) is `IsWithinTimeSpan`: a chart's dates bound the entity's
-  rows it joins (see ClickHouse, above). The query service sends `max_bytes_before_external_join` itself, so joins
-  that are still too large go through disk.
+  rows it joins (see ClickHouse, above), and an object's `time_span_days` is its `TimeSpanDays`. The query service
+  sends `max_bytes_before_external_join` itself, so joins that are still too large go through disk.
+- **Carried columns.** A column the model copies from the row a reference finds (`role: carried`, `carried: {
+  reference, column }`, such as a page view's `session_traffic_type`) is that column's `CarriedFrom`: `session.traffic_type`
+  of a page view reads it, without joining the session, and the editor offers it as the session's column only. A
+  chart of page views by their session's site, or filtered by its traffic type, reads one view: four years of page
+  views by month and site took 33 s joined to their sessions; the table they were imported from, whose rows have the
+  site, gives the same chart in 1.1 s.
 - **Read-only.** The kind is always read-only, without changes; the provider refuses to write.
 - **Settings.** Only those the query service needs: where it is (`Host`, `Port`, `Protocol`, `Path`; HTTPS on 443,
   or 80 over HTTP, unless given, not ClickHouse.Driver's HTTP on 8123), the query key (`Password`) and the default

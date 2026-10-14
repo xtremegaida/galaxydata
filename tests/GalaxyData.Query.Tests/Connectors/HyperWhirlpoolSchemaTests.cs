@@ -70,6 +70,29 @@ public sealed class HyperWhirlpoolSchemaTests
       session.FindColumn("duration_ms").Item!.Aggregate.ShouldBeNull();
    }
 
+   /// <summary>
+   /// Columns a view carries from the rows a reference finds stand for those rows' columns through its navigation, which
+   /// offers them, so they are hidden; how long the rows' time spans last bounds the rows a time filters joins.
+   /// </summary>
+   [Fact]
+   public void CarriedColumnsStandForTheColumnsOfTheRowsTheirReferencesFind()
+   {
+      SourceInfo source = new("hw", HyperWhirlpoolSourceProvider.Kind, "web");
+      QueryCatalog catalog = new CatalogBuilder().AddSource(source, Schema()).Build();
+      EntityDef views = catalog.FindEntity(EntityName.Parse("hw.page_view")).ShouldNotBeNull();
+      EntityDef session = catalog.FindEntity(EntityName.Parse("hw.session")).ShouldNotBeNull();
+      NavigationDef navigation = views.FindNavigation("session").Item.ShouldNotBeNull();
+      ColumnDef copy = views.FindColumn("session_traffic_type").Item.ShouldNotBeNull();
+      copy.Hidden.ShouldBeTrue();
+      copy.Carries.ShouldNotBeNull().Relation.ShouldBeSameAs(navigation.Relation);
+      copy.Carries.Column.ShouldBeSameAs(session.FindColumn("traffic_type").Item);
+      views.CarriedColumn(navigation.Relation, session.FindColumn("page_views").Item!).ShouldNotBeNull().Name.ShouldBe("session_page_views");
+      views.CarriedColumn(navigation.Relation, session.FindColumn("duration_ms").Item!).ShouldBeNull();
+      views.FindColumn("url").Item!.Hidden.ShouldBeFalse();
+      session.TimeSpanDays.ShouldBe(10);
+      catalog.FindEntity(EntityName.Parse("hw.device")).ShouldNotBeNull().TimeSpanDays.ShouldBeNull();
+   }
+
    [Fact]
    public void OnlyTheSchemasNamedAreRead()
    {

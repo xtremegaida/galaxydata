@@ -71,6 +71,32 @@
     },
     {
       "database": "{web}",
+      "name": "page_view",
+      "kind": "entity",
+      "declaration": "web.page_view",
+      "description": "A page shown in a browser.",
+      "key": ["page_view_id"],
+      "time": "first_seen",
+      "time_end": "last_seen",
+      "time_span_days": 10,
+      "columns": [
+        { "name": "page_view_id", "type": "UUID", "role": "key" },
+        { "name": "session_id", "type": "UUID", "role": "ref" },
+        { "name": "first_seen", "type": "DateTime64(3, 'UTC')", "role": "time" },
+        { "name": "last_seen", "type": "DateTime64(3, 'UTC')", "role": "time" },
+        { "name": "events", "type": "UInt64", "role": "attribute", "aggregate": "count" },
+        { "name": "url", "type": "String", "role": "attribute", "aggregate": "first", "description": "The page's address." },
+        { "name": "session_traffic_type", "type": "LowCardinality(Nullable(String))", "role": "carried", "description": "The session's traffic_type, carried onto each row.",
+          "carried": { "reference": "session", "column": "traffic_type" } },
+        { "name": "session_page_views", "type": "Nullable(UInt64)", "role": "carried", "description": "The session's page_views, carried onto each row.",
+          "carried": { "reference": "session", "column": "page_views" } }
+      ],
+      "references": [
+        { "name": "session", "kind": "parent", "columns": ["session_id"], "database": "{web}", "object": "session", "ref_columns": ["session_id"], "within": true }
+      ]
+    },
+    {
+      "database": "{web}",
       "name": "page_view_events",
       "kind": "stream",
       "declaration": "web.page_view",
@@ -105,6 +131,7 @@
       "key": ["session_id"],
       "time": "first_seen",
       "time_end": "last_seen",
+      "time_span_days": 10,
       "columns": [
         { "name": "session_id", "type": "UUID", "role": "key" },
         { "name": "device_id", "type": "UUID", "role": "ref" },

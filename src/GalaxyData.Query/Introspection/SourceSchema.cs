@@ -73,6 +73,12 @@ public sealed record TableSchema(string Schema, string Name, TableKind Kind, IRe
    /// <see cref="TimeColumn"/> and the source says so.
    /// </summary>
    public string? TimeEndColumn { get; init; }
+
+   /// <summary>
+   /// The most days a row's time span (<see cref="TimeColumn"/> to <see cref="TimeEndColumn"/>) can last, when the
+   /// source bounds it: a row that ends after x starts after x less that many days. Nothing checks it.
+   /// </summary>
+   public int? TimeSpanDays { get; init; }
 }
 
 public sealed record ColumnSchema(string Name, int Ordinal, string NativeType, ScalarType Type)
@@ -109,12 +115,21 @@ public sealed record ColumnSchema(string Name, int Ordinal, string NativeType, S
    /// </summary>
    public AggregateHint? Aggregate { get; init; }
 
+   /// <summary>
+   /// The column of the row a foreign key of the table finds that this one holds a copy of, when the source says so
+   /// (null when the key finds no row): reading it reads the other row's value without joining it.
+   /// </summary>
+   public CarriedColumn? CarriedFrom { get; init; }
+
    [JsonIgnore]
    public bool IsNullable => Type.Nullable;
 
    [JsonIgnore]
    public bool HasDefault => DefaultSql != null;
 }
+
+/// <summary>A column copied from the row a foreign key (<see cref="ForeignKeySchema.Name"/>) finds: its column <paramref name="Column"/>.</summary>
+public sealed record CarriedColumn(string ForeignKey, string Column);
 
 /// <summary>How a column's values are best summed up over many rows, as its source says.</summary>
 public enum AggregateHint : byte
