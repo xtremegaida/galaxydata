@@ -1,0 +1,3268 @@
+{
+  "format": "galaxydata.dashboard",
+  "version": 1,
+  "name": "Web analytics",
+  "description": "Visits, traffic sources, content, audience, forms and server requests from HyperWhirlpool's web domain",
+  "exportedAt": "2026-10-14T19:20:16.9644948Z",
+  "definition": {
+    "schema": 1,
+    "layout": {
+      "rowHeight": 48,
+      "gap": 12,
+      "breakpoints": [
+        {
+          "id": "narrow",
+          "label": "Narrow",
+          "minWidth": 0,
+          "columns": 1
+        },
+        {
+          "id": "medium",
+          "label": "Medium",
+          "minWidth": 640,
+          "columns": 6
+        },
+        {
+          "id": "wide",
+          "label": "Wide",
+          "minWidth": 1000,
+          "columns": 12
+        }
+      ],
+      "items": {
+        "ac-campaigns": {
+          "x": 0,
+          "y": 15,
+          "w": 8,
+          "h": 9
+        },
+        "ac-mix": {
+          "x": 0,
+          "y": 0,
+          "w": 8,
+          "h": 7
+        },
+        "ac-paid": {
+          "x": 8,
+          "y": 0,
+          "w": 4,
+          "h": 7
+        },
+        "ac-paid-pages": {
+          "x": 0,
+          "y": 24,
+          "w": 12,
+          "h": 7
+        },
+        "ac-ref-class": {
+          "x": 8,
+          "y": 15,
+          "w": 4,
+          "h": 9
+        },
+        "ac-referrers": {
+          "x": 6,
+          "y": 7,
+          "w": 6,
+          "h": 8
+        },
+        "ac-sources": {
+          "x": 0,
+          "y": 7,
+          "w": 6,
+          "h": 8
+        },
+        "au-bot-networks": {
+          "x": 8,
+          "y": 17,
+          "w": 4,
+          "h": 7
+        },
+        "au-browsers": {
+          "x": 8,
+          "y": 0,
+          "w": 4,
+          "h": 9
+        },
+        "au-cities": {
+          "x": 4,
+          "y": 0,
+          "w": 4,
+          "h": 9
+        },
+        "au-classes": {
+          "x": 0,
+          "y": 17,
+          "w": 8,
+          "h": 7
+        },
+        "au-countries": {
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 9
+        },
+        "au-os": {
+          "x": 8,
+          "y": 9,
+          "w": 4,
+          "h": 8
+        },
+        "au-returning": {
+          "x": 0,
+          "y": 9,
+          "w": 8,
+          "h": 8
+        },
+        "ct-daily": {
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 6
+        },
+        "ct-downloads": {
+          "x": 6,
+          "y": 28,
+          "w": 6,
+          "h": 7
+        },
+        "ct-hour": {
+          "x": 0,
+          "y": 15,
+          "w": 6,
+          "h": 7
+        },
+        "ct-outbound": {
+          "x": 0,
+          "y": 28,
+          "w": 6,
+          "h": 7
+        },
+        "ct-pages": {
+          "x": 0,
+          "y": 6,
+          "w": 12,
+          "h": 9
+        },
+        "ct-scroll": {
+          "x": 0,
+          "y": 22,
+          "w": 12,
+          "h": 6
+        },
+        "ct-weekday": {
+          "x": 6,
+          "y": 15,
+          "w": 6,
+          "h": 7
+        },
+        "fo-by-form": {
+          "x": 0,
+          "y": 3,
+          "w": 8,
+          "h": 8
+        },
+        "fo-hours": {
+          "x": 8,
+          "y": 7,
+          "w": 4,
+          "h": 4
+        },
+        "fo-latest": {
+          "x": 0,
+          "y": 19,
+          "w": 12,
+          "h": 8
+        },
+        "fo-note": {
+          "x": 0,
+          "y": 1,
+          "w": 8,
+          "h": 2
+        },
+        "fo-outcomes": {
+          "x": 8,
+          "y": 0,
+          "w": 4,
+          "h": 7
+        },
+        "fo-pages": {
+          "x": 8,
+          "y": 11,
+          "w": 4,
+          "h": 8
+        },
+        "fo-table": {
+          "x": 0,
+          "y": 11,
+          "w": 8,
+          "h": 8
+        },
+        "fo-title": {
+          "x": 0,
+          "y": 0,
+          "w": 8,
+          "h": 1
+        },
+        "ov-bounce": {
+          "x": 8,
+          "y": 12,
+          "w": 4,
+          "h": 5
+        },
+        "ov-by-type": {
+          "x": 0,
+          "y": 17,
+          "w": 8,
+          "h": 7
+        },
+        "ov-daily": {
+          "x": 0,
+          "y": 3,
+          "w": 8,
+          "h": 6
+        },
+        "ov-devices": {
+          "x": 8,
+          "y": 6,
+          "w": 4,
+          "h": 6
+        },
+        "ov-entry": {
+          "x": 8,
+          "y": 17,
+          "w": 4,
+          "h": 7
+        },
+        "ov-latest": {
+          "x": 0,
+          "y": 24,
+          "w": 12,
+          "h": 8
+        },
+        "ov-note": {
+          "x": 0,
+          "y": 1,
+          "w": 8,
+          "h": 2
+        },
+        "ov-sites": {
+          "x": 0,
+          "y": 9,
+          "w": 8,
+          "h": 8
+        },
+        "ov-title": {
+          "x": 0,
+          "y": 0,
+          "w": 8,
+          "h": 1
+        },
+        "ov-traffic": {
+          "x": 8,
+          "y": 0,
+          "w": 4,
+          "h": 6
+        },
+        "sv-kinds": {
+          "x": 8,
+          "y": 1,
+          "w": 4,
+          "h": 7
+        },
+        "sv-note": {
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 1
+        },
+        "sv-outcomes": {
+          "x": 0,
+          "y": 1,
+          "w": 4,
+          "h": 7
+        },
+        "sv-slowest": {
+          "x": 0,
+          "y": 8,
+          "w": 12,
+          "h": 8
+        },
+        "sv-status": {
+          "x": 4,
+          "y": 1,
+          "w": 4,
+          "h": 7
+        }
+      },
+      "overrides": {
+        "narrow": {
+          "columns": 1,
+          "items": {},
+          "hidden": [
+            "ov-latest",
+            "ov-by-type",
+            "ct-scroll",
+            "fo-latest",
+            "au-bot-networks"
+          ]
+        }
+      }
+    },
+    "sources": [
+      {
+        "id": "sessions",
+        "entity": "hw.session",
+        "label": "Sessions"
+      },
+      {
+        "id": "views",
+        "entity": "hw.page_view",
+        "label": "Page views"
+      },
+      {
+        "id": "devices",
+        "entity": "hw.device",
+        "label": "Visitors (devices)"
+      },
+      {
+        "id": "clicks",
+        "entity": "hw.click_events",
+        "label": "Clicks"
+      },
+      {
+        "id": "pvevents",
+        "entity": "hw.page_view_events",
+        "label": "Page view events"
+      },
+      {
+        "id": "forms",
+        "entity": "hw.form_visit",
+        "label": "Form visits"
+      },
+      {
+        "id": "requests",
+        "entity": "hw.page_request",
+        "label": "Page requests"
+      }
+    ],
+    "links": [
+      {
+        "from": "views",
+        "to": "sessions",
+        "path": [
+          "session"
+        ]
+      },
+      {
+        "from": "sessions",
+        "to": "devices",
+        "path": [
+          "device"
+        ]
+      },
+      {
+        "from": "clicks",
+        "to": "sessions",
+        "path": [
+          "session"
+        ]
+      },
+      {
+        "from": "pvevents",
+        "to": "sessions",
+        "path": [
+          "session"
+        ]
+      }
+    ],
+    "filters": [
+      {
+        "id": "period",
+        "label": "Period",
+        "field": {
+          "source": "sessions",
+          "path": [],
+          "column": "first_seen"
+        },
+        "kind": "relative",
+        "value": {
+          "op": "relative",
+          "value": null,
+          "valueTo": null,
+          "values": null,
+          "relative": {
+            "unit": "day",
+            "count": 30,
+            "mode": "last"
+          }
+        },
+        "visible": true,
+        "editable": true,
+        "multiple": false,
+        "except": [
+          "ac-mix"
+        ]
+      },
+      {
+        "id": "site",
+        "label": "Site",
+        "field": {
+          "source": "sessions",
+          "path": [],
+          "column": "site"
+        },
+        "kind": "values",
+        "value": null,
+        "visible": true,
+        "editable": true,
+        "multiple": true,
+        "except": []
+      },
+      {
+        "id": "traffic",
+        "label": "Traffic",
+        "field": {
+          "source": "sessions",
+          "path": [],
+          "column": "traffic_type"
+        },
+        "kind": "values",
+        "value": null,
+        "visible": true,
+        "editable": true,
+        "multiple": true,
+        "except": []
+      },
+      {
+        "id": "visitors",
+        "label": "Visitors",
+        "field": {
+          "source": "sessions",
+          "path": [],
+          "column": "visitor_class"
+        },
+        "kind": "values",
+        "value": {
+          "op": "in",
+          "value": null,
+          "valueTo": null,
+          "values": [
+            "human"
+          ],
+          "relative": null
+        },
+        "visible": true,
+        "editable": true,
+        "multiple": true,
+        "except": [
+          "au-classes",
+          "au-bot-networks"
+        ]
+      },
+      {
+        "id": "country",
+        "label": "Country",
+        "field": {
+          "source": "sessions",
+          "path": [],
+          "column": "country"
+        },
+        "kind": "values",
+        "value": null,
+        "visible": true,
+        "editable": true,
+        "multiple": true,
+        "except": []
+      },
+      {
+        "id": "device",
+        "label": "Device",
+        "field": {
+          "source": "sessions",
+          "path": [],
+          "column": "device_type"
+        },
+        "kind": "values",
+        "value": null,
+        "visible": true,
+        "editable": true,
+        "multiple": true,
+        "except": []
+      },
+      {
+        "id": "entry",
+        "label": "Entry page",
+        "field": {
+          "source": "sessions",
+          "path": [],
+          "column": "entry_path"
+        },
+        "kind": "text",
+        "value": null,
+        "visible": true,
+        "editable": true,
+        "multiple": false,
+        "except": []
+      },
+      {
+        "id": "paid",
+        "label": "Paid entry",
+        "field": {
+          "source": "sessions",
+          "path": [],
+          "column": "entry_paid"
+        },
+        "kind": "boolean",
+        "value": null,
+        "visible": true,
+        "editable": true,
+        "multiple": false,
+        "except": []
+      },
+      {
+        "id": "form-dates",
+        "label": "Form dates",
+        "field": {
+          "source": "forms",
+          "path": [],
+          "column": "first_seen"
+        },
+        "kind": "range",
+        "value": null,
+        "visible": true,
+        "editable": true,
+        "multiple": false,
+        "except": []
+      },
+      {
+        "id": "has-site",
+        "label": "Sessions of a site",
+        "field": {
+          "source": "sessions",
+          "path": [],
+          "column": "site"
+        },
+        "kind": "values",
+        "value": {
+          "op": "notIn",
+          "value": null,
+          "valueTo": null,
+          "values": [
+            ""
+          ],
+          "relative": null
+        },
+        "visible": false,
+        "editable": false,
+        "multiple": true,
+        "except": []
+      }
+    ],
+    "widgets": [
+      {
+        "id": "ov-title",
+        "title": null,
+        "config": {
+          "kind": "heading",
+          "text": "Web analytics",
+          "size": "large",
+          "align": "start"
+        },
+        "tab": "overview"
+      },
+      {
+        "id": "ov-note",
+        "title": null,
+        "config": {
+          "kind": "text",
+          "markdown": "Visits to the sites the HyperWhirlpool tracker is on. A **session** is a visit: it ends after 30 minutes without activity. **Visitors** are browser profiles (devices), estimated. Bots and data-centre traffic are left out until *Visitors* says otherwise. Click a slice or a bar to filter the rest; right-click for more."
+        },
+        "tab": "overview"
+      },
+      {
+        "id": "ov-traffic",
+        "title": "Traffic types",
+        "config": {
+          "kind": "pie",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "traffic_type"
+            },
+            "bucket": null,
+            "label": "Traffic type"
+          },
+          "measure": {
+            "aggregate": "count",
+            "field": null,
+            "label": "Sessions",
+            "format": {
+              "decimals": null,
+              "prefix": null,
+              "suffix": null,
+              "compact": true
+            }
+          },
+          "limit": 8,
+          "other": true,
+          "donut": true,
+          "labels": true,
+          "legend": "right",
+          "source": "sessions",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "overview"
+      },
+      {
+        "id": "ov-daily",
+        "title": "Sessions and visitors per day",
+        "config": {
+          "kind": "line",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "first_seen"
+            },
+            "bucket": "day",
+            "label": "Day"
+          },
+          "series": null,
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            },
+            {
+              "aggregate": "approxCountDistinct",
+              "field": {
+                "path": [],
+                "column": "device_id"
+              },
+              "label": "Visitors",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "limit": 1000,
+          "area": true,
+          "gaps": "zero",
+          "labels": false,
+          "legend": "top",
+          "xTitle": null,
+          "yTitle": null,
+          "source": "sessions",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "none",
+            "widgets": []
+          }
+        },
+        "tab": "overview"
+      },
+      {
+        "id": "ov-sites",
+        "title": "Sites at a glance",
+        "config": {
+          "kind": "table",
+          "mode": "grouped",
+          "dimensions": [
+            {
+              "field": {
+                "path": [],
+                "column": "site"
+              },
+              "bucket": null,
+              "label": "Site"
+            }
+          ],
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            },
+            {
+              "aggregate": "approxCountDistinct",
+              "field": {
+                "path": [],
+                "column": "device_id"
+              },
+              "label": "Visitors",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            },
+            {
+              "aggregate": "sum",
+              "field": {
+                "path": [],
+                "column": "page_views"
+              },
+              "label": "Page views",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            },
+            {
+              "aggregate": "avg",
+              "field": {
+                "path": [],
+                "column": "page_views"
+              },
+              "label": "Pages per session",
+              "format": {
+                "decimals": 2,
+                "prefix": null,
+                "suffix": null,
+                "compact": false
+              }
+            },
+            {
+              "aggregate": "avg",
+              "field": {
+                "path": [],
+                "column": "duration_ms"
+              },
+              "label": "Avg duration",
+              "format": {
+                "decimals": 0,
+                "prefix": null,
+                "suffix": " ms",
+                "compact": true
+              }
+            },
+            {
+              "aggregate": "sum",
+              "field": {
+                "path": [],
+                "column": "forms_started"
+              },
+              "label": "Forms started",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "columns": [],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "pageSize": 10,
+          "source": "sessions",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "overview"
+      },
+      {
+        "id": "ov-devices",
+        "title": "Device types",
+        "config": {
+          "kind": "pie",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "device_type"
+            },
+            "bucket": null,
+            "label": "Device type"
+          },
+          "measure": {
+            "aggregate": "count",
+            "field": null,
+            "label": "Sessions",
+            "format": {
+              "decimals": null,
+              "prefix": null,
+              "suffix": null,
+              "compact": true
+            }
+          },
+          "limit": 6,
+          "other": true,
+          "donut": true,
+          "labels": true,
+          "legend": "right",
+          "palette": 2,
+          "source": "sessions",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "overview"
+      },
+      {
+        "id": "ov-bounce",
+        "title": "Bounced, by traffic type",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "traffic_type"
+            },
+            "bucket": null,
+            "label": "Traffic type"
+          },
+          "series": {
+            "field": {
+              "path": [],
+              "column": "bounced"
+            },
+            "bucket": null,
+            "label": "Bounced"
+          },
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "limit": 10,
+          "orientation": "horizontal",
+          "stack": "percent",
+          "labels": false,
+          "legend": "top",
+          "xTitle": null,
+          "yTitle": null,
+          "palette": 3,
+          "source": "sessions",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "overview"
+      },
+      {
+        "id": "ov-by-type",
+        "title": "Sessions per day by traffic type",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "first_seen"
+            },
+            "bucket": "day",
+            "label": "Day"
+          },
+          "series": {
+            "field": {
+              "path": [],
+              "column": "traffic_type"
+            },
+            "bucket": null,
+            "label": "Traffic type"
+          },
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "sort": {
+            "by": "dimension",
+            "index": 0,
+            "descending": false
+          },
+          "limit": 400,
+          "orientation": "vertical",
+          "stack": "stacked",
+          "labels": false,
+          "legend": "top",
+          "xTitle": null,
+          "yTitle": null,
+          "seriesLimit": 8,
+          "seriesOther": true,
+          "source": "sessions",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "overview"
+      },
+      {
+        "id": "ov-entry",
+        "title": "Top entry pages",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "entry_path"
+            },
+            "bucket": null,
+            "label": "Entry page"
+          },
+          "series": null,
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "limit": 12,
+          "orientation": "horizontal",
+          "stack": "none",
+          "labels": false,
+          "legend": "none",
+          "xTitle": null,
+          "yTitle": null,
+          "source": "sessions",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "overview"
+      },
+      {
+        "id": "ov-latest",
+        "title": "Latest sessions",
+        "config": {
+          "kind": "table",
+          "mode": "raw",
+          "dimensions": [],
+          "measures": [],
+          "columns": [
+            {
+              "field": {
+                "path": [],
+                "column": "first_seen"
+              },
+              "label": "Started",
+              "format": null
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "site"
+              },
+              "label": "Site",
+              "format": null
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "entry_path"
+              },
+              "label": "Entry page",
+              "format": null
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "traffic_type"
+              },
+              "label": "Traffic",
+              "format": null
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "country"
+              },
+              "label": "Country",
+              "format": null
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "device_type"
+              },
+              "label": "Device",
+              "format": null
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "page_views"
+              },
+              "label": "Pages",
+              "format": null
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "duration_ms"
+              },
+              "label": "Duration",
+              "format": {
+                "decimals": 0,
+                "prefix": null,
+                "suffix": " ms",
+                "compact": false
+              }
+            }
+          ],
+          "sort": {
+            "by": "column",
+            "index": 0,
+            "descending": true
+          },
+          "pageSize": 15,
+          "source": "sessions",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "overview"
+      },
+      {
+        "id": "ac-mix",
+        "title": "Traffic mix by month (the last 12 months)",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "first_seen"
+            },
+            "bucket": "month",
+            "label": "Month"
+          },
+          "series": {
+            "field": {
+              "path": [],
+              "column": "traffic_type"
+            },
+            "bucket": null,
+            "label": "Traffic type"
+          },
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "sort": {
+            "by": "dimension",
+            "index": 0,
+            "descending": false
+          },
+          "limit": 24,
+          "orientation": "vertical",
+          "stack": "percent",
+          "labels": false,
+          "legend": "top",
+          "xTitle": null,
+          "yTitle": null,
+          "seriesLimit": 8,
+          "seriesOther": true,
+          "source": "sessions",
+          "conditions": [
+            {
+              "field": {
+                "path": [],
+                "column": "first_seen"
+              },
+              "value": {
+                "op": "relative",
+                "value": null,
+                "valueTo": null,
+                "values": null,
+                "relative": {
+                  "unit": "month",
+                  "count": 12,
+                  "mode": "last"
+                }
+              }
+            }
+          ],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "acquisition"
+      },
+      {
+        "id": "ac-paid",
+        "title": "Paid entry",
+        "config": {
+          "kind": "pie",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "entry_paid"
+            },
+            "bucket": null,
+            "label": "Paid"
+          },
+          "measure": {
+            "aggregate": "count",
+            "field": null,
+            "label": "Sessions",
+            "format": {
+              "decimals": null,
+              "prefix": null,
+              "suffix": null,
+              "compact": true
+            }
+          },
+          "limit": 3,
+          "other": false,
+          "donut": true,
+          "labels": true,
+          "legend": "bottom",
+          "source": "sessions",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "acquisition"
+      },
+      {
+        "id": "ac-sources",
+        "title": "Campaign sources",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "entry_utm_source"
+            },
+            "bucket": null,
+            "label": "Source"
+          },
+          "series": null,
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "limit": 15,
+          "orientation": "horizontal",
+          "stack": "none",
+          "labels": false,
+          "legend": "none",
+          "xTitle": null,
+          "yTitle": null,
+          "source": "sessions",
+          "conditions": [
+            {
+              "field": {
+                "path": [],
+                "column": "entry_utm_source"
+              },
+              "value": {
+                "op": "notBlank",
+                "value": null,
+                "valueTo": null,
+                "values": null,
+                "relative": null
+              }
+            }
+          ],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "acquisition"
+      },
+      {
+        "id": "ac-referrers",
+        "title": "Referring sites",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "entry_ref_host"
+            },
+            "bucket": null,
+            "label": "Referrer"
+          },
+          "series": null,
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "limit": 15,
+          "orientation": "horizontal",
+          "stack": "none",
+          "labels": false,
+          "legend": "none",
+          "xTitle": null,
+          "yTitle": null,
+          "source": "sessions",
+          "conditions": [
+            {
+              "field": {
+                "path": [],
+                "column": "entry_ref_host"
+              },
+              "value": {
+                "op": "notBlank",
+                "value": null,
+                "valueTo": null,
+                "values": null,
+                "relative": null
+              }
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "traffic_type"
+              },
+              "value": {
+                "op": "notIn",
+                "value": null,
+                "valueTo": null,
+                "values": [
+                  "internal"
+                ],
+                "relative": null
+              }
+            }
+          ],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "acquisition"
+      },
+      {
+        "id": "ac-campaigns",
+        "title": "Campaigns",
+        "config": {
+          "kind": "table",
+          "mode": "grouped",
+          "dimensions": [
+            {
+              "field": {
+                "path": [],
+                "column": "entry_utm_source"
+              },
+              "bucket": null,
+              "label": "Source"
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "entry_utm_medium"
+              },
+              "bucket": null,
+              "label": "Medium"
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "entry_utm_campaign"
+              },
+              "bucket": null,
+              "label": "Campaign"
+            }
+          ],
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            },
+            {
+              "aggregate": "approxCountDistinct",
+              "field": {
+                "path": [],
+                "column": "device_id"
+              },
+              "label": "Visitors",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            },
+            {
+              "aggregate": "avg",
+              "field": {
+                "path": [],
+                "column": "page_views"
+              },
+              "label": "Pages per session",
+              "format": {
+                "decimals": 2,
+                "prefix": null,
+                "suffix": null,
+                "compact": false
+              }
+            },
+            {
+              "aggregate": "sum",
+              "field": {
+                "path": [],
+                "column": "forms_started"
+              },
+              "label": "Forms started",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            },
+            {
+              "aggregate": "sum",
+              "field": {
+                "path": [],
+                "column": "form_attempts"
+              },
+              "label": "Form attempts",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "columns": [],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "pageSize": 12,
+          "source": "sessions",
+          "conditions": [
+            {
+              "field": {
+                "path": [],
+                "column": "entry_utm_campaign"
+              },
+              "value": {
+                "op": "notBlank",
+                "value": null,
+                "valueTo": null,
+                "values": null,
+                "relative": null
+              }
+            }
+          ],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "acquisition"
+      },
+      {
+        "id": "ac-ref-class",
+        "title": "Search and social referrals (page views)",
+        "config": {
+          "kind": "pie",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "ref_class"
+            },
+            "bucket": null,
+            "label": "Referrer class"
+          },
+          "measure": {
+            "aggregate": "count",
+            "field": null,
+            "label": "Page views",
+            "format": {
+              "decimals": null,
+              "prefix": null,
+              "suffix": null,
+              "compact": true
+            }
+          },
+          "limit": 3,
+          "other": false,
+          "donut": true,
+          "labels": true,
+          "legend": "bottom",
+          "source": "pvevents",
+          "conditions": [
+            {
+              "field": {
+                "path": [],
+                "column": "ref_class"
+              },
+              "value": {
+                "op": "notBlank",
+                "value": null,
+                "valueTo": null,
+                "values": null,
+                "relative": null
+              }
+            }
+          ],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "acquisition"
+      },
+      {
+        "id": "ac-paid-pages",
+        "title": "Landing pages of paid traffic",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "entry_path"
+            },
+            "bucket": null,
+            "label": "Entry page"
+          },
+          "series": null,
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "limit": 12,
+          "orientation": "horizontal",
+          "stack": "none",
+          "labels": false,
+          "legend": "none",
+          "xTitle": null,
+          "yTitle": null,
+          "source": "sessions",
+          "conditions": [
+            {
+              "field": {
+                "path": [],
+                "column": "entry_paid"
+              },
+              "value": {
+                "op": "eq",
+                "value": true,
+                "valueTo": null,
+                "values": null,
+                "relative": null
+              }
+            }
+          ],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "acquisition"
+      },
+      {
+        "id": "ct-daily",
+        "title": "Page views per day",
+        "config": {
+          "kind": "line",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "first_seen"
+            },
+            "bucket": "day",
+            "label": "Day"
+          },
+          "series": null,
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Page views",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "limit": 1000,
+          "area": true,
+          "gaps": "zero",
+          "labels": false,
+          "legend": "none",
+          "xTitle": null,
+          "yTitle": null,
+          "source": "views",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "none",
+            "widgets": []
+          }
+        },
+        "tab": "content"
+      },
+      {
+        "id": "ct-pages",
+        "title": "Top pages",
+        "config": {
+          "kind": "table",
+          "mode": "grouped",
+          "dimensions": [
+            {
+              "field": {
+                "path": [],
+                "column": "path"
+              },
+              "bucket": null,
+              "label": "Page"
+            }
+          ],
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Page views",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            },
+            {
+              "aggregate": "avg",
+              "field": {
+                "path": [],
+                "column": "active_ms"
+              },
+              "label": "Avg active time",
+              "format": {
+                "decimals": 0,
+                "prefix": null,
+                "suffix": " ms",
+                "compact": true
+              }
+            },
+            {
+              "aggregate": "avg",
+              "field": {
+                "path": [],
+                "column": "max_scroll_pct"
+              },
+              "label": "Avg scroll depth",
+              "format": {
+                "decimals": 0,
+                "prefix": null,
+                "suffix": "%",
+                "compact": false
+              }
+            },
+            {
+              "aggregate": "avg",
+              "field": {
+                "path": [],
+                "column": "scrolled_to_end"
+              },
+              "label": "Read to the end",
+              "format": {
+                "decimals": 2,
+                "prefix": null,
+                "suffix": null,
+                "compact": false
+              }
+            },
+            {
+              "aggregate": "sum",
+              "field": {
+                "path": [],
+                "column": "clicks"
+              },
+              "label": "Clicks",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            },
+            {
+              "aggregate": "sum",
+              "field": {
+                "path": [],
+                "column": "forms_started"
+              },
+              "label": "Forms started",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "columns": [],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "pageSize": 12,
+          "source": "views",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "content"
+      },
+      {
+        "id": "ct-hour",
+        "title": "Page views by hour of day (UTC)",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "first_seen"
+            },
+            "bucket": "hourOfDay",
+            "label": "Hour"
+          },
+          "series": {
+            "field": {
+              "path": [],
+              "column": "session_device_type"
+            },
+            "bucket": null,
+            "label": "Device type"
+          },
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Page views",
+              "format": null
+            }
+          ],
+          "sort": {
+            "by": "dimension",
+            "index": 0,
+            "descending": false
+          },
+          "limit": 24,
+          "orientation": "vertical",
+          "stack": "stacked",
+          "labels": false,
+          "legend": "top",
+          "xTitle": null,
+          "yTitle": null,
+          "palette": 2,
+          "source": "views",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "content"
+      },
+      {
+        "id": "ct-weekday",
+        "title": "Page views by day of week",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "first_seen"
+            },
+            "bucket": "dayOfWeek",
+            "label": "Day of week"
+          },
+          "series": {
+            "field": {
+              "path": [],
+              "column": "session_device_type"
+            },
+            "bucket": null,
+            "label": "Device type"
+          },
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Page views",
+              "format": null
+            }
+          ],
+          "sort": {
+            "by": "dimension",
+            "index": 0,
+            "descending": false
+          },
+          "limit": 7,
+          "orientation": "vertical",
+          "stack": "stacked",
+          "labels": false,
+          "legend": "top",
+          "xTitle": null,
+          "yTitle": null,
+          "palette": 2,
+          "source": "views",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "content"
+      },
+      {
+        "id": "ct-scroll",
+        "title": "How far pages are scrolled",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "max_scroll_pct"
+            },
+            "bucket": null,
+            "label": "Scroll depth (%)"
+          },
+          "series": null,
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Page views",
+              "format": null
+            }
+          ],
+          "sort": {
+            "by": "dimension",
+            "index": 0,
+            "descending": false
+          },
+          "limit": 101,
+          "orientation": "vertical",
+          "stack": "none",
+          "labels": false,
+          "legend": "none",
+          "xTitle": "Deepest scroll (%)",
+          "yTitle": "Page views",
+          "source": "views",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "content"
+      },
+      {
+        "id": "ct-outbound",
+        "title": "Outbound links",
+        "config": {
+          "kind": "table",
+          "mode": "grouped",
+          "dimensions": [
+            {
+              "field": {
+                "path": [],
+                "column": "href_host"
+              },
+              "bucket": null,
+              "label": "Site linked to"
+            }
+          ],
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Clicks",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            },
+            {
+              "aggregate": "countDistinct",
+              "field": {
+                "path": [],
+                "column": "session_id"
+              },
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "columns": [],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "pageSize": 10,
+          "source": "clicks",
+          "conditions": [
+            {
+              "field": {
+                "path": [],
+                "column": "outbound"
+              },
+              "value": {
+                "op": "eq",
+                "value": 1,
+                "valueTo": null,
+                "values": null,
+                "relative": null
+              }
+            }
+          ],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "content"
+      },
+      {
+        "id": "ct-downloads",
+        "title": "Downloads",
+        "config": {
+          "kind": "table",
+          "mode": "grouped",
+          "dimensions": [
+            {
+              "field": {
+                "path": [],
+                "column": "href"
+              },
+              "bucket": null,
+              "label": "File"
+            }
+          ],
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Clicks",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            },
+            {
+              "aggregate": "countDistinct",
+              "field": {
+                "path": [],
+                "column": "session_id"
+              },
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "columns": [],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "pageSize": 10,
+          "source": "clicks",
+          "conditions": [
+            {
+              "field": {
+                "path": [],
+                "column": "download"
+              },
+              "value": {
+                "op": "eq",
+                "value": 1,
+                "valueTo": null,
+                "values": null,
+                "relative": null
+              }
+            }
+          ],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "content"
+      },
+      {
+        "id": "au-countries",
+        "title": "Countries",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "country"
+            },
+            "bucket": null,
+            "label": "Country"
+          },
+          "series": null,
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "limit": 20,
+          "orientation": "horizontal",
+          "stack": "none",
+          "labels": false,
+          "legend": "none",
+          "xTitle": null,
+          "yTitle": null,
+          "source": "sessions",
+          "conditions": [
+            {
+              "field": {
+                "path": [],
+                "column": "country"
+              },
+              "value": {
+                "op": "notBlank",
+                "value": null,
+                "valueTo": null,
+                "values": null,
+                "relative": null
+              }
+            }
+          ],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "audience"
+      },
+      {
+        "id": "au-cities",
+        "title": "Cities",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "city"
+            },
+            "bucket": null,
+            "label": "City"
+          },
+          "series": null,
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "limit": 20,
+          "orientation": "horizontal",
+          "stack": "none",
+          "labels": false,
+          "legend": "none",
+          "xTitle": null,
+          "yTitle": null,
+          "source": "sessions",
+          "conditions": [
+            {
+              "field": {
+                "path": [],
+                "column": "city"
+              },
+              "value": {
+                "op": "notBlank",
+                "value": null,
+                "valueTo": null,
+                "values": null,
+                "relative": null
+              }
+            }
+          ],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "audience"
+      },
+      {
+        "id": "au-browsers",
+        "title": "Browsers",
+        "config": {
+          "kind": "pie",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "browser"
+            },
+            "bucket": null,
+            "label": "Browser"
+          },
+          "measure": {
+            "aggregate": "count",
+            "field": null,
+            "label": "Sessions",
+            "format": {
+              "decimals": null,
+              "prefix": null,
+              "suffix": null,
+              "compact": true
+            }
+          },
+          "limit": 8,
+          "other": true,
+          "donut": true,
+          "labels": true,
+          "legend": "right",
+          "source": "sessions",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "audience"
+      },
+      {
+        "id": "au-os",
+        "title": "Operating systems",
+        "config": {
+          "kind": "pie",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "os"
+            },
+            "bucket": null,
+            "label": "Operating system"
+          },
+          "measure": {
+            "aggregate": "count",
+            "field": null,
+            "label": "Sessions",
+            "format": {
+              "decimals": null,
+              "prefix": null,
+              "suffix": null,
+              "compact": true
+            }
+          },
+          "limit": 8,
+          "other": true,
+          "donut": true,
+          "labels": true,
+          "legend": "right",
+          "source": "sessions",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "audience"
+      },
+      {
+        "id": "au-returning",
+        "title": "Visitors by number of visits",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "sessions"
+            },
+            "bucket": null,
+            "label": "Sessions"
+          },
+          "series": null,
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Visitors",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "sort": {
+            "by": "dimension",
+            "index": 0,
+            "descending": false
+          },
+          "limit": 15,
+          "orientation": "vertical",
+          "stack": "none",
+          "labels": false,
+          "legend": "none",
+          "xTitle": "Sessions so far",
+          "yTitle": "Visitors",
+          "source": "devices",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "audience"
+      },
+      {
+        "id": "au-classes",
+        "title": "Visitor classes per day (bots included)",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "first_seen"
+            },
+            "bucket": "day",
+            "label": "Day"
+          },
+          "series": {
+            "field": {
+              "path": [],
+              "column": "visitor_class"
+            },
+            "bucket": null,
+            "label": "Visitor class"
+          },
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "sort": {
+            "by": "dimension",
+            "index": 0,
+            "descending": false
+          },
+          "limit": 400,
+          "orientation": "vertical",
+          "stack": "stacked",
+          "labels": false,
+          "legend": "top",
+          "xTitle": null,
+          "yTitle": null,
+          "seriesLimit": 4,
+          "source": "sessions",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "audience"
+      },
+      {
+        "id": "au-bot-networks",
+        "title": "Networks behind automated traffic",
+        "config": {
+          "kind": "table",
+          "mode": "grouped",
+          "dimensions": [
+            {
+              "field": {
+                "path": [],
+                "column": "as_org"
+              },
+              "bucket": null,
+              "label": "Network"
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "visitor_class"
+              },
+              "bucket": null,
+              "label": "Class"
+            }
+          ],
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Sessions",
+              "format": {
+                "decimals": null,
+                "prefix": null,
+                "suffix": null,
+                "compact": true
+              }
+            }
+          ],
+          "columns": [],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "pageSize": 10,
+          "source": "sessions",
+          "conditions": [
+            {
+              "field": {
+                "path": [],
+                "column": "visitor_class"
+              },
+              "value": {
+                "op": "in",
+                "value": null,
+                "valueTo": null,
+                "values": [
+                  "bot",
+                  "datacenter",
+                  "suspect"
+                ],
+                "relative": null
+              }
+            }
+          ],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "audience"
+      },
+      {
+        "id": "fo-title",
+        "title": null,
+        "config": {
+          "kind": "heading",
+          "text": "Forms",
+          "size": "medium",
+          "align": "start"
+        },
+        "tab": "forms"
+      },
+      {
+        "id": "fo-note",
+        "title": null,
+        "config": {
+          "kind": "text",
+          "markdown": "Each visitor's go at a form on a page. Forms are tracked from **13 October 2026**, and aren't linked to sessions, so only *Form dates* filters them."
+        },
+        "tab": "forms"
+      },
+      {
+        "id": "fo-outcomes",
+        "title": "Outcomes",
+        "config": {
+          "kind": "pie",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "outcome"
+            },
+            "bucket": null,
+            "label": "Outcome"
+          },
+          "measure": {
+            "aggregate": "count",
+            "field": null,
+            "label": "Form visits",
+            "format": null
+          },
+          "limit": 8,
+          "other": false,
+          "donut": true,
+          "labels": true,
+          "legend": "right",
+          "source": "forms",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "forms"
+      },
+      {
+        "id": "fo-by-form",
+        "title": "Outcomes by form",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "form"
+            },
+            "bucket": null,
+            "label": "Form"
+          },
+          "series": {
+            "field": {
+              "path": [],
+              "column": "outcome"
+            },
+            "bucket": null,
+            "label": "Outcome"
+          },
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Form visits",
+              "format": null
+            }
+          ],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "limit": 12,
+          "orientation": "horizontal",
+          "stack": "percent",
+          "labels": false,
+          "legend": "top",
+          "xTitle": null,
+          "yTitle": null,
+          "seriesLimit": 8,
+          "source": "forms",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "forms"
+      },
+      {
+        "id": "fo-hours",
+        "title": "Form visits by hour of day (UTC)",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "first_seen"
+            },
+            "bucket": "hourOfDay",
+            "label": "Hour"
+          },
+          "series": null,
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Form visits",
+              "format": null
+            }
+          ],
+          "sort": {
+            "by": "dimension",
+            "index": 0,
+            "descending": false
+          },
+          "limit": 24,
+          "orientation": "vertical",
+          "stack": "none",
+          "labels": false,
+          "legend": "none",
+          "xTitle": null,
+          "yTitle": null,
+          "source": "forms",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "forms"
+      },
+      {
+        "id": "fo-table",
+        "title": "Forms",
+        "config": {
+          "kind": "table",
+          "mode": "grouped",
+          "dimensions": [
+            {
+              "field": {
+                "path": [],
+                "column": "form"
+              },
+              "bucket": null,
+              "label": "Form"
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "plugin"
+              },
+              "bucket": null,
+              "label": "Plugin"
+            }
+          ],
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Visits",
+              "format": null
+            },
+            {
+              "aggregate": "sum",
+              "field": {
+                "path": [],
+                "column": "attempts"
+              },
+              "label": "Attempts",
+              "format": null
+            },
+            {
+              "aggregate": "sum",
+              "field": {
+                "path": [],
+                "column": "blocked_attempts"
+              },
+              "label": "Blocked attempts",
+              "format": null
+            },
+            {
+              "aggregate": "sum",
+              "field": {
+                "path": [],
+                "column": "rejections"
+              },
+              "label": "Rejections",
+              "format": null
+            },
+            {
+              "aggregate": "avg",
+              "field": {
+                "path": [],
+                "column": "start_to_submit_ms"
+              },
+              "label": "Start to submit",
+              "format": {
+                "decimals": 0,
+                "prefix": null,
+                "suffix": " ms",
+                "compact": true
+              }
+            }
+          ],
+          "columns": [],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "pageSize": 10,
+          "source": "forms",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "forms"
+      },
+      {
+        "id": "fo-pages",
+        "title": "Pages with forms",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "path"
+            },
+            "bucket": null,
+            "label": "Page"
+          },
+          "series": null,
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Form visits",
+              "format": null
+            }
+          ],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "limit": 12,
+          "orientation": "horizontal",
+          "stack": "none",
+          "labels": false,
+          "legend": "none",
+          "xTitle": null,
+          "yTitle": null,
+          "source": "forms",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "forms"
+      },
+      {
+        "id": "fo-latest",
+        "title": "Latest form visits",
+        "config": {
+          "kind": "table",
+          "mode": "raw",
+          "dimensions": [],
+          "measures": [],
+          "columns": [
+            {
+              "field": {
+                "path": [],
+                "column": "first_seen"
+              },
+              "label": "When",
+              "format": null
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "form"
+              },
+              "label": "Form",
+              "format": null
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "path"
+              },
+              "label": "Page",
+              "format": null
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "country"
+              },
+              "label": "Country",
+              "format": null
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "attempts"
+              },
+              "label": "Attempts",
+              "format": null
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "outcome"
+              },
+              "label": "Outcome",
+              "format": null
+            }
+          ],
+          "sort": {
+            "by": "column",
+            "index": 0,
+            "descending": true
+          },
+          "pageSize": 15,
+          "source": "forms",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "forms"
+      },
+      {
+        "id": "sv-note",
+        "title": null,
+        "config": {
+          "kind": "text",
+          "markdown": "Page requests the sites' servers logged (the WordPress plugin), and whether a page view followed. Logged from **13 October 2026**."
+        },
+        "tab": "server"
+      },
+      {
+        "id": "sv-outcomes",
+        "title": "What came of requests",
+        "config": {
+          "kind": "pie",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "outcome"
+            },
+            "bucket": null,
+            "label": "Outcome"
+          },
+          "measure": {
+            "aggregate": "count",
+            "field": null,
+            "label": "Requests",
+            "format": null
+          },
+          "limit": 8,
+          "other": false,
+          "donut": true,
+          "labels": true,
+          "legend": "right",
+          "source": "requests",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "server"
+      },
+      {
+        "id": "sv-status",
+        "title": "Status codes",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "status"
+            },
+            "bucket": null,
+            "label": "Status"
+          },
+          "series": null,
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Requests",
+              "format": null
+            }
+          ],
+          "sort": {
+            "by": "dimension",
+            "index": 0,
+            "descending": false
+          },
+          "limit": 20,
+          "orientation": "vertical",
+          "stack": "none",
+          "labels": false,
+          "legend": "none",
+          "xTitle": null,
+          "yTitle": null,
+          "colorBy": "category",
+          "source": "requests",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "server"
+      },
+      {
+        "id": "sv-kinds",
+        "title": "Requests by kind",
+        "config": {
+          "kind": "bar",
+          "dimension": {
+            "field": {
+              "path": [],
+              "column": "kind"
+            },
+            "bucket": null,
+            "label": "Kind"
+          },
+          "series": {
+            "field": {
+              "path": [],
+              "column": "post_type"
+            },
+            "bucket": null,
+            "label": "Post type"
+          },
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Requests",
+              "format": null
+            }
+          ],
+          "sort": {
+            "by": "measure",
+            "index": 0,
+            "descending": true
+          },
+          "limit": 10,
+          "orientation": "horizontal",
+          "stack": "stacked",
+          "labels": false,
+          "legend": "top",
+          "xTitle": null,
+          "yTitle": null,
+          "seriesLimit": 5,
+          "seriesOther": true,
+          "source": "requests",
+          "conditions": [],
+          "emits": true,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "server"
+      },
+      {
+        "id": "sv-slowest",
+        "title": "Slowest paths",
+        "config": {
+          "kind": "table",
+          "mode": "grouped",
+          "dimensions": [
+            {
+              "field": {
+                "path": [],
+                "column": "path"
+              },
+              "bucket": null,
+              "label": "Path"
+            }
+          ],
+          "measures": [
+            {
+              "aggregate": "count",
+              "field": null,
+              "label": "Requests",
+              "format": null
+            },
+            {
+              "aggregate": "avg",
+              "field": {
+                "path": [],
+                "column": "server_ms"
+              },
+              "label": "Avg server time",
+              "format": {
+                "decimals": 0,
+                "prefix": null,
+                "suffix": " ms",
+                "compact": false
+              }
+            },
+            {
+              "aggregate": "max",
+              "field": {
+                "path": [],
+                "column": "server_ms"
+              },
+              "label": "Slowest",
+              "format": {
+                "decimals": 0,
+                "prefix": null,
+                "suffix": " ms",
+                "compact": false
+              }
+            }
+          ],
+          "columns": [],
+          "sort": {
+            "by": "measure",
+            "index": 1,
+            "descending": true
+          },
+          "pageSize": 12,
+          "source": "requests",
+          "conditions": [],
+          "emits": false,
+          "listens": {
+            "mode": "all",
+            "widgets": []
+          }
+        },
+        "tab": "server"
+      }
+    ],
+    "refresh": {
+      "mode": "interval",
+      "seconds": 900
+    },
+    "public": {
+      "showData": true
+    },
+    "palette": 1,
+    "tabs": [
+      {
+        "id": "overview",
+        "label": "Overview"
+      },
+      {
+        "id": "acquisition",
+        "label": "Acquisition"
+      },
+      {
+        "id": "content",
+        "label": "Content"
+      },
+      {
+        "id": "audience",
+        "label": "Audience"
+      },
+      {
+        "id": "forms",
+        "label": "Forms"
+      },
+      {
+        "id": "server",
+        "label": "Server"
+      }
+    ]
+  },
+  "palettes": [
+    {
+      "id": 1,
+      "name": "Web traffic types",
+      "description": "HyperWhirlpool's traffic types, each in its own colour",
+      "definition": {
+        "colors": [
+          {
+            "light": "#2a78d6",
+            "dark": "#3987e5"
+          },
+          {
+            "light": "#eb6834",
+            "dark": "#d95926"
+          },
+          {
+            "light": "#1baf7a",
+            "dark": "#199e70"
+          },
+          {
+            "light": "#eda100",
+            "dark": "#c98500"
+          },
+          {
+            "light": "#e87ba4",
+            "dark": "#d55181"
+          },
+          {
+            "light": "#008300",
+            "dark": "#008300"
+          },
+          {
+            "light": "#4a3aa7",
+            "dark": "#9085e9"
+          },
+          {
+            "light": "#e34948",
+            "dark": "#e66767"
+          }
+        ],
+        "assign": "label",
+        "distinct": true,
+        "whenOut": "neutral",
+        "matching": {
+          "ignoreCase": true,
+          "ignoreWhitespace": false,
+          "ignoreBrackets": false,
+          "ignoreAccents": false
+        },
+        "overrides": [
+          {
+            "label": "paid",
+            "color": {
+              "light": "#2a78d6",
+              "dark": "#3987e5"
+            }
+          },
+          {
+            "label": "direct",
+            "color": {
+              "light": "#eb6834",
+              "dark": "#d95926"
+            }
+          },
+          {
+            "label": "organic_search",
+            "color": {
+              "light": "#1baf7a",
+              "dark": "#199e70"
+            }
+          },
+          {
+            "label": "campaign",
+            "color": {
+              "light": "#eda100",
+              "dark": "#c98500"
+            }
+          },
+          {
+            "label": "internal",
+            "color": {
+              "light": "#e87ba4",
+              "dark": "#d55181"
+            }
+          },
+          {
+            "label": "referral",
+            "color": {
+              "light": "#008300",
+              "dark": "#008300"
+            }
+          },
+          {
+            "label": "email",
+            "color": {
+              "light": "#4a3aa7",
+              "dark": "#9085e9"
+            }
+          },
+          {
+            "label": "social",
+            "color": {
+              "light": "#e34948",
+              "dark": "#e66767"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "name": "Web device types",
+      "description": "Device types: mobile, desktop, bot, tablet, tv",
+      "definition": {
+        "colors": [
+          {
+            "light": "#1baf7a",
+            "dark": "#199e70"
+          },
+          {
+            "light": "#4a3aa7",
+            "dark": "#9085e9"
+          },
+          {
+            "light": "#e34948",
+            "dark": "#e66767"
+          },
+          {
+            "light": "#2a78d6",
+            "dark": "#3987e5"
+          },
+          {
+            "light": "#eda100",
+            "dark": "#c98500"
+          }
+        ],
+        "assign": "label",
+        "distinct": true,
+        "whenOut": "neutral",
+        "matching": {
+          "ignoreCase": true,
+          "ignoreWhitespace": false,
+          "ignoreBrackets": false,
+          "ignoreAccents": false
+        },
+        "overrides": [
+          {
+            "label": "mobile",
+            "color": {
+              "light": "#1baf7a",
+              "dark": "#199e70"
+            }
+          },
+          {
+            "label": "desktop",
+            "color": {
+              "light": "#4a3aa7",
+              "dark": "#9085e9"
+            }
+          },
+          {
+            "label": "bot",
+            "color": {
+              "light": "#e34948",
+              "dark": "#e66767"
+            }
+          },
+          {
+            "label": "tablet",
+            "color": {
+              "light": "#2a78d6",
+              "dark": "#3987e5"
+            }
+          },
+          {
+            "label": "tv",
+            "color": {
+              "light": "#eda100",
+              "dark": "#c98500"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "name": "Bounced or not",
+      "description": "A visit that bounced (one page, no interaction) in orange; one that went on in blue",
+      "definition": {
+        "colors": [
+          {
+            "light": "#2a78d6",
+            "dark": "#3987e5"
+          },
+          {
+            "light": "#eb6834",
+            "dark": "#d95926"
+          }
+        ],
+        "assign": "label",
+        "distinct": true,
+        "whenOut": "neutral",
+        "matching": {
+          "ignoreCase": true,
+          "ignoreWhitespace": false,
+          "ignoreBrackets": false,
+          "ignoreAccents": false
+        },
+        "overrides": [
+          {
+            "label": "false",
+            "color": {
+              "light": "#2a78d6",
+              "dark": "#3987e5"
+            }
+          },
+          {
+            "label": "true",
+            "color": {
+              "light": "#eb6834",
+              "dark": "#d95926"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

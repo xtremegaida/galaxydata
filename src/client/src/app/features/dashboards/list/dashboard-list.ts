@@ -5,6 +5,7 @@ import { MatAnchor, MatButton, MatIconButton } from '@angular/material/button';
 import { MatMenu, MatMenuContent, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
 import { MatFormField, MatLabel, MatPrefix } from '@angular/material/form-field';
 import { MatIcon } from '@angular/material/icon';
+import { MatDialog } from '@angular/material/dialog';
 import { MatInput } from '@angular/material/input';
 import { MatProgressBar } from '@angular/material/progress-bar';
 import { Router, RouterLink } from '@angular/router';
@@ -58,6 +59,18 @@ const sharing: Record<Summary['sharing'], string> = {
           <mat-icon>palette</mat-icon>
           Palettes
         </a>
+        <button matButton type="button" (click)="fileInput.click()">
+          <mat-icon>upload_file</mat-icon>
+          Import
+        </button>
+        <input
+          #fileInput
+          class="file"
+          type="file"
+          accept=".json,application/json"
+          aria-label="A dashboard's file to import"
+          (change)="importFile(fileInput)"
+        />
         <a matButton="filled" routerLink="new">
           <mat-icon>add</mat-icon>
           New dashboard
@@ -135,6 +148,10 @@ const sharing: Record<Summary['sharing'], string> = {
                 <mat-icon>content_copy</mat-icon>
                 Copy
               </button>
+              <a mat-menu-item [href]="'/api/dashboards/' + item.id + '/export'" download>
+                <mat-icon>download</mat-icon>
+                Export
+              </a>
             }
             @if (admin() && !item.isMine && item.sharing !== 'private') {
               <button mat-menu-item type="button" (click)="makePrivate(item)">
@@ -185,6 +202,9 @@ const sharing: Record<Summary['sharing'], string> = {
       align-items: center;
       gap: 8px 16px;
       margin-bottom: 16px;
+    }
+    .file {
+      display: none;
     }
     .header h1 {
       flex: 1 1 auto;
@@ -245,6 +265,7 @@ export class DashboardList {
   private readonly api = inject(ApiClient);
   private readonly auth = inject(AuthStore);
   private readonly confirmer = inject(Confirmer);
+  private readonly dialog = inject(MatDialog);
   private readonly router = inject(Router);
 
   /** Administrators also see others' shared, public and orphaned dashboards, and may narrow or delete them. */
@@ -293,6 +314,37 @@ export class DashboardList {
       void this.router.navigate(['/dashboards', copy.id]);
     } catch (error) {
       this.done.set(`Couldn't copy ${item.name}: ${problemMessage(problemOf(error))}`);
+    }
+  }
+
+  /** A dashboard's file chosen: read, and if it is one, brought in as the dialog says, then shown. */
+  protected async importFile(input: HTMLInputElement): Promise<void> {
+    const chosen = input.files?.[0];
+    input.value = '';
+    if (!chosen) {
+      return;
+    }
+    const { ImportDialog, maxExportBytes, readExport } = await import('../dialogs/import-dialog');
+    if (chosen.size > maxExportBytes) {
+      this.done.set(`Couldn't import ${chosen.name}: it is larger than a dashboard's file can be.`);
+      return;
+    }
+    const file = readExport(await chosen.text());
+    if (typeof file === 'string') {
+      this.done.set(`Couldn't import ${chosen.name}: ${file}`);
+      return;
+    }
+    this.done.set(null);
+    const imported = await firstValueFrom(
+      this.dialog
+        .open(ImportDialog, {
+          data: { file, name: await this.freeName(file.name) },
+          maxWidth: '95vw',
+        })
+        .afterClosed(),
+    );
+    if (imported) {
+      void this.router.navigate(['/dashboards', (imported as Schema<'DashboardDto'>).id]);
     }
   }
 

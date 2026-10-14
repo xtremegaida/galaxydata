@@ -132,6 +132,24 @@ public static class PaletteRefs
       return named;
    }
 
+   /// <summary>The definition naming other palettes: each named by <paramref name="map"/>'s answer for it (null: none).</summary>
+   public static DashboardDefinition Remap(DashboardDefinition definition, Func<int, int?> map)
+   {
+      ArgumentNullException.ThrowIfNull(definition);
+      ArgumentNullException.ThrowIfNull(map);
+      return definition with
+      {
+         Palette = definition.Palette is { } palette ? map(palette) : null,
+         Widgets = [.. definition.Widgets.Select(w => w.Config switch
+         {
+            PieConfig { Palette: { } own } pie => w with { Config = pie with { Palette = map(own) } },
+            BarConfig { Palette: { } own } bar => w with { Config = bar with { Palette = map(own) } },
+            LineConfig { Palette: { } own } line => w with { Config = line with { Palette = map(own) } },
+            _ => w,
+         })],
+      };
+   }
+
    /// <summary>The palettes a chart may be drawn with, in turn: its own, then the dashboard's (one that isn't there gives way to the next).</summary>
    public static List<int> For(DashboardDefinition definition, DashboardWidget widget)
    {

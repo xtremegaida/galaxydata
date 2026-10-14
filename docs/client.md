@@ -508,11 +508,17 @@ the server keeps and checks).
 
 - **The list:** the user's own and those shared with them (administrators: also others' shared, public and
   ownerless ones), found by name; each with its sharing, whether it is public, published and changed since. A menu
-  each: Edit and Delete one's own, Copy, and for administrators Make private and Stop its public link.
+  each: Edit and Delete one's own, Copy, Export (a link to the server's file, which names it), and for
+  administrators Make private and Stop its public link. **Import** reads a dashboard's file chosen (JSON of the
+  format and version read here, 1 MB at most; otherwise it says why not) and opens the import dialog
+  (`dialogs/import-dialog.ts`): its name (one none of the user's dashboards has), the connection here for each
+  alias its sources name (the same one when there is one; `/api/catalog` lists them), and the palettes it brings.
+  Imported, the dashboard is opened; what the server refuses is listed by field.
 - **A dashboard** (`dashboard-page.ts`): its published copy (its owner's working copy while there is none, or on
   asking, `?copy=working`). It has no title section: headings and notes are widgets, so a blank dashboard is a
   blank page; its name is the page's title and a heading only screen readers find. A bar holds Refresh (and when
-  the rows were read), Publish, Share and Edit as the user may, and a menu: Revisions, Copy, Delete.
+  the rows were read), Publish, Share and Edit as the user may, and a menu: Revisions, Copy, Export (the copy
+  shown), Delete.
 - **The grid** (`layout/`): a CSS grid of the breakpoint the grid's own width reaches (`ResizeObserver`), the
   widest the one designed; narrower ones derived from it (widths scaled, placed in reading order) unless laid out
   by hand. Its order is the reading order, so tabbing follows what is seen. `grid-layout.ts` is the layout's pure

@@ -28,6 +28,7 @@
     <Compile Include="..\Shared\Excel\XlsxBuilder.cs" LinkBase="Shared" />
     <None Include="..\fixtures\**\*.sql" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\**\*.json" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\examples\dashboards\*.dashboard.json" LinkBase="examples\dashboards" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

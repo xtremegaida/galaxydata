@@ -133,6 +133,7 @@ public static class DashboardEndpoints
       dashboards.MapPost("/{id:int}/copy", CopyAsync).WithName("CopyDashboard").WithSummary("Saves a copy as a new dashboard of the user's")
          .ProducesValidationProblem().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
       DashboardDataEndpoints.MapDashboardData(dashboards);
+      DashboardTransferEndpoints.MapDashboardTransfer(dashboards);
       return api;
    }
 
@@ -498,7 +499,7 @@ public static class DashboardEndpoints
    }
 
    /// <summary>Reads a request into the row; what is wrong goes in <paramref name="errors"/>, by field.</summary>
-   private static void Fill(Dashboard row, string name, string? description, DashboardDefinition? definition, DefinitionRules rules, Dictionary<string, string[]> errors)
+   internal static void Fill(Dashboard row, string name, string? description, DashboardDefinition? definition, DefinitionRules rules, Dictionary<string, string[]> errors)
    {
       string? trimmed = Name(name, "name", errors);
       DashboardDefinition? checkedDefinition = rules.Check(definition, "definition.", errors);
@@ -564,11 +565,11 @@ public static class DashboardEndpoints
    private static string Target(Dashboard row) => $"dashboard:{row.Id}";
 
    /// <summary>Whether the owner has another dashboard of the name; dashboards of deleted owners are no one's, so share names freely.</summary>
-   private static async Task<bool> NameTakenAsync(MetadataDb db, Dashboard row, CancellationToken cancellationToken) =>
+   internal static async Task<bool> NameTakenAsync(MetadataDb db, Dashboard row, CancellationToken cancellationToken) =>
       row.OwnerId != null && await db.Dashboards.AnyAsync(d => d.Id != row.Id && d.OwnerId == row.OwnerId && d.Name == row.Name, cancellationToken);
 
    /// <summary>Saves; false when a dashboard of the owner's took the name first (the unique index).</summary>
-   private static async Task<bool> SavedAsync(MetadataDb db, CancellationToken cancellationToken)
+   internal static async Task<bool> SavedAsync(MetadataDb db, CancellationToken cancellationToken)
    {
       try
       {
@@ -581,7 +582,7 @@ public static class DashboardEndpoints
       }
    }
 
-   private static ProblemHttpResult NoSuchDashboard(int id) =>
+   internal static ProblemHttpResult NoSuchDashboard(int id) =>
       ApiProblems.Result(StatusCodes.Status404NotFound, ProblemCodes.NotFound, "There is no such dashboard", $"There is no dashboard {id} you can see");
 
    private static ProblemHttpResult NoSuchRevision(Dashboard row, int number) =>
@@ -591,7 +592,7 @@ public static class DashboardEndpoints
       ApiProblems.Result(StatusCodes.Status403Forbidden, ProblemCodes.Forbidden, $"{row.Name} is {row.OwnerName}'s",
          "Only its owner changes it (and administrators, once its owner is gone); save a copy of your own instead");
 
-   private static ProblemHttpResult NameTaken(string name) =>
+   internal static ProblemHttpResult NameTaken(string name) =>
       ApiProblems.Result(StatusCodes.Status409Conflict, ProblemCodes.DashboardNameTaken, "The name is taken", $"There is a dashboard {name} already (names ignore case)");
 
    private static ProblemHttpResult Changed(Dashboard row) =>

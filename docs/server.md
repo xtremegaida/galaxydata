@@ -791,12 +791,38 @@ filter narrows only the widgets it reaches, and signed-in viewers see the querie
 | `PUT /{id}/sharing` | `{everyone, users, version}`. |
 | `PUT /{id}/public`, `POST /{id}/public/regenerate` | `{enabled, origins, version}`: the public link and the sites that may frame it; a new link (the old one stops at once). |
 | `POST /{id}/copy` | `{name}`: a private copy of the user's own, of the published copy (the owner's: of the working one). |
+| `GET /{id}/export?copy=` | A copy the user sees as a file (below): the working one for its owner, else the published one, unless `copy` (`working` or `published`) says; one they don't see is a 404. |
+| `POST /import` | `{dashboard, name?, aliases?}`: a dashboard's file made a dashboard of the user's (below). |
 | `GET /people?text=&take=` | Enabled users by name, to share with. |
 | `POST /data`, `/query`, `/filter-values` | A widget's rows, its queries, a filter's values, of a definition sent (`slice`: what the widget needs, the editor's previews and the owner's working copy). |
 | `POST /{id}/widgets/{w}/data`, `…/query`, `POST /{id}/filters/{f}/values` | The same of the published copy, by its `hash` (409 `dashboard-changed` when it was published again). |
 
 `GET /api/catalog/paths?from=&to=&depth=` lists the paths of navigations between two entities, shortest first,
 for the editor's links.
+
+**Export and import.** A dashboard's file (`DashboardExport`) takes a dashboard to another instance, or keeps it in a
+repository: `{format: "galaxydata.dashboard", version: 1, name, description, exportedAt, definition, palettes}`,
+written indented (enums by name, as the API writes them), named for the dashboard (`sales-2026.dashboard.json`, in
+`Content-Disposition`). `definition` is one copy as it is stored; `palettes` are those it names that are there,
+whole (`{id, name, description, definition}`), by the ids it names them by. It never holds whose the dashboard is,
+who sees it, its public link or its revisions. An import:
+
+- **is checked as a save is**, with the file's fields under `dashboard.` (`dashboard.definition.widgets[2]…`,
+  `dashboard.palettes[0].definition.colors[1].light`), and the palettes as `POST /api/palettes` checks them; a file
+  of another `format` or `version` is refused. Entities and columns aren't checked, as on any save: they are the
+  dashboard's issues once it is shown;
+- **takes its sources to this instance's connections:** `aliases` gives the file's aliases (ignoring case) others,
+  the first part of each source's entity (`hw.web.session` read from `{"hw": "warehouse"}` is
+  `warehouse.web.session`);
+- **finds or makes its palettes:** one of the same definition and name (anyone's: everyone uses every palette), or
+  of the user's of the same definition (an import's of before, under another name), is used; otherwise one is made,
+  the user's, under its name or the first of `name (2)`, `name (3)`, … the user hasn't got. A palette the definition
+  names that the file doesn't bring (gone when it was exported) is named no more: its id here may be another's;
+- **is a new dashboard of the user's** under `name` (none: the file's; 409 `dashboard-name-taken` when the user has
+  one of the name), its working copy alone: unpublished, and private. The palettes and the dashboard are saved
+  together, or neither.
+
+`docs/examples/dashboards/` holds files to import; tests check they still are dashboards' files.
 
 **What reaches a widget.** A request's `state` holds the viewer's values of filters (`{filters: {id: value}}`) and
 the slices chosen (`{selections: {widget: {mode: include|exclude, keys}}}`). A widget's query is its source's, with

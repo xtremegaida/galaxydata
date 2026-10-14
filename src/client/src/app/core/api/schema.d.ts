@@ -1231,6 +1231,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboards/{id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A copy the user sees (the working one if they may edit it, unless copy says), with the palettes it names, as a file */
+        get: operations["ExportDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dashboards/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Makes a dashboard of the user's from a dashboard's file, finding or making the palettes it brings */
+        post: operations["ImportDashboard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/palettes": {
         parameters: {
             query?: never;
@@ -1797,6 +1831,17 @@ export interface components {
             /** Format: int32 */
             version: number;
         };
+        DashboardExport: {
+            format: string;
+            /** Format: int32 */
+            version: number;
+            name: string;
+            description: null | string;
+            /** Format: date-time */
+            exportedAt: string;
+            definition: components["schemas"]["DashboardDefinition"];
+            palettes: components["schemas"]["ExportedPalette"][];
+        };
         DashboardFilter: {
             id: string;
             label: string;
@@ -2082,6 +2127,13 @@ export interface components {
             /** Format: int32 */
             plan: number;
         };
+        ExportedPalette: {
+            /** Format: int32 */
+            id: number;
+            name: string;
+            description: null | string;
+            definition: components["schemas"]["PaletteDefinition"];
+        };
         /** @enum {unknown} */
         FetchStrategy: "full" | "keys" | "skipped" | "value";
         FieldDto: {
@@ -2228,6 +2280,13 @@ export interface components {
             instance?: null | string;
             errors?: {
                 [key: string]: string[];
+            };
+        };
+        ImportDashboardRequest: {
+            dashboard: components["schemas"]["DashboardExport"];
+            name?: null | string;
+            aliases?: null | {
+                [key: string]: string;
             };
         };
         IndexSchema: {
@@ -3337,6 +3396,7 @@ export type CreatePaletteRequest = components['schemas']['CreatePaletteRequest']
 export type CreateUserRequest = components['schemas']['CreateUserRequest'];
 export type DashboardDefinition = components['schemas']['DashboardDefinition'];
 export type DashboardDto = components['schemas']['DashboardDto'];
+export type DashboardExport = components['schemas']['DashboardExport'];
 export type DashboardFilter = components['schemas']['DashboardFilter'];
 export type DashboardIssue = components['schemas']['DashboardIssue'];
 export type DashboardLayout = components['schemas']['DashboardLayout'];
@@ -3375,6 +3435,7 @@ export type ExplainNodeDto = components['schemas']['ExplainNodeDto'];
 export type ExplainParameter = components['schemas']['ExplainParameter'];
 export type ExplainPhase = components['schemas']['ExplainPhase'];
 export type ExplainSubqueryDto = components['schemas']['ExplainSubqueryDto'];
+export type ExportedPalette = components['schemas']['ExportedPalette'];
 export type FetchStrategy = components['schemas']['FetchStrategy'];
 export type FieldDto = components['schemas']['FieldDto'];
 export type FieldRef = components['schemas']['FieldRef'];
@@ -3400,6 +3461,7 @@ export type HealthCheckDto = components['schemas']['HealthCheckDto'];
 export type HealthResponse = components['schemas']['HealthResponse'];
 export type HealthStatus = components['schemas']['HealthStatus'];
 export type HttpValidationProblemDetails = components['schemas']['HttpValidationProblemDetails'];
+export type ImportDashboardRequest = components['schemas']['ImportDashboardRequest'];
 export type IndexSchema = components['schemas']['IndexSchema'];
 export type InlineFilterRequest = components['schemas']['InlineFilterRequest'];
 export type InlineWidgetRequest = components['schemas']['InlineWidgetRequest'];
@@ -10628,6 +10690,162 @@ export interface operations {
             };
             /** @description Gateway Timeout */
             504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    ExportDashboard: {
+        parameters: {
+            query?: {
+                copy?: string;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardExport"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    ImportDashboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportDashboardRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardDto"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -141,6 +141,10 @@ export type DashboardDto = Schema<'DashboardDto'>;
                 <mat-icon>content_copy</mat-icon>
                 Copy
               </button>
+              <a mat-menu-item [href]="exportHref()" download>
+                <mat-icon>download</mat-icon>
+                Export
+              </a>
             }
             @if (shown.can.delete) {
               <button mat-menu-item type="button" (click)="remove()">
@@ -241,6 +245,11 @@ export class DashboardPage {
     const shown = this.shown();
     return !!shown?.working && (this.copy() === 'working' || !shown.published);
   });
+
+  /** The copy shown as a file, with the palettes it names (the server names the file). */
+  protected readonly exportHref = computed(
+    () => `/api/dashboards/${this.id()}/export?copy=${this.working() ? 'working' : 'published'}`,
+  );
 
   /** What the dialogs get: the dashboard, and where its changes go (the page shows them). */
   private dialogData() {

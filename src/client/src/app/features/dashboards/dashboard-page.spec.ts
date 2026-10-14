@@ -251,6 +251,36 @@ describe('a dashboard', () => {
     await settle();
     expect(textOf(page.querySelector('.badge'))).toBe('Your working copy');
   });
+
+  it('exports the copy it shows', async () => {
+    const { page, http, harness } = await openPage('/dashboards/1');
+    (await requestTo(http, '/api/dashboards/1')).flush(dashboardOf());
+    http.match(() => true).forEach((r) => r.flush(rowsOf('Status', [])));
+    await settle();
+    const exportHref = async () => {
+      page.querySelector<HTMLButtonElement>('[aria-label=More]')!.click();
+      harness.detectChanges();
+      await settle();
+      const link = [...document.querySelectorAll<HTMLAnchorElement>('.mat-mdc-menu-panel a')].find(
+        (a) => textOf(a).endsWith('Export'),
+      )!;
+      expect(link.hasAttribute('download')).toBe(true);
+      document.querySelector<HTMLElement>('.cdk-overlay-backdrop')!.click();
+      harness.detectChanges();
+      await settle();
+      return link.getAttribute('href');
+    };
+    expect(await exportHref()).toBe('/api/dashboards/1/export?copy=published');
+
+    await harness.navigateByUrl('/dashboards/1?copy=working');
+    http
+      .match(() => true)
+      .filter((r) => !r.cancelled)
+      .forEach((r) => r.flush(rowsOf('Status', [])));
+    await settle();
+    harness.detectChanges();
+    expect(await exportHref()).toBe('/api/dashboards/1/export?copy=working');
+  });
 });
 
 describe('a dashboard with tabs', () => {
