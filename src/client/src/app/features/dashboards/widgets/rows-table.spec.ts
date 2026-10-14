@@ -40,6 +40,52 @@ describe("a widget's rows as a table", () => {
     expect(render(data)).toEqual([['open', 'R 250']]);
   });
 
+  it('shows rates as percentages, durations in their parts, and yes and no by their labels', () => {
+    const boolean = { kind: 'boolean', nullable: true, text: 'boolean?' } as const;
+    const data = rowsOf('Bounced', [], {
+      rows: [
+        [true, 0.6, 473000],
+        [false, 0.25, 59000],
+        [null, null, null],
+      ],
+    });
+    data.columns[0] = { ...data.columns[0], type: boolean };
+    data.columns[1] = {
+      ...data.columns[1],
+      format: { decimals: null, prefix: null, suffix: null, compact: false, style: 'percent' },
+    };
+    data.columns.push({
+      ...data.columns[1],
+      name: 'm1',
+      index: 1,
+      format: {
+        decimals: null,
+        prefix: null,
+        suffix: null,
+        compact: false,
+        style: 'duration',
+        unit: 'milliseconds',
+      },
+    });
+    const fixture = TestBed.createComponent(RowsTable);
+    fixture.componentRef.setInput('data', data);
+    const config = barDefaults('sessions');
+    fixture.componentRef.setInput('config', {
+      ...config,
+      dimension: { ...config.dimension, booleans: { true: 'Bounced', false: 'Went on' } },
+    });
+    fixture.detectChanges();
+    expect(
+      [...(fixture.nativeElement as HTMLElement).querySelectorAll('tbody tr')].map((row) =>
+        [...row.querySelectorAll('td')].map((cell) => textOf(cell)),
+      ),
+    ).toEqual([
+      ['Bounced', '60%', '7m 53s'],
+      ['Went on', '25%', '59s'],
+      ['(no value)', '—', '—'],
+    ]);
+  });
+
   it("shows a chart's colours beside the cells (and headers) they are of, for eyes alone", () => {
     const fixture = TestBed.createComponent(RowsTable);
     fixture.componentRef.setInput(

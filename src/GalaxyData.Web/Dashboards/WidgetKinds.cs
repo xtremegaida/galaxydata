@@ -179,7 +179,7 @@ public sealed class PieKind : WidgetKind<PieConfig>
       check.Dimension(config.Dimension, path + ".dimension");
       check.Measure(config.Measure, path + ".measure");
       check.Limit(config.Limit, path + ".limit", MaxSlices);
-      if (config.Other && config.Measure is { Aggregate: not (Aggregate.Count or Aggregate.CountValues or Aggregate.Sum) })
+      if (config.Other && config.Measure is { Aggregate: not (Aggregate.Count or Aggregate.CountValues or Aggregate.Sum) } or { Per: not null })
       {
          check.Error(path + ".other", "The rest adds up as one slice only for counts and sums");
       }
@@ -203,7 +203,7 @@ public sealed class PieKind : WidgetKind<PieConfig>
       BuiltQuery main = new(GroupQueries.Group(rows, [("d0", dimension.Expression)], [("m0", measure)], ["desc(m0)", .. GroupQueries.RankTies(keys)],
          Math.Min(skip + limit, context.Limits.MaxChartRows) + 1), context.Parameters.Values);
       BuiltQuery? total = config.Other ? new BuiltQuery(GroupQueries.Group(rows, [], [("m0", measure)], [], null), context.Parameters.Values) : null;
-      return new WidgetPlan(GroupQueries.Columns(config.Dimension, null, [config.Measure]), null, _ => main, total, new BuiltQuery(rows, context.Parameters.Values),
+      return new WidgetPlan(GroupQueries.Columns(config.Dimension, null, [config.Measure]), null, _ => main, total, context.Underlying(),
          limit, Paged: false) { Step = step };
    }
 }
@@ -245,7 +245,7 @@ public sealed class BarKind : WidgetKind<BarConfig>
       string rows = context.Base();
       int take = GroupQueries.Take(config.Limit, context);
       List<PlannedColumn> columns = GroupQueries.Columns(config.Dimension, config.Series, config.Measures);
-      BuiltQuery underlying = new(rows, context.Parameters.Values);
+      BuiltQuery underlying = context.Underlying();
       int limit = Math.Min(config.Limit, context.Limits.MaxChartRows);
       List<string> order = GroupQueries.Order(config.Sort, [("d0", dimension.Type)], context, context.Path + ".sort");
       if (series == null)
@@ -336,7 +336,7 @@ public sealed class LineKind : WidgetKind<LineConfig>
          typed.Add(("s0", series.Type));
       }
       List<PlannedColumn> columns = GroupQueries.Columns(config.Dimension, config.Series, config.Measures);
-      BuiltQuery underlying = new(rows, context.Parameters.Values);
+      BuiltQuery underlying = context.Underlying();
       int limit = Math.Min(config.Limit, context.Limits.MaxChartRows);
       int take = GroupQueries.Take(config.Limit, context);
       if (series == null || config.SeriesLimit is not { } seriesLimit)
@@ -420,6 +420,7 @@ public sealed class TableKind : WidgetKind<TableConfig>
             check.Field(column.Field, at + ".field");
             check.Label(column.Label, at + ".label", required: true);
             check.Format(column.Format, at + ".format");
+            check.Booleans(column.Booleans, at + ".booleans");
          }
          if (dimensions is { Count: > 0 }) { check.Error(path + ".dimensions", "A raw table has columns, not dimensions"); }
          if (config.Measures is { Count: > 0 }) { check.Error(path + ".measures", "A raw table has columns, not measures"); }
@@ -433,7 +434,7 @@ public sealed class TableKind : WidgetKind<TableConfig>
    protected override WidgetPlan? Plan(TableConfig config, PlanContext context)
    {
       string rows = context.Base();
-      BuiltQuery underlying = new(rows, context.Parameters.Values);
+      BuiltQuery underlying = context.Underlying();
       if (config.Mode == TableMode.Grouped)
       {
          List<(string Name, string Expression)> keys = [];
@@ -466,6 +467,7 @@ public sealed class TableKind : WidgetKind<TableConfig>
       {
          string name = GroupQueries.Name("c", i);
          if (context.Field(config.Columns[i].Field, $"{context.Path}.columns[{i}].field") is not { } field) { continue; }
+         context.Booleans(config.Columns[i].Booleans, field, $"{context.Path}.columns[{i}].booleans");
          items.Add($"{name}: {field.Member(null)}");
          planned.Add(new PlannedColumn(name, ColumnRole.Column, i, config.Columns[i].Label, config.Columns[i].Format));
          sortable.Add((name, field.Type));

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input, model } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, model } from '@angular/core';
 import { MatButton, MatIconButton } from '@angular/material/button';
 import { MatButtonToggle, MatButtonToggleGroup } from '@angular/material/button-toggle';
 import { MatOption } from '@angular/material/core';
@@ -18,10 +18,13 @@ import type {
   TextConfig,
 } from '../../model/definition';
 import { blankDimension } from '../../model/widget-defaults';
+import { BooleanLabelsEditor } from '../controls/boolean-labels';
 import { DimensionEditor } from '../controls/dimension-editor';
 import { FieldPicker, humanize } from '../controls/field-picker';
 import { MeasureList } from '../controls/measure-list';
+import { NumberFormatEditor } from '../controls/number-format';
 import { PalettePicker } from '../controls/palette-picker';
+import { EntityCatalog, isNumeric } from '../entity-catalog';
 
 type Sort = BarConfig['sort'];
 
@@ -687,10 +690,14 @@ export class PieSettings {
   }
 }
 
-/** A table: grouped (dimensions and measures) or as its rows are (columns), its sort, and a page's rows. */
+/**
+ * A table: grouped (dimensions and measures) or as its rows are (columns: how a number's show, or a true/false's),
+ * its sort, and a page's rows.
+ */
 @Component({
   selector: 'gd-table-settings',
   imports: [
+    BooleanLabelsEditor,
     DimensionEditor,
     FieldPicker,
     MatButton,
@@ -702,6 +709,7 @@ export class PieSettings {
     MatOption,
     MatSelect,
     MeasureList,
+    NumberFormatEditor,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -764,6 +772,20 @@ export class PieSettings {
                 (input)="setColumn(i, { label: text($event) })"
               />
             </mat-form-field>
+            @switch (kindOf(column)) {
+              @case ('number') {
+                <gd-number-format
+                  [format]="column.format"
+                  (formatChange)="setColumn(i, { format: $event })"
+                />
+              }
+              @case ('boolean') {
+                <gd-boolean-labels
+                  [labels]="column.booleans"
+                  (labelsChange)="setColumn(i, { booleans: $event ?? null })"
+                />
+              }
+            }
           </div>
           <button
             matIconButton
@@ -828,6 +850,7 @@ export class PieSettings {
   `,
 })
 export class TableSettings {
+  private readonly catalog = inject(EntityCatalog);
   readonly entity = input.required<string | null>();
   readonly config = model.required<TableConfig>();
   protected readonly sortKey = sortKey;
@@ -852,6 +875,12 @@ export class TableSettings {
 
   protected set(change: Partial<TableConfig>): void {
     this.config.set({ ...this.config(), ...change });
+  }
+
+  /** What a raw column holds, as its settings go: numbers (formatted), true/false values (labelled), or anything else. */
+  protected kindOf(column: TableConfig['columns'][number]): 'number' | 'boolean' | null {
+    const type = this.catalog.columnOf(this.entity(), column.field)?.type;
+    return !type ? null : isNumeric(type) ? 'number' : type.kind === 'boolean' ? 'boolean' : null;
   }
 
   protected text(event: Event): string {

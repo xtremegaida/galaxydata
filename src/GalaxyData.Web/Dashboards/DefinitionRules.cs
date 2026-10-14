@@ -72,6 +72,9 @@ public sealed partial class DefinitionRules(WidgetKinds kinds, DashboardSettings
    /// <summary>The longest a tab's label may be.</summary>
    public const int TabLabelLength = 60;
 
+   /// <summary>The longest a value's label may be (true's or false's).</summary>
+   public const int ValueLabelLength = 60;
+
    /// <summary>
    /// The definition, checked, in its canonical form (cells by widget id, numbers as JSON writes them shortest); null
    /// when something is wrong, in <paramref name="errors"/> by field under <paramref name="prefix"/>.
@@ -374,8 +377,23 @@ public sealed partial class DefinitionRules(WidgetKinds kinds, DashboardSettings
       };
    }
 
-   private static WidgetConfig Canonical(DataWidgetConfig config) =>
-      config with { Conditions = [.. config.Conditions.Select(c => c with { Value = Canonical(c.Value)! })] };
+   private static WidgetConfig Canonical(DataWidgetConfig config) => (config with { Conditions = Canonical(config.Conditions) }) switch
+   {
+      PieConfig pie => pie with { Measure = Canonical(pie.Measure) },
+      BarConfig bar => bar with { Measures = [.. bar.Measures.Select(Canonical)] },
+      LineConfig line => line with { Measures = [.. line.Measures.Select(Canonical)] },
+      TableConfig table => table with { Measures = [.. table.Measures.Select(Canonical)] },
+      var other => other,
+   };
+
+   private static List<WidgetCondition> Canonical(List<WidgetCondition> conditions) => [.. conditions.Select(c => c with { Value = Canonical(c.Value)! })];
+
+   /// <summary>A measure's conditions as a widget's are; none written as none, so a measure is always written the same.</summary>
+   private static Measure Canonical(Measure measure) => measure with
+   {
+      Where = measure.Where is { Count: > 0 } where ? Canonical(where) : null,
+      Per = measure.Per == null ? null : measure.Per with { Where = measure.Per.Where is { Count: > 0 } per ? Canonical(per) : null },
+   };
 
    private static ConditionValue? Canonical(ConditionValue? value) => value == null ? null : value with
    {
@@ -527,8 +545,23 @@ public sealed class DefinitionCheck(DashboardSettings settings, Dictionary<strin
       }
       Field(dimension.Field, path + ".field");
       Label(dimension.Label, path + ".label", required: true);
+      Booleans(dimension.Booleans, path + ".booleans");
    }
 
+   /// <summary>How true and false show (none: yes and no): each label brief, an empty one yes's or no's.</summary>
+   public void Booleans(BooleanLabels? labels, string path)
+   {
+      if (labels == null) { return; }
+      void One(string? text, string at, string shown)
+      {
+         if (text == null) { Error(at, $"Give its label (empty: {shown})"); }
+         else if (text.Length > DefinitionRules.ValueLabelLength) { Error(at, $"A label has {DefinitionRules.ValueLabelLength} characters at most"); }
+      }
+      One(labels.True, path + ".true", "yes");
+      One(labels.False, path + ".false", "no");
+   }
+
+   /// <summary>A measure: its aggregate and the rows it aggregates, what it is divided by (a ratio's), its label and format.</summary>
    public void Measure(Measure? measure, string path)
    {
       if (measure == null)
@@ -536,21 +569,36 @@ public sealed class DefinitionCheck(DashboardSettings settings, Dictionary<strin
          Error(path, "Give the measure");
          return;
       }
-      if (measure.Aggregate == Aggregate.Count)
-      {
-         if (measure.Field != null) { Error(path + ".field", "Counting rows takes no field"); }
-      }
-      else { Field(measure.Field, path + ".field"); }
+      Aggregated(measure.Aggregate, measure.Field, measure.Where, path);
+      if (measure.Per is { } per) { Aggregated(per.Aggregate, per.Field, per.Where, path + ".per"); }
       Label(measure.Label, path + ".label", required: true);
       Format(measure.Format, path + ".format");
    }
 
+   /// <summary>An aggregate's field (none when it counts rows), and its conditions on the rows it aggregates (none: all of them).</summary>
+   private void Aggregated(Aggregate aggregate, FieldRef? field, List<WidgetCondition>? where, string path)
+   {
+      if (aggregate == Aggregate.Count)
+      {
+         if (field != null) { Error(path + ".field", "Counting rows takes no field"); }
+      }
+      else { Field(field, path + ".field"); }
+      if (where != null) { Conditions(where, path + ".where"); }
+   }
+
+   /// <summary>A format's decimals and text; a duration's unit, which only a duration has, and which isn't shortened.</summary>
    public void Format(NumberFormat? format, string path)
    {
       if (format == null) { return; }
       if (format.Decimals is < 0 or > 10) { Error(path + ".decimals", "Show 0 to 10 decimals"); }
       if (format.Prefix is { Length: > 20 }) { Error(path + ".prefix", "A prefix has 20 characters at most"); }
       if (format.Suffix is { Length: > 20 }) { Error(path + ".suffix", "A suffix has 20 characters at most"); }
+      if (format.Style == NumberStyle.Duration)
+      {
+         if (format.Unit == null) { Error(path + ".unit", "Say what the durations are in (milliseconds, seconds, …)"); }
+         if (format.Compact) { Error(path + ".compact", "A duration is shown in its two largest parts, not shortened"); }
+      }
+      else if (format.Unit != null) { Error(path + ".unit", "Only durations have a unit"); }
    }
 
    /// <summary>A sort by a dimension, measure or column there are <paramref name="count"/> of.</summary>
@@ -587,20 +635,7 @@ public sealed class DefinitionCheck(DashboardSettings settings, Dictionary<strin
    public void Data(DataWidgetConfig config, string? widget, string path)
    {
       SourceRef(config.Source, path + ".source");
-      if (List(config.Conditions, path + ".conditions", DefinitionRules.MaxConditions, "conditions") is { } conditions)
-      {
-         for (int i = 0; i < conditions.Count; i++)
-         {
-            string at = $"{path}.conditions[{i}]";
-            if (conditions[i] == null)
-            {
-               Error(at, "A condition can't be null");
-               continue;
-            }
-            Field(conditions[i].Field, at + ".field");
-            Condition(conditions[i].Value, at + ".value");
-         }
-      }
+      Conditions(config.Conditions, path + ".conditions");
       if (config.Listens == null) { Error(path + ".listens", "Say which widgets it listens to"); }
       else if (List(config.Listens.Widgets, path + ".listens.widgets", int.MaxValue, "widgets") is { } chosen)
       {
@@ -610,6 +645,23 @@ public sealed class DefinitionCheck(DashboardSettings settings, Dictionary<strin
             WidgetRef(chosen[i], $"{path}.listens.widgets[{i}]");
             if (chosen[i] == widget) { Error($"{path}.listens.widgets[{i}]", "A widget doesn't listen to itself"); }
          }
+      }
+   }
+
+   /// <summary>Conditions on fields of a source's rows: as many as a widget may have, each a field and its condition.</summary>
+   public void Conditions(List<WidgetCondition>? conditions, string path)
+   {
+      if (List(conditions, path, DefinitionRules.MaxConditions, "conditions") is not { } list) { return; }
+      for (int i = 0; i < list.Count; i++)
+      {
+         string at = $"{path}[{i}]";
+         if (list[i] == null)
+         {
+            Error(at, "A condition can't be null");
+            continue;
+         }
+         Field(list[i].Field, at + ".field");
+         Condition(list[i].Value, at + ".value");
       }
    }
 

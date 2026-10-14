@@ -13,8 +13,10 @@ import {
 import { fallbackTheme } from './chart-theme';
 import { contrast } from './color-checks';
 import {
+  booleanText,
   categoryText,
   chartNumber,
+  durationText,
   escapeHtml,
   formatNumber,
   periodsBetween,
@@ -24,12 +26,13 @@ const text = { kind: 'string', nullable: true, text: 'string?' } as const;
 const int64 = { kind: 'int64', nullable: false, text: 'int64' } as const;
 const decimal = { kind: 'decimal', nullable: false, text: 'decimal(10,2)' } as const;
 const date = { kind: 'date', nullable: false, text: 'date' } as const;
+const boolean = { kind: 'boolean', nullable: true, text: 'boolean?' } as const;
 
 function dataOf(
   columns: [
     string,
     'dimension' | 'series' | 'measure',
-    typeof text | typeof int64 | typeof decimal | typeof date,
+    typeof text | typeof int64 | typeof decimal | typeof date | typeof boolean,
   ][],
   rows: unknown[][],
   extra: Partial<WidgetData> = {},
@@ -103,6 +106,71 @@ describe('chart values', () => {
       formatNumber(1234567, { decimals: null, prefix: null, suffix: null, compact: true }, 'en-US'),
     ).toBe('1.2M');
     expect(formatNumber(null, null, 'en-US')).toBe('—');
+  });
+
+  it('shows shares of 1 as percentages: exactly, to one place unless decimals are given', () => {
+    const percent = {
+      decimals: null,
+      prefix: null,
+      suffix: null,
+      compact: false,
+      style: 'percent',
+    } as const;
+    expect(formatNumber(0.2567, percent, 'en-US')).toBe('25.7%');
+    expect(formatNumber(0.07, percent, 'en-US')).toBe('7%');
+    expect(formatNumber('0.125', { ...percent, decimals: 2 }, 'en-US')).toBe('12.50%');
+    expect(formatNumber('0.0012345', { ...percent, decimals: 4 }, 'en-US')).toBe('0.1235%');
+    expect(formatNumber('-1.5', percent, 'en-US')).toBe('-150%');
+    expect(formatNumber(1, { ...percent, prefix: '≈ ' }, 'en-US')).toBe('≈ 100%');
+    expect(formatNumber(0.5, percent, 'de-DE')).toBe('50%');
+    expect(formatNumber(0.505, percent, 'de-DE')).toBe('50,5%');
+  });
+
+  it('shows durations in their two largest parts', () => {
+    const ms = (n: number) => durationText(n, 'milliseconds', null, 'en-US');
+    expect(ms(473_000)).toBe('7m 53s');
+    expect(ms(135_000)).toBe('2m 15s');
+    expect(ms(120_000)).toBe('2m');
+    expect(ms(45_300)).toBe('45.3s');
+    expect(ms(59_960)).toBe('1m');
+    expect(ms(850)).toBe('850ms');
+    expect(ms(0)).toBe('0ms');
+    expect(ms(3_599_600)).toBe('1h');
+    expect(ms(3_900_000)).toBe('1h 5m');
+    expect(ms(-135_000)).toBe('-2m 15s');
+    expect(durationText(100 * 3600 + 1200, 'seconds', null, 'en-US')).toBe('4d 4h');
+    expect(durationText(1.5, 'minutes', null, 'en-US')).toBe('1m 30s');
+    expect(durationText(2.25, 'seconds', 2, 'en-US')).toBe('2.25s');
+    expect(durationText(0.25, 'seconds', null, 'en-US')).toBe('250ms');
+    expect(durationText('x', 'seconds', null, 'en-US')).toBe('x');
+    expect(
+      formatNumber(
+        '473000.5',
+        {
+          decimals: 0,
+          prefix: null,
+          suffix: ' avg',
+          compact: true,
+          style: 'duration',
+          unit: 'milliseconds',
+        },
+        'en-US',
+      ),
+    ).toBe('7m 53s avg');
+  });
+
+  it('shows true and false by their labels, or yes and no', () => {
+    expect(booleanText(true, null)).toBe('Yes');
+    expect(booleanText(false, undefined)).toBe('No');
+    expect(booleanText(true, { true: 'Bounced', false: '' })).toBe('Bounced');
+    expect(booleanText(false, { true: 'Bounced', false: ' ' })).toBe('No');
+    expect(categoryText(false, boolean, null, 'en-US', { true: 'Bounced', false: 'Went on' })).toBe(
+      'Went on',
+    );
+    expect(categoryText(true, boolean, null, 'en-US')).toBe('Yes');
+    expect(categoryText(null, boolean, null, 'en-US', { true: 'Bounced', false: 'Went on' })).toBe(
+      '(no value)',
+    );
   });
 
   it('labels periods as they are read, and parts that repeat by name', () => {
@@ -226,6 +294,68 @@ describe('chart options', () => {
     ]);
     expect(series[1].data.map((d) => d.value)).toEqual([null, 75]);
     expect((option.legend as { show: boolean }).show).toBe(true);
+  });
+
+  it('names true and false by their labels, and shows rates as percentages', () => {
+    const data = dataOf(
+      [
+        ['Traffic', 'dimension', text],
+        ['Bounced', 'series', boolean],
+        ['Sessions', 'measure', int64],
+      ],
+      [
+        ['direct', true, '3'],
+        ['direct', false, '1'],
+        ['search', null, '2'],
+      ],
+    );
+    const config: BarConfig = {
+      ...barDefaults('sessions'),
+      series: {
+        field: { path: [], column: 'bounced' },
+        bucket: null,
+        label: 'Bounced',
+        booleans: { true: 'Bounced', false: 'Went on' },
+      },
+      stack: 'percent',
+    };
+    const option = barOption(config, data, contextOf());
+    expect((option.series as unknown as Series[]).map((s) => s.name)).toEqual([
+      'Bounced',
+      'Went on',
+      '(no value)',
+    ]);
+    const axis = (o: typeof option) =>
+      (o.yAxis as { axisLabel: { formatter: (n: number) => string } }).axisLabel.formatter;
+    expect(axis(option)(40)).toBe('40%');
+
+    const rates = dataOf(
+      [
+        ['Traffic', 'dimension', text],
+        ['Bounce rate', 'measure', int64],
+      ],
+      [
+        ['direct', 0.4567],
+        ['search', 0.25],
+      ],
+    );
+    rates.columns[1].format = {
+      decimals: 1,
+      prefix: null,
+      suffix: null,
+      compact: false,
+      style: 'percent',
+    };
+    const rated = barOption(barDefaults('sessions'), rates, contextOf());
+    expect(axis(rated)(0.5)).toBe('50%');
+    const tip = (rated.tooltip as { formatter: (p: unknown) => string }).formatter({
+      name: 'direct',
+      seriesName: 'Bounce rate',
+      marker: '',
+      data: (rated.series as unknown as Series[])[0].data[0],
+    });
+    // In the locale (en-ZA).
+    expect(tip).toBe('direct<br>45,7%');
   });
 
   it("fades what isn't chosen, and hatches what is left out", () => {

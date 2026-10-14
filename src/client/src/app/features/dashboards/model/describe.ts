@@ -1,8 +1,10 @@
-import { categoryText, formatNumber } from '../charts/chart-values';
+import { booleanText, categoryText, formatNumber } from '../charts/chart-values';
 import type {
+  BooleanLabels,
   Bucket,
   ConditionValue,
   DataConfig,
+  Dimension,
   Filter,
   Key,
   Selection,
@@ -20,8 +22,13 @@ const unitNames: Record<RelativeRange['unit'], [string, string]> = {
   year: ['year', 'years'],
 };
 
-/** A value as a viewer reads it: text as it is, numbers in the locale, no value said so. */
-export function valueText(value: unknown, locale: string, bucket: Bucket | null = null): string {
+/** A value as a viewer reads it: text as it is, numbers in the locale, true and false by their labels (or yes and no), no value said so. */
+export function valueText(
+  value: unknown,
+  locale: string,
+  bucket: Bucket | null = null,
+  booleans: BooleanLabels | null = null,
+): string {
   if (value === null || value === undefined) {
     return '(no value)';
   }
@@ -32,7 +39,7 @@ export function valueText(value: unknown, locale: string, bucket: Bucket | null 
     return formatNumber(value, null, locale);
   }
   if (typeof value === 'boolean') {
-    return value ? 'yes' : 'no';
+    return booleans ? booleanText(value, booleans) : value ? 'yes' : 'no';
   }
   return String(value);
 }
@@ -98,11 +105,17 @@ export function filterValueOf(
   return filter.id in set ? set[filter.id] : filter.value;
 }
 
-/** What the parts of a widget's slices are: their labels and periods (a chart's category and series, a table's columns). */
-export function keyParts(config: DataConfig): { label: string; bucket: Bucket | null }[] {
-  const part = (d: { label: string; bucket?: Bucket | null }) => ({
+/**
+ * What the parts of a widget's slices are: their labels, periods and labels for true and false (a chart's category
+ * and series, a table's columns).
+ */
+export function keyParts(
+  config: DataConfig,
+): { label: string; bucket: Bucket | null; booleans: BooleanLabels | null }[] {
+  const part = (d: Dimension) => ({
     label: d.label,
     bucket: d.bucket ?? null,
+    booleans: d.booleans ?? null,
   });
   switch (config.kind) {
     case 'pie':
@@ -130,7 +143,9 @@ export function selectionText(
       ? parts.map((p) => p.label).join(' · ')
       : (widget.title ?? widget.id);
   const keyText = (key: Key) =>
-    key.map((value, i) => valueText(value, locale, parts[i]?.bucket ?? null)).join(' · ');
+    key
+      .map((value, i) => valueText(value, locale, parts[i]?.bucket ?? null, parts[i]?.booleans))
+      .join(' · ');
   const values = selection.keys.map(keyText).join(', ');
   return { name, values: selection.mode === 'exclude' ? `not ${values}` : values };
 }

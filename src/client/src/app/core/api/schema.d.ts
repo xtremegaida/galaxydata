@@ -1376,6 +1376,10 @@ export interface components {
         BarOrientation: "vertical" | "horizontal";
         /** @enum {unknown} */
         BarStack: "none" | "stacked" | "percent";
+        BooleanLabels: {
+            true: string;
+            false: string;
+        };
         Breakpoint: {
             id: string;
             label: string;
@@ -1992,6 +1996,7 @@ export interface components {
             field: components["schemas"]["FieldRef"];
             bucket: null | components["schemas"]["Bucket"];
             label: string;
+            booleans?: null | components["schemas"]["BooleanLabels"];
         };
         /** @enum {unknown} */
         DmlFailureKind: "connection" | "statement" | "conflict" | "commit" | "timeout";
@@ -2001,6 +2006,8 @@ export interface components {
         DmlScriptStatus: "committed" | "rolledBack" | "commitFailed";
         /** @enum {unknown} */
         DmlStatementKind: "insert" | "update" | "delete" | "merge" | "other";
+        /** @enum {unknown} */
+        DurationUnit: "milliseconds" | "seconds" | "minutes" | "hours" | "days";
         EditedScriptDto: {
             source: string;
             text: string;
@@ -2377,6 +2384,13 @@ export interface components {
             field: null | components["schemas"]["FieldRef"];
             label: string;
             format: null | components["schemas"]["NumberFormat"];
+            where?: null | components["schemas"]["WidgetCondition"][];
+            per?: null | components["schemas"]["MeasureTerm"];
+        };
+        MeasureTerm: {
+            aggregate: components["schemas"]["Aggregate"];
+            field: null | components["schemas"]["FieldRef"];
+            where?: null | components["schemas"]["WidgetCondition"][];
         };
         /** @enum {unknown} */
         Multiplicity: "one" | "zeroOrOne" | "many";
@@ -2433,7 +2447,14 @@ export interface components {
             prefix: null | string;
             suffix: null | string;
             compact: boolean;
+            style?: components["schemas"]["NumberStyle"];
+            unit?: null | components["schemas"]["DurationUnit"];
         };
+        /**
+         * @default number
+         * @enum {unknown}
+         */
+        NumberStyle: "number" | "percent" | "duration";
         OverlayCheckDto: {
             issues: components["schemas"]["OverlayIssueDto"][];
             breaks?: components["schemas"]["OverlayItemIssuesDto"][];
@@ -2981,6 +3002,7 @@ export interface components {
             field: components["schemas"]["FieldRef"];
             label: string;
             format: null | components["schemas"]["NumberFormat"];
+            booleans?: null | components["schemas"]["BooleanLabels"];
         };
         /** @enum {unknown} */
         TableKind: "table" | "view" | "materializedView";
@@ -3338,6 +3360,7 @@ export type AggregateHint = components['schemas']['AggregateHint'];
 export type BarColorBy = components['schemas']['BarColorBy'];
 export type BarOrientation = components['schemas']['BarOrientation'];
 export type BarStack = components['schemas']['BarStack'];
+export type BooleanLabels = components['schemas']['BooleanLabels'];
 export type Breakpoint = components['schemas']['Breakpoint'];
 export type BrowseFromDto = components['schemas']['BrowseFromDto'];
 export type BrowsePageDto = components['schemas']['BrowsePageDto'];
@@ -3422,6 +3445,7 @@ export type DmlFailureKind = components['schemas']['DmlFailureKind'];
 export type DmlOutcome = components['schemas']['DmlOutcome'];
 export type DmlScriptStatus = components['schemas']['DmlScriptStatus'];
 export type DmlStatementKind = components['schemas']['DmlStatementKind'];
+export type DurationUnit = components['schemas']['DurationUnit'];
 export type EditedScriptDto = components['schemas']['EditedScriptDto'];
 export type EditTargetDto = components['schemas']['EditTargetDto'];
 export type EntityColumnDto = components['schemas']['EntityColumnDto'];
@@ -3482,6 +3506,7 @@ export type LinkKind = components['schemas']['LinkKind'];
 export type ListenMode = components['schemas']['ListenMode'];
 export type Listens = components['schemas']['Listens'];
 export type Measure = components['schemas']['Measure'];
+export type MeasureTerm = components['schemas']['MeasureTerm'];
 export type Multiplicity = components['schemas']['Multiplicity'];
 export type NavigationDto = components['schemas']['NavigationDto'];
 export type NavigationNamingOptions = components['schemas']['NavigationNamingOptions'];
@@ -3489,6 +3514,7 @@ export type NavigationOverlayDto = components['schemas']['NavigationOverlayDto']
 export type NavigationOverrideDto = components['schemas']['NavigationOverrideDto'];
 export type NavigationOverrideInput = components['schemas']['NavigationOverrideInput'];
 export type NumberFormat = components['schemas']['NumberFormat'];
+export type NumberStyle = components['schemas']['NumberStyle'];
 export type OverlayCheckDto = components['schemas']['OverlayCheckDto'];
 export type OverlayColumn = components['schemas']['OverlayColumn'];
 export type OverlayDto = components['schemas']['OverlayDto'];

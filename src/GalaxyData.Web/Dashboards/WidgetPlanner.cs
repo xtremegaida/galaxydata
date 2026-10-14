@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using GalaxyData.Query.Binding;
 using GalaxyData.Query.Catalog;
 using GalaxyData.Query.Language;
@@ -655,6 +656,18 @@ public sealed class PlanContext
       return QueryText.Compose(Source.Path, where == null ? [] : [where]);
    }
 
+   /// <summary>The widget's rows as a query of their own: <see cref="Base"/>, with only the parameters it uses (not its measures' conditions').</summary>
+   public BuiltQuery Underlying()
+   {
+      string rows = Base();
+      QueryParameters used = new();
+      foreach (QueryParameter parameter in Parameters.Values.All.Where(p => Regex.IsMatch(rows, @"\$" + Regex.Escape(p.Name) + @"(?!\w)")))
+      {
+         used.Add(parameter.Name, parameter.Value, parameter.Type);
+      }
+      return new BuiltQuery(rows, used);
+   }
+
    public void Issue(IssueSeverity severity, string message, string field) => planner.Dashboard.Issue(severity, message, Widget.Id, field);
 
    public ResolvedField? Field(FieldRef field, string path) => planner.Dashboard.Field(Source.Id, field, path, Widget.Id);
@@ -668,6 +681,7 @@ public sealed class PlanContext
       ArgumentNullException.ThrowIfNull(dimension);
       if (Field(dimension.Field, path + ".field") is not { } field) { return null; }
       ScalarType type = field.Type;
+      Booleans(dimension.Booleans, field, path + ".booleans");
       if (type.Kind is ScalarKind.Json or ScalarKind.Unknown or ScalarKind.Binary)
       {
          Issue(IssueSeverity.Error, $"{field.Name} is {type.WithNullable(false)}, which can't be grouped", path + ".field");
@@ -703,41 +717,105 @@ public sealed class PlanContext
       return new DimensionExpression($"{function}({field.Member(null)})", result, row => $"{function}({field.Member(row)})");
    }
 
-   /// <summary>A measure's aggregate over a group's rows; null with an issue when its field can't be aggregated so.</summary>
+   /// <summary>Labels for true and false given to a field that isn't true or false: they show nowhere (a warning).</summary>
+   public void Booleans(BooleanLabels? labels, ResolvedField field, string path)
+   {
+      ArgumentNullException.ThrowIfNull(field);
+      if (labels != null && field.Type.Kind != ScalarKind.Boolean)
+      {
+         Issue(IssueSeverity.Warning, $"{field.Name} isn't true or false: its labels for true and false show nowhere", path);
+      }
+   }
+
+   /// <summary>
+   /// A measure's aggregate over a group's rows (those its conditions keep), divided by what it is per when it is a
+   /// ratio: null where that is 0, as databases differ over dividing by it. Null with an issue when a field can't be
+   /// aggregated so, or a condition can't be written.
+   /// </summary>
    public string? Measure(Measure measure, string path)
    {
       ArgumentNullException.ThrowIfNull(measure);
-      if (measure.Aggregate == Aggregate.Count) { return "count()"; }
-      if (measure.Field == null || Field(measure.Field, path + ".field") is not { } field) { return null; }
+      string? value = Aggregated(measure.Aggregate, measure.Field, measure.Where, path);
+      if (measure.Per is not { } per) { return value; }
+      string? over = Aggregated(per.Aggregate, per.Field, per.Where, path + ".per");
+      return value == null || over == null ? null : $"{value} / nullif({over}, 0)";
+   }
+
+   /// <summary>
+   /// An aggregate of a field (none when it counts rows) over a group's rows that <paramref name="where"/> keeps:
+   /// counted where it holds, or of the field's value where it holds (<c>iif(…, x, null)</c>, as aggregates skip
+   /// nulls). The average of true/false values is the share that are true, of those with a value.
+   /// </summary>
+   private string? Aggregated(Aggregate aggregate, FieldRef? fieldRef, List<WidgetCondition>? where, string path)
+   {
+      string row = planner.Dashboard.Row(0);
+      bool written = Kept(where, row, path + ".where", out List<string> kept);
+      if (aggregate == Aggregate.Count) { return !written ? null : kept.Count == 0 ? "count()" : $"count({row} => {And(kept)})"; }
+      if (fieldRef == null || Field(fieldRef, path + ".field") is not { } field) { return null; }
       ScalarType type = field.Type;
-      bool fits = measure.Aggregate switch
+      bool share = aggregate == Aggregate.Avg && type.Kind == ScalarKind.Boolean;
+      bool fits = aggregate switch
       {
-         Aggregate.Sum or Aggregate.Avg => type.IsNumeric,
+         Aggregate.Sum => type.IsNumeric,
+         Aggregate.Avg => type.IsNumeric || share,
          Aggregate.Min or Aggregate.Max => type.IsNumeric || type.IsTemporal || type.Kind is ScalarKind.String or ScalarKind.Interval,
          Aggregate.CountDistinct or Aggregate.ApproxCountDistinct => type.Kind is not (ScalarKind.Json or ScalarKind.Unknown),
          _ => true,
       };
       if (!fits)
       {
-         Issue(IssueSeverity.Error, $"{field.Name} is {type.WithNullable(false)}, which has no {DefinitionRules.Name(measure.Aggregate)}", path + ".aggregate");
+         Issue(IssueSeverity.Error, $"{field.Name} is {type.WithNullable(false)}, which has no {DefinitionRules.Name(aggregate)}", path + ".aggregate");
          return null;
       }
-      if (measure.Aggregate is Aggregate.Sum or Aggregate.Avg && field.Steps.Count > 0)
+      if (aggregate is Aggregate.Sum or Aggregate.Avg && field.Steps.Count > 0)
       {
          Issue(IssueSeverity.Warning, $"Each row of {field.Steps[^1].Target.DisplayName} counts once for each of {Source.Label}'s rows it is reached from", path + ".field");
       }
-      string member = field.Member(null);
-      return measure.Aggregate switch
+      if (!written) { return null; }
+      if (aggregate == Aggregate.CountValues) { return $"count({row} => {And([.. kept, $"{field.Member(row)} != null"])})"; }
+      // A share's true counts 1 and false 0.
+      string Value(string? of) => share ? $"toInt({field.Member(of)})" : field.Member(of);
+      string argument = kept.Count == 0 ? Value(null) : $"{row} => iif({And(kept)}, {Value(row)}, null)";
+      return aggregate switch
       {
-         Aggregate.CountValues => $"count({planner.Dashboard.Row(0)} => {field.Member(planner.Dashboard.Row(0))} != null)",
-         Aggregate.CountDistinct => $"countDistinct({member})",
-         Aggregate.ApproxCountDistinct => $"approxCountDistinct({member})",
-         Aggregate.Sum => $"sum({member})",
-         Aggregate.Avg => $"avg({member})",
-         Aggregate.Min => $"min({member})",
-         _ => $"max({member})",
+         Aggregate.CountDistinct => $"countDistinct({argument})",
+         Aggregate.ApproxCountDistinct => $"approxCountDistinct({argument})",
+         Aggregate.Sum => $"sum({argument})",
+         Aggregate.Avg => $"avg({argument})",
+         Aggregate.Min => $"min({argument})",
+         _ => $"max({argument})",
       };
    }
+
+   /// <summary>The conditions an aggregate's rows are kept by, over <paramref name="row"/>; false, with issues, when one can't be written.</summary>
+   private bool Kept(List<WidgetCondition>? where, string row, string path, out List<string> kept)
+   {
+      kept = [];
+      bool written = true;
+      for (int i = 0; i < (where?.Count ?? 0); i++)
+      {
+         WidgetCondition condition = where![i];
+         string at = $"{path}[{i}]";
+         if (Field(condition.Field, at + ".field") is not { } field)
+         {
+            written = false;
+            continue;
+         }
+         Dictionary<string, string[]> found = [];
+         string? text = ConditionWriter.Write(field.Member(row), field.Type, field.Name, ConditionSpec.Of(condition.Value), at + ".value", Parameters, found, planner.Today);
+         foreach ((string wrong, string[] messages) in found)
+         {
+            foreach (string message in messages) { Issue(IssueSeverity.Error, message, wrong); }
+         }
+         if (found.Count > 0 || text == null) { written = false; }
+         else if (text.Length > 0) { kept.Add(text); }
+      }
+      return written;
+   }
+
+   /// <summary>Conditions that all hold, those with an "or" in parentheses.</summary>
+   private static string And(IReadOnlyList<string> parts) =>
+      parts.Count == 1 ? parts[0] : string.Join(" and ", parts.Select(p => p.StartsWith('(') || !p.Contains(" or ", StringComparison.Ordinal) ? p : "(" + p + ")"));
 
    /// <summary>Emitters the widget listens to by name whose sources aren't linked to its own.</summary>
    private IEnumerable<string> Unreached(DataWidgetConfig config)

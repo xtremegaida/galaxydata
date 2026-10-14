@@ -3,7 +3,7 @@
   "version": 1,
   "name": "Web analytics",
   "description": "Visits, traffic sources, content, audience, forms and server requests from HyperWhirlpool's web domain",
-  "exportedAt": "2026-10-14T19:20:16.9644948Z",
+  "exportedAt": "2026-10-14T20:39:02.8201377Z",
   "definition": {
     "schema": 1,
     "layout": {
@@ -751,14 +751,31 @@
               "aggregate": "avg",
               "field": {
                 "path": [],
+                "column": "bounced"
+              },
+              "label": "Bounce rate",
+              "format": {
+                "decimals": 1,
+                "prefix": null,
+                "suffix": null,
+                "compact": false,
+                "style": "percent"
+              }
+            },
+            {
+              "aggregate": "avg",
+              "field": {
+                "path": [],
                 "column": "duration_ms"
               },
               "label": "Avg duration",
               "format": {
-                "decimals": 0,
+                "decimals": null,
                 "prefix": null,
-                "suffix": " ms",
-                "compact": true
+                "suffix": null,
+                "compact": false,
+                "style": "duration",
+                "unit": "milliseconds"
               }
             },
             {
@@ -835,7 +852,7 @@
       },
       {
         "id": "ov-bounce",
-        "title": "Bounced, by traffic type",
+        "title": "Bounce rate by traffic type",
         "config": {
           "kind": "bar",
           "dimension": {
@@ -846,24 +863,21 @@
             "bucket": null,
             "label": "Traffic type"
           },
-          "series": {
-            "field": {
-              "path": [],
-              "column": "bounced"
-            },
-            "bucket": null,
-            "label": "Bounced"
-          },
+          "series": null,
           "measures": [
             {
-              "aggregate": "count",
-              "field": null,
-              "label": "Sessions",
+              "aggregate": "avg",
+              "field": {
+                "path": [],
+                "column": "bounced"
+              },
+              "label": "Bounce rate",
               "format": {
-                "decimals": null,
+                "decimals": 1,
                 "prefix": null,
                 "suffix": null,
-                "compact": true
+                "compact": false,
+                "style": "percent"
               }
             }
           ],
@@ -874,12 +888,12 @@
           },
           "limit": 10,
           "orientation": "horizontal",
-          "stack": "percent",
-          "labels": false,
-          "legend": "top",
+          "stack": "none",
+          "labels": true,
+          "legend": "none",
           "xTitle": null,
           "yTitle": null,
-          "palette": 3,
+          "colorBy": "category",
           "source": "sessions",
           "conditions": [],
           "emits": false,
@@ -1069,10 +1083,24 @@
               },
               "label": "Duration",
               "format": {
-                "decimals": 0,
+                "decimals": null,
                 "prefix": null,
-                "suffix": " ms",
-                "compact": false
+                "suffix": null,
+                "compact": false,
+                "style": "duration",
+                "unit": "milliseconds"
+              }
+            },
+            {
+              "field": {
+                "path": [],
+                "column": "bounced"
+              },
+              "label": "Bounced",
+              "format": null,
+              "booleans": {
+                "true": "Bounced",
+                "false": ""
               }
             }
           ],
@@ -1179,7 +1207,11 @@
               "column": "entry_paid"
             },
             "bucket": null,
-            "label": "Paid"
+            "label": "Paid",
+            "booleans": {
+              "true": "Paid",
+              "false": "Not paid"
+            }
           },
           "measure": {
             "aggregate": "count",
@@ -1418,6 +1450,21 @@
                 "prefix": null,
                 "suffix": null,
                 "compact": false
+              }
+            },
+            {
+              "aggregate": "avg",
+              "field": {
+                "path": [],
+                "column": "bounced"
+              },
+              "label": "Bounce rate",
+              "format": {
+                "decimals": 1,
+                "prefix": null,
+                "suffix": null,
+                "compact": false,
+                "style": "percent"
               }
             },
             {
@@ -1676,10 +1723,12 @@
               },
               "label": "Avg active time",
               "format": {
-                "decimals": 0,
+                "decimals": null,
                 "prefix": null,
-                "suffix": " ms",
-                "compact": true
+                "suffix": null,
+                "compact": false,
+                "style": "duration",
+                "unit": "milliseconds"
               }
             },
             {
@@ -1704,10 +1753,11 @@
               },
               "label": "Read to the end",
               "format": {
-                "decimals": 2,
+                "decimals": 1,
                 "prefix": null,
                 "suffix": null,
-                "compact": false
+                "compact": false,
+                "style": "percent"
               }
             },
             {
@@ -2643,6 +2693,52 @@
               "format": null
             },
             {
+              "aggregate": "count",
+              "field": null,
+              "label": "Submit rate",
+              "format": {
+                "decimals": 1,
+                "prefix": null,
+                "suffix": null,
+                "compact": false,
+                "style": "percent"
+              },
+              "where": [
+                {
+                  "field": {
+                    "path": [],
+                    "column": "submitted"
+                  },
+                  "value": {
+                    "op": "eq",
+                    "value": true,
+                    "valueTo": null,
+                    "values": null,
+                    "relative": null
+                  }
+                }
+              ],
+              "per": {
+                "aggregate": "count",
+                "field": null,
+                "where": [
+                  {
+                    "field": {
+                      "path": [],
+                      "column": "started"
+                    },
+                    "value": {
+                      "op": "eq",
+                      "value": true,
+                      "valueTo": null,
+                      "values": null,
+                      "relative": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
               "aggregate": "avg",
               "field": {
                 "path": [],
@@ -2650,10 +2746,12 @@
               },
               "label": "Start to submit",
               "format": {
-                "decimals": 0,
+                "decimals": null,
                 "prefix": null,
-                "suffix": " ms",
-                "compact": true
+                "suffix": null,
+                "compact": false,
+                "style": "duration",
+                "unit": "milliseconds"
               }
             }
           ],
@@ -2964,10 +3062,12 @@
               },
               "label": "Avg server time",
               "format": {
-                "decimals": 0,
+                "decimals": null,
                 "prefix": null,
-                "suffix": " ms",
-                "compact": false
+                "suffix": null,
+                "compact": false,
+                "style": "duration",
+                "unit": "milliseconds"
               }
             },
             {
@@ -2978,10 +3078,12 @@
               },
               "label": "Slowest",
               "format": {
-                "decimals": 0,
+                "decimals": null,
                 "prefix": null,
-                "suffix": " ms",
-                "compact": false
+                "suffix": null,
+                "compact": false,
+                "style": "duration",
+                "unit": "milliseconds"
               }
             }
           ],
@@ -3217,48 +3319,6 @@
             "color": {
               "light": "#eda100",
               "dark": "#c98500"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": 3,
-      "name": "Bounced or not",
-      "description": "A visit that bounced (one page, no interaction) in orange; one that went on in blue",
-      "definition": {
-        "colors": [
-          {
-            "light": "#2a78d6",
-            "dark": "#3987e5"
-          },
-          {
-            "light": "#eb6834",
-            "dark": "#d95926"
-          }
-        ],
-        "assign": "label",
-        "distinct": true,
-        "whenOut": "neutral",
-        "matching": {
-          "ignoreCase": true,
-          "ignoreWhitespace": false,
-          "ignoreBrackets": false,
-          "ignoreAccents": false
-        },
-        "overrides": [
-          {
-            "label": "false",
-            "color": {
-              "light": "#2a78d6",
-              "dark": "#3987e5"
-            }
-          },
-          {
-            "label": "true",
-            "color": {
-              "light": "#eb6834",
-              "dark": "#d95926"
             }
           }
         ]

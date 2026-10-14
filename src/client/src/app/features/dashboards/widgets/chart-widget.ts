@@ -292,7 +292,7 @@ export class ChartWidget {
       }
       const type = data.columns[d].type;
       const names = data.rows.map((row) =>
-        categoryText(row[d], type, config.dimension.bucket, this.locale),
+        categoryText(row[d], type, config.dimension.bucket, this.locale, config.dimension.booleans),
       );
       const row = data.columns.map((_, i) => (i === m ? data.other : null));
       return { rows: [row], column: d, name: otherName(names), color, step, stepLabel };
@@ -303,7 +303,7 @@ export class ChartWidget {
     }
     const type = data.columns[s].type;
     const names = (data.series ?? []).map((value) =>
-      categoryText(value, type, config.series?.bucket, this.locale),
+      categoryText(value, type, config.series?.bucket, this.locale, config.series?.booleans),
     );
     const rows = data.otherRows.map((other) =>
       data.columns.map((_, i) => (i === d ? other[0] : i === m ? other[1] : null)),

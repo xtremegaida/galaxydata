@@ -9608,6 +9608,21 @@
           "percent"
         ]
       },
+      "BooleanLabels": {
+        "required": [
+          "true",
+          "false"
+        ],
+        "type": "object",
+        "properties": {
+          "true": {
+            "type": "string"
+          },
+          "false": {
+            "type": "string"
+          }
+        }
+      },
       "Breakpoint": {
         "required": [
           "id",
@@ -12195,6 +12210,16 @@
           },
           "label": {
             "type": "string"
+          },
+          "booleans": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BooleanLabels"
+              }
+            ]
           }
         }
       },
@@ -12228,6 +12253,15 @@
           "delete",
           "merge",
           "other"
+        ]
+      },
+      "DurationUnit": {
+        "enum": [
+          "milliseconds",
+          "seconds",
+          "minutes",
+          "hours",
+          "days"
         ]
       },
       "EditedScriptDto": {
@@ -13913,6 +13947,56 @@
                 "$ref": "#/components/schemas/NumberFormat"
               }
             ]
+          },
+          "where": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/WidgetCondition"
+            }
+          },
+          "per": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MeasureTerm"
+              }
+            ]
+          }
+        }
+      },
+      "MeasureTerm": {
+        "required": [
+          "aggregate",
+          "field"
+        ],
+        "type": "object",
+        "properties": {
+          "aggregate": {
+            "$ref": "#/components/schemas/Aggregate"
+          },
+          "field": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FieldRef"
+              }
+            ]
+          },
+          "where": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/WidgetCondition"
+            }
           }
         }
       },
@@ -14145,8 +14229,29 @@
           },
           "compact": {
             "type": "boolean"
+          },
+          "style": {
+            "$ref": "#/components/schemas/NumberStyle"
+          },
+          "unit": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DurationUnit"
+              }
+            ]
           }
         }
+      },
+      "NumberStyle": {
+        "enum": [
+          "number",
+          "percent",
+          "duration"
+        ],
+        "default": "number"
       },
       "OverlayCheckDto": {
         "required": [
@@ -16506,6 +16611,16 @@
               },
               {
                 "$ref": "#/components/schemas/NumberFormat"
+              }
+            ]
+          },
+          "booleans": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BooleanLabels"
               }
             ]
           }

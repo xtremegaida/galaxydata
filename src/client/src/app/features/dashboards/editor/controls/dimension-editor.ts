@@ -5,6 +5,7 @@ import { MatInput } from '@angular/material/input';
 import { MatSelect } from '@angular/material/select';
 import type { Bucket, Dimension } from '../../model/definition';
 import { EntityCatalog, isDated } from '../entity-catalog';
+import { BooleanLabelsEditor } from './boolean-labels';
 import { type ChosenField, FieldPicker, humanize } from './field-picker';
 
 const periods: readonly { bucket: Bucket; label: string; time?: true }[] = [
@@ -21,11 +22,21 @@ const periods: readonly { bucket: Bucket; label: string; time?: true }[] = [
 
 /**
  * What a chart's slices (or a table's groups) are: a field of the source, by a period when it is a date (a
- * date-time always: its instants are too many to group), and its label (the column's, unless changed).
+ * date-time always: its instants are too many to group), its label (the column's, unless changed), and how a
+ * true/false field's values show.
  */
 @Component({
   selector: 'gd-dimension-editor',
-  imports: [FieldPicker, MatFormField, MatHint, MatInput, MatLabel, MatOption, MatSelect],
+  imports: [
+    BooleanLabelsEditor,
+    FieldPicker,
+    MatFormField,
+    MatHint,
+    MatInput,
+    MatLabel,
+    MatOption,
+    MatSelect,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="dimension">
@@ -57,6 +68,12 @@ const periods: readonly { bucket: Bucket; label: string; time?: true }[] = [
         <mat-label>Label</mat-label>
         <input matInput [value]="dimension().label" (input)="named($event)" autocomplete="off" />
       </mat-form-field>
+      @if (boolean()) {
+        <gd-boolean-labels
+          [labels]="dimension().booleans"
+          (labelsChange)="set({ booleans: $event ?? null })"
+        />
+      }
     </div>
   `,
   styles: `
@@ -81,6 +98,7 @@ export class DimensionEditor {
     const column = this.column();
     return !!column && isDated(column.type);
   });
+  protected readonly boolean = computed(() => this.column()?.type.kind === 'boolean');
   protected readonly timed = computed(() => {
     const kind = this.column()?.type.kind;
     return kind === 'dateTime' || kind === 'dateTimeOffset';
@@ -92,13 +110,16 @@ export class DimensionEditor {
   }
 
   protected chose(chosen: ChosenField): void {
-    const before = this.dimension();
+    const { booleans, ...before } = this.dimension();
     const timed = chosen.type.kind === 'dateTime' || chosen.type.kind === 'dateTimeOffset';
-    this.set({
+    this.dimension.set({
+      ...before,
       field: chosen.field,
       // A label typed stays; one that was the column's follows the column.
       label: !before.label || before.label === this.labelBefore() ? chosen.label : before.label,
       bucket: !isDated(chosen.type) ? null : (before.bucket ?? (timed ? 'month' : null)),
+      // Labels for yes and no stay with a field that has them.
+      ...(booleans && chosen.type.kind === 'boolean' ? { booleans } : {}),
     });
   }
 

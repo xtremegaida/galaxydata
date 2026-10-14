@@ -255,7 +255,10 @@ public enum Aggregate
    ApproxCountDistinct,
 
    Sum,
+
+   /// <summary>The mean of numbers; of true/false values, the share of those with a value that are true (0 to 1).</summary>
    Avg,
+
    Min,
    Max,
 }
@@ -274,14 +277,77 @@ public enum Bucket
    HourOfDay,
 }
 
-/// <summary>A field the rows are grouped by, in periods for dates (<see cref="Bucket"/>; date-times must have one), under a label.</summary>
-public sealed record Dimension(FieldRef Field, Bucket? Bucket, string Label);
+/// <summary>
+/// A field the rows are grouped by, in periods for dates (<see cref="Bucket"/>; date-times must have one), under a
+/// label. <see cref="Booleans"/>: how a true/false field's values show (none: yes and no); left out when there are
+/// none, so dimensions saved before them are written as they were.
+/// </summary>
+public sealed record Dimension(
+   FieldRef Field,
+   Bucket? Bucket,
+   string Label,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BooleanLabels? Booleans = null);
 
-/// <summary>An aggregate of the rows of each group: of a field, but for <see cref="Aggregate.Count"/>.</summary>
-public sealed record Measure(Aggregate Aggregate, FieldRef? Field, string Label, NumberFormat? Format);
+/// <summary>How true and false show, in place of yes and no: Bounced and Went on (an empty label: yes's or no's).</summary>
+public sealed record BooleanLabels(string True, string False);
 
-/// <summary>How numbers show: their decimals (null: as they are), text before and after, and large ones shortened (1.2K).</summary>
-public sealed record NumberFormat(int? Decimals, string? Prefix, string? Suffix, bool Compact);
+/// <summary>
+/// An aggregate of the rows of each group: of a field, but for <see cref="Aggregate.Count"/>. <see cref="Where"/>:
+/// conditions on the rows it aggregates, such as the bounced sessions among a group's (none: all of them).
+/// <see cref="Per"/>: another aggregate it is divided by, which makes it a ratio (form visits submitted per form
+/// visit started; none where that is 0). Both are left out when there are none, so measures saved before them are
+/// written as they were.
+/// </summary>
+public sealed record Measure(
+   Aggregate Aggregate,
+   FieldRef? Field,
+   string Label,
+   NumberFormat? Format,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] List<WidgetCondition>? Where = null,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] MeasureTerm? Per = null);
+
+/// <summary>What a ratio's measure is divided by: an aggregate of a field (but for <see cref="Aggregate.Count"/>), of the rows its conditions keep (none: all of them).</summary>
+public sealed record MeasureTerm(
+   Aggregate Aggregate,
+   FieldRef? Field,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] List<WidgetCondition>? Where = null);
+
+/// <summary>
+/// How numbers show: their decimals (null: as they are, but a percentage's to one place at most), text before and
+/// after, and large ones shortened (1.2K). <see cref="Style"/>: as numbers, as percentages, or as durations in
+/// <see cref="Unit"/>s; both are left out for numbers, so formats saved before them are written as they were.
+/// </summary>
+public sealed record NumberFormat(
+   int? Decimals,
+   string? Prefix,
+   string? Suffix,
+   bool Compact,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] NumberStyle Style = NumberStyle.Number,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DurationUnit? Unit = null);
+
+public enum NumberStyle
+{
+   Number,
+
+   /// <summary>A share of 1, times 100 with %: 0.256 shows as 25.6%.</summary>
+   Percent,
+
+   /// <summary>
+   /// A length of time in the format's unit, in its two largest parts: 2m 15s, 1h 5m, 3d 4h; under a minute in
+   /// seconds (45s, decimals to one place unless given), under a second in milliseconds (850ms). Never shortened.
+   /// </summary>
+   Duration,
+}
+
+/// <summary>What a duration's numbers count.</summary>
+public enum DurationUnit
+{
+   Milliseconds,
+   Seconds,
+   Minutes,
+   Hours,
+   Days,
+}
 
 public enum SortTarget
 {
@@ -417,8 +483,12 @@ public enum TableMode
    Raw,
 }
 
-/// <summary>A raw table's column: a field, under a label.</summary>
-public sealed record TableColumn(FieldRef Field, string Label, NumberFormat? Format);
+/// <summary>A raw table's column: a field, under a label; how its numbers show, or its true/false values (none: yes and no).</summary>
+public sealed record TableColumn(
+   FieldRef Field,
+   string Label,
+   NumberFormat? Format,
+   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BooleanLabels? Booleans = null);
 
 /// <summary>A table, grouped (<see cref="Dimensions"/> and <see cref="Measures"/>) or raw (<see cref="Columns"/>), in pages.</summary>
 public sealed record TableConfig(

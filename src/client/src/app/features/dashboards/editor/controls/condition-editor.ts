@@ -285,7 +285,7 @@ export class ConditionValueEditor {
   }
 }
 
-/** A widget's own conditions: on its source's fields, each of them kept. */
+/** Conditions on a source's fields, each of them kept: a widget's own, or those of the rows a measure aggregates. */
 @Component({
   selector: 'gd-condition-list',
   imports: [ConditionValueEditor, FieldPicker, MatButton, MatIcon, MatIconButton],
@@ -293,7 +293,7 @@ export class ConditionValueEditor {
   template: `
     @for (condition of conditions(); track $index; let i = $index) {
       <fieldset class="condition">
-        <legend>Condition {{ i + 1 }}</legend>
+        <legend>{{ legend() }} {{ i + 1 }}</legend>
         <gd-field-picker
           [entity]="entity()"
           [field]="condition.field.column ? condition.field : null"
@@ -302,6 +302,7 @@ export class ConditionValueEditor {
         <gd-condition-value
           label="Which"
           [known]="knownOf(condition.field)"
+          [boolean]="booleanAt(condition.field)"
           [value]="condition.value"
           (valueChange)="change(i, { value: $event })"
         />
@@ -309,16 +310,16 @@ export class ConditionValueEditor {
           matIconButton
           type="button"
           class="remove"
-          [attr.aria-label]="'Remove condition ' + (i + 1)"
+          [attr.aria-label]="'Remove ' + legend().toLowerCase() + ' ' + (i + 1)"
           (click)="remove(i)"
         >
           <mat-icon>delete</mat-icon>
         </button>
       </fieldset>
     }
-    <button matButton type="button" (click)="add()">
+    <button matButton type="button" (click)="adding()">
       <mat-icon>add</mat-icon>
-      Add a condition
+      {{ add() }}
     </button>
   `,
   styles: `
@@ -347,13 +348,22 @@ export class ConditionList {
 
   readonly entity = input.required<string | null>();
   readonly conditions = model.required<readonly { field: FieldRef; value: ConditionValue }[]>();
+  /** What each is called, numbered: "Condition 1". */
+  readonly legend = input('Condition');
+  /** What the button that adds one says. */
+  readonly add = input('Add a condition');
 
   /** The values a condition's field is known to take, when its source says. */
   protected knownOf(field: FieldRef): readonly string[] | null {
     return this.catalog.columnOf(this.entity(), field)?.values ?? null;
   }
 
-  protected add(): void {
+  /** Whether a condition's field is true or false: its value is picked, yes or no. */
+  protected booleanAt(field: FieldRef): boolean {
+    return this.catalog.columnOf(this.entity(), field)?.type.kind === 'boolean';
+  }
+
+  protected adding(): void {
     this.conditions.set([
       ...this.conditions(),
       { field: { path: [], column: '' }, value: { op: 'eq', value: '' } },

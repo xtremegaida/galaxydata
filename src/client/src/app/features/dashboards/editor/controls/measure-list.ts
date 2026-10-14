@@ -5,10 +5,13 @@ import { MatFormField, MatLabel } from '@angular/material/form-field';
 import { MatIcon } from '@angular/material/icon';
 import { MatInput } from '@angular/material/input';
 import { MatSelect } from '@angular/material/select';
-import type { Measure } from '../../model/definition';
+import { MatSlideToggle } from '@angular/material/slide-toggle';
+import type { Measure, MeasureTerm, WidgetCondition } from '../../model/definition';
 import { rowCount } from '../../model/widget-defaults';
 import { EntityCatalog, type EntityColumn, type FieldUse, fieldAllowed } from '../entity-catalog';
+import { ConditionList } from './condition-editor';
 import { type ChosenField, FieldPicker, humanize } from './field-picker';
+import { NumberFormatEditor, keptFormat } from './number-format';
 
 type Aggregate = Measure['aggregate'];
 
@@ -39,7 +42,7 @@ export function suggestedMeasures(columns: readonly EntityColumn[]): Measure[] {
       return {
         aggregate,
         field: { path: [], column: c.name },
-        label: measureLabel(aggregate, c.label || humanize(c.name)),
+        label: measureLabel(aggregate, c.label || humanize(c.name), c.type.kind === 'boolean'),
         format: null,
       };
     });
@@ -52,13 +55,22 @@ const aggregates: readonly { aggregate: Aggregate; label: string; use: FieldUse 
   // Within about 1% on ClickHouse, in a few kilobytes, where an exact count holds every value; exact elsewhere.
   { aggregate: 'approxCountDistinct', label: 'Count of distinct values (approximate)', use: 'any' },
   { aggregate: 'sum', label: 'Sum', use: 'number' },
-  { aggregate: 'avg', label: 'Average', use: 'number' },
+  // Of true/false values, the share that are true.
+  { aggregate: 'avg', label: 'Average (of yes/no: the share yes)', use: 'average' },
   { aggregate: 'min', label: 'Least', use: 'ordered' },
   { aggregate: 'max', label: 'Greatest', use: 'ordered' },
 ];
 
-/** A measure's label as made from what it is: "Rows", "Sum of total", "Distinct customer". */
-export function measureLabel(aggregate: Aggregate, fieldLabel: string | null): string {
+function useOf(aggregate: Aggregate): FieldUse | null {
+  return aggregates.find((a) => a.aggregate === aggregate)?.use ?? null;
+}
+
+/** A measure's label as made from what it is: "Rows", "Sum of total", "Distinct customer", "Bounced (share)". */
+export function measureLabel(
+  aggregate: Aggregate,
+  fieldLabel: string | null,
+  boolean = false,
+): string {
   if (aggregate === 'count' || !fieldLabel) {
     return 'Rows';
   }
@@ -73,7 +85,7 @@ export function measureLabel(aggregate: Aggregate, fieldLabel: string | null): s
     case 'sum':
       return `Sum of ${of}`;
     case 'avg':
-      return `Average ${of}`;
+      return boolean ? `${fieldLabel} (share)` : `Average ${of}`;
     case 'min':
       return `Least ${of}`;
     case 'max':
@@ -83,12 +95,15 @@ export function measureLabel(aggregate: Aggregate, fieldLabel: string | null): s
 
 /**
  * What a chart or table measures: one or more aggregates (counts of rows, of values, of distinct values; sums and
- * averages of numbers; the least and greatest of what is ordered), each of a field but rows' counts, and labelled
- * (from what it is, unless typed). A measure that counts rows offers those its source suggests in its place.
+ * averages of numbers, the share of true/false values that are true; the least and greatest of what is ordered),
+ * each of a field but rows' counts, of the rows its conditions keep, and divided by another aggregate when it is a
+ * ratio; labelled (from what it is, unless typed), and shown as numbers, percentages or durations. A measure that
+ * counts rows offers those its source suggests in its place.
  */
 @Component({
   selector: 'gd-measure-list',
   imports: [
+    ConditionList,
     FieldPicker,
     MatButton,
     MatFormField,
@@ -98,6 +113,8 @@ export function measureLabel(aggregate: Aggregate, fieldLabel: string | null): s
     MatLabel,
     MatOption,
     MatSelect,
+    MatSlideToggle,
+    NumberFormatEditor,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -130,10 +147,53 @@ export function measureLabel(aggregate: Aggregate, fieldLabel: string | null): s
             (chosen)="chose(i, $event)"
           />
         }
+        <gd-condition-list
+          legend="Row condition"
+          add="Only rows where…"
+          [entity]="entity()"
+          [conditions]="measure.where ?? []"
+          (conditionsChange)="change(i, { where: kept($event) })"
+        />
+        <mat-slide-toggle [checked]="!!measure.per" (change)="divided(i, $event.checked)">
+          Divided by another aggregate (a rate or ratio)
+        </mat-slide-toggle>
+        @if (measure.per; as per) {
+          <fieldset class="per">
+            <legend>Divided by</legend>
+            <mat-form-field subscriptSizing="dynamic">
+              <mat-label>Aggregate</mat-label>
+              <mat-select [value]="per.aggregate" (valueChange)="perAggregated(i, $event)">
+                @for (choice of aggregates; track choice.aggregate) {
+                  <mat-option [value]="choice.aggregate">{{ choice.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            @if (useOf(per.aggregate); as use) {
+              <gd-field-picker
+                label="Of"
+                [entity]="entity()"
+                [use]="use"
+                [field]="per.field"
+                (chosen)="changePer(i, { field: $event.field })"
+              />
+            }
+            <gd-condition-list
+              legend="Row condition"
+              add="Only rows where…"
+              [entity]="entity()"
+              [conditions]="per.where ?? []"
+              (conditionsChange)="changePer(i, { where: kept($event) })"
+            />
+          </fieldset>
+        }
         <mat-form-field subscriptSizing="dynamic">
           <mat-label>Label</mat-label>
           <input matInput [value]="measure.label" (input)="named(i, $event)" autocomplete="off" />
         </mat-form-field>
+        <gd-number-format
+          [format]="measure.format"
+          (formatChange)="change(i, { format: $event })"
+        />
         @if (measures().length > 1) {
           <button
             matIconButton
@@ -155,7 +215,8 @@ export function measureLabel(aggregate: Aggregate, fieldLabel: string | null): s
     }
   `,
   styles: `
-    .measure {
+    .measure,
+    .per {
       display: grid;
       gap: 8px;
       position: relative;
@@ -163,6 +224,9 @@ export function measureLabel(aggregate: Aggregate, fieldLabel: string | null): s
       padding: 8px 12px 12px;
       border: 1px solid var(--mat-sys-outline-variant);
       border-radius: var(--mat-sys-corner-small);
+    }
+    .per {
+      margin: 0;
     }
     legend {
       font: var(--mat-sys-label-large);
@@ -183,6 +247,7 @@ export function measureLabel(aggregate: Aggregate, fieldLabel: string | null): s
 export class MeasureList {
   private readonly catalog = inject(EntityCatalog);
   protected readonly aggregates = aggregates;
+  protected readonly useOf = useOf;
   protected readonly max = 10;
 
   readonly entity = input.required<string | null>();
@@ -193,7 +258,11 @@ export class MeasureList {
   private readonly labelsGiven = computed(() =>
     this.measures().map((m) => {
       const column = this.catalog.columnOf(this.entity(), m.field);
-      return measureLabel(m.aggregate, column ? column.label || humanize(column.name) : null);
+      return measureLabel(
+        m.aggregate,
+        column ? column.label || humanize(column.name) : null,
+        column?.type.kind === 'boolean',
+      );
     }),
   );
 
@@ -204,28 +273,30 @@ export class MeasureList {
     return entity ? suggestedMeasures(entity.columns) : [];
   });
 
-  protected useOf(aggregate: Aggregate): FieldUse | null {
-    return aggregates.find((a) => a.aggregate === aggregate)?.use ?? null;
-  }
-
   protected aggregated(index: number, aggregate: Aggregate): void {
     const measure = this.measures()[index];
-    const field = this.useOf(aggregate) ? measure.field : null;
+    const field = useOf(aggregate) ? measure.field : null;
     const column = this.catalog.columnOf(this.entity(), field);
+    const boolean = column?.type.kind === 'boolean';
     this.change(index, {
       aggregate,
       field,
       label: this.given(index)
-        ? measureLabel(aggregate, column ? column.label || humanize(column.name) : null)
+        ? measureLabel(aggregate, column ? column.label || humanize(column.name) : null, boolean)
         : measure.label,
+      format: this.shareFormat(aggregate, boolean, measure),
     });
   }
 
   protected chose(index: number, chosen: ChosenField): void {
     const measure = this.measures()[index];
+    const boolean = chosen.type.kind === 'boolean';
     this.change(index, {
       field: chosen.field,
-      label: this.given(index) ? measureLabel(measure.aggregate, chosen.label) : measure.label,
+      label: this.given(index)
+        ? measureLabel(measure.aggregate, chosen.label, boolean)
+        : measure.label,
+      format: this.shareFormat(measure.aggregate, boolean, measure),
     });
   }
 
@@ -242,6 +313,25 @@ export class MeasureList {
     this.change(index, { label: (event.target as HTMLInputElement).value });
   }
 
+  /** Divided by the group's rows to begin with (a share of them), or by nothing again. */
+  protected divided(index: number, on: boolean): void {
+    this.change(index, { per: on ? { aggregate: 'count', field: null } : null });
+  }
+
+  protected perAggregated(index: number, aggregate: Aggregate): void {
+    const per = this.measures()[index].per!;
+    this.changePer(index, { aggregate, field: useOf(aggregate) ? per.field : null });
+  }
+
+  protected changePer(index: number, change: Partial<MeasureTerm>): void {
+    this.change(index, { per: { ...this.measures()[index].per!, ...change } });
+  }
+
+  /** Conditions as kept: none as none, as the server writes them. */
+  protected kept(conditions: readonly WidgetCondition[]): WidgetCondition[] | null {
+    return conditions.length > 0 ? [...conditions] : null;
+  }
+
   protected add(): void {
     this.measures.set([...this.measures(), rowCount()]);
   }
@@ -250,13 +340,20 @@ export class MeasureList {
     this.measures.set(this.measures().filter((_, i) => i !== index));
   }
 
+  /** A share of true values shows as a percentage, unless its format was chosen. */
+  private shareFormat(aggregate: Aggregate, boolean: boolean, measure: Measure): Measure['format'] {
+    return aggregate === 'avg' && boolean && !measure.format
+      ? keptFormat({ decimals: null, prefix: null, suffix: null, compact: false, style: 'percent' })
+      : measure.format;
+  }
+
   /** Whether a measure's label is the one it was given (not typed): it follows what the measure is. */
   private given(index: number): boolean {
     const label = this.measures()[index].label;
     return !label || label === this.labelsGiven()[index] || label === 'Rows';
   }
 
-  private change(index: number, change: Partial<Measure>): void {
+  protected change(index: number, change: Partial<Measure>): void {
     this.measures.set(this.measures().map((m, i) => (i === index ? { ...m, ...change } : m)));
   }
 }
