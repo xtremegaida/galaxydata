@@ -2,8 +2,8 @@ import fc from 'fast-check';
 import { salesDefinition, tabbedDefinition } from '../../../../testing/dashboards';
 import { type Cells, collides } from '../layout/grid-layout';
 import { History } from '../editor/history';
-import { rowCount, tableDefaults, textDefaults } from './widget-defaults';
-import type { Definition } from './definition';
+import { kpiDefaults, rowCount, tableDefaults, textDefaults } from './widget-defaults';
+import type { Definition, KpiConfig } from './definition';
 import {
   addFilter,
   addLink,
@@ -18,6 +18,7 @@ import {
   moveTab,
   moveToTab,
   moveWidget,
+  removeFilter,
   removeSource,
   removeTab,
   removeWidget,
@@ -191,6 +192,32 @@ describe("a dashboard's edits", () => {
     const excepted = setFilterApplies(definition, id, 'by-status', false);
     expect(excepted.filters[0].except).toEqual(['by-status']);
     expect(setFilterApplies(excepted, id, 'by-status', true).filters[0].except).toEqual([]);
+  });
+
+  it("keeps KPIs' comparisons with the filters they name: renamed, of another kind, or removed", () => {
+    const { definition, id } = addFilter(salesDefinition(), {
+      label: 'When',
+      field: { source: 'orders', path: [], column: 'order_date' },
+      kind: 'relative',
+      value: null,
+      visible: true,
+      editable: true,
+      multiple: false,
+      except: [],
+    });
+    const kpi: KpiConfig = { ...kpiDefaults('orders'), compare: { filter: id, good: 'down' } };
+    const added = addWidget(definition, kpi, { w: 3, h: 3 }, null, null);
+    const compare = (d: Definition) =>
+      (d.widgets.find((w) => w.id === added.id)!.config as KpiConfig).compare;
+    const renamed = renameNewFilter(added.definition, id, 'Period');
+    expect(compare(renamed)).toEqual({ filter: 'period', good: 'down' });
+    expect(compare(updateFilter(renamed, 'period', { label: 'The period' }))).toEqual({
+      filter: 'period',
+      good: 'down',
+    });
+    expect(compare(updateFilter(renamed, 'period', { kind: 'range' }))).toBeNull();
+    expect(compare(removeFilter(renamed, 'period'))).toBeNull();
+    expect(removeFilter(renamed, 'period').filters).toEqual([]);
   });
 });
 

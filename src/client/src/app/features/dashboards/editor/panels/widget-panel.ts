@@ -115,12 +115,15 @@ type Listens = DataConfig['listens'];
         }
         @if (data(); as config) {
           <h3>Filtering</h3>
-          <mat-slide-toggle
-            [checked]="config.emits"
-            (change)="setConfig({ emits: $event.checked }, 'Changed what choosing does in')"
-          >
-            Choosing its slices filters the widgets that listen
-          </mat-slide-toggle>
+          <!-- A KPI is one number: it has no slices to choose. -->
+          @if (config.kind !== 'kpi') {
+            <mat-slide-toggle
+              [checked]="config.emits"
+              (change)="setConfig({ emits: $event.checked }, 'Changed what choosing does in')"
+            >
+              Choosing its slices filters the widgets that listen
+            </mat-slide-toggle>
+          }
           <mat-form-field subscriptSizing="dynamic">
             <mat-label>Listens to</mat-label>
             <mat-select

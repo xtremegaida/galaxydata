@@ -278,6 +278,42 @@ public sealed class DefinitionRulesTests
    }
 
    [Fact]
+   public void AKpiIsComparedThroughARelativeFilterAndItsSparklineIsByAPeriod()
+   {
+      DashboardDefinition sales = Definitions.Sales();
+      DashboardFilter period = new("period", "Period", new SourceField("orders", [], "order_date"), FilterKind.Relative,
+         new ConditionValue(ConditionOp.Relative, Relative: new RelativeRange(RelativeUnit.Day, 30, RelativeMode.Last)), true, true, false, []);
+      KpiConfig kpi = new("orders", [], false, Definitions.All, new Measure(Aggregate.Sum, new FieldRef([], "total"), "Revenue", new NumberFormat(0, "R ", null, true)),
+         new KpiCompare("period", KpiGood.Down), new Dimension(new FieldRef([], "order_date"), Bucket.Day, "Day"));
+      DashboardDefinition With(KpiConfig config) => sales with
+      {
+         Filters = [.. sales.Filters, period],
+         Widgets = [sales.Widgets[0], sales.Widgets[1] with { Config = config }, sales.Widgets[2]],
+      };
+
+      (DashboardDefinition? checkedKpi, Dictionary<string, string[]> errors) = Check(With(kpi));
+      errors.ShouldBeEmpty();
+      string json = DefinitionJson.Write(checkedKpi!);
+      json.ShouldContain("{\"kind\":\"kpi\",\"measure\":{\"aggregate\":\"sum\"");
+      json.ShouldContain("\"compare\":{\"filter\":\"period\",\"good\":\"down\"},\"sparkline\":{\"field\":{\"path\":[],\"column\":\"order_date\"},\"bucket\":\"day\"");
+      DefinitionJson.Write(DefinitionJson.Read(json)).ShouldBe(json, "written as it reads back");
+      DefinitionJson.Read(json).Widgets[1].Config.ShouldBeOfType<KpiConfig>().Compare.ShouldBe(new KpiCompare("period", KpiGood.Down));
+      Check(With(kpi with { Compare = null, Sparkline = null })).Errors.ShouldBeEmpty("a number alone");
+      DefinitionJson.Write(Check(With(kpi with { Compare = null, Sparkline = null })).Checked!).ShouldContain("\"compare\":null,\"sparkline\":null");
+
+      Fields(With(kpi with { Emits = true })).ShouldBe(["definition.widgets[1].config.emits"]);
+      Fields(With(kpi with { Measure = new Measure(Aggregate.Sum, null, "", null) }))
+         .ShouldBe(["definition.widgets[1].config.measure.field", "definition.widgets[1].config.measure.label"]);
+      Fields(With(kpi with { Compare = new KpiCompare("nowhere", KpiGood.Up) })).ShouldBe(["definition.widgets[1].config.compare.filter"]);
+      Check(With(kpi with { Compare = new KpiCompare("status", KpiGood.Up) })).Errors["definition.widgets[1].config.compare.filter"]
+         .ShouldBe(["Compare with a period relative to today: a relative filter's"], "a filter of values has no period before");
+      Fields(With(kpi with { Sparkline = new Dimension(new FieldRef([], "order_date"), Bucket.DayOfWeek, "Weekday") })).ShouldBe(["definition.widgets[1].config.sparkline.bucket"]);
+      Fields(With(kpi with { Sparkline = new Dimension(new FieldRef([], "order_date"), null, "") }))
+         .ShouldBe(["definition.widgets[1].config.sparkline.bucket", "definition.widgets[1].config.sparkline.label"]);
+      Should.Throw<JsonException>(() => DefinitionJson.Read(json.Replace("\"good\":\"down\"", "\"good\":\"sideways\"", System.StringComparison.Ordinal)));
+   }
+
+   [Fact]
    public void ADashboardWithoutTabsIsWrittenAsItWas()
    {
       DashboardDefinition sales = Check(Definitions.Sales()).Checked!;

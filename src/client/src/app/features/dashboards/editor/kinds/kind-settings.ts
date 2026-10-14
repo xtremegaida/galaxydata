@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input, model } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, model } from '@angular/core';
 import { MatButton, MatIconButton } from '@angular/material/button';
 import { MatButtonToggle, MatButtonToggleGroup } from '@angular/material/button-toggle';
 import { MatOption } from '@angular/material/core';
@@ -9,8 +9,11 @@ import { MatSelect } from '@angular/material/select';
 import { MatSlideToggle } from '@angular/material/slide-toggle';
 import type {
   BarConfig,
+  Bucket,
   Dimension,
   HeadingConfig,
+  KpiCompare,
+  KpiConfig,
   LineConfig,
   Measure,
   PieConfig,
@@ -19,9 +22,11 @@ import type {
 } from '../../model/definition';
 import { blankDimension } from '../../model/widget-defaults';
 import { DimensionEditor } from '../controls/dimension-editor';
-import { FieldPicker, humanize } from '../controls/field-picker';
+import { type ChosenField, FieldPicker, humanize } from '../controls/field-picker';
 import { MeasureList } from '../controls/measure-list';
+import { NumberFormatEditor } from '../controls/number-format-editor';
 import { PalettePicker } from '../controls/palette-picker';
+import { EditorStore } from '../editor-store';
 
 type Sort = BarConfig['sort'];
 
@@ -683,6 +688,167 @@ export class PieSettings {
     const limit = Math.round(Number((event.target as HTMLInputElement).value));
     if (limit >= 1 && limit <= 50) {
       this.set({ limit });
+    }
+  }
+}
+
+/** The periods a sparkline is by, and their labels (the sparkline's dimension's, as its points are listed). */
+const sparkPeriods: readonly { bucket: Bucket; label: string }[] = [
+  { bucket: 'day', label: 'Day' },
+  { bucket: 'week', label: 'Week' },
+  { bucket: 'month', label: 'Month' },
+  { bucket: 'quarter', label: 'Quarter' },
+  { bucket: 'year', label: 'Year' },
+];
+
+/**
+ * A KPI: its measure and how its number shows; compared (or not) with the period before a period filter's (one
+ * relative to today, of the dashboard's), and which way of change is good; and its sparkline (or none): a date, by
+ * a period.
+ */
+@Component({
+  selector: 'gd-kpi-settings',
+  imports: [
+    FieldPicker,
+    MatFormField,
+    MatHint,
+    MatLabel,
+    MatOption,
+    MatSelect,
+    MatSlideToggle,
+    MeasureList,
+    NumberFormatEditor,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <gd-measure-list
+      [entity]="entity()"
+      [single]="true"
+      [measures]="[config().measure]"
+      (measuresChange)="set({ measure: $event[0] })"
+    />
+    <gd-number-format-editor
+      label="Its number"
+      [format]="config().measure.format"
+      (formatChange)="set({ measure: { ...config().measure, format: $event } })"
+    />
+    <h3>Compared</h3>
+    <mat-slide-toggle
+      [checked]="!!config().compare"
+      [disabled]="!config().compare && periods().length === 0"
+      (change)="compared($event.checked)"
+    >
+      With the period before
+    </mat-slide-toggle>
+    @if (!config().compare && periods().length === 0) {
+      <mat-hint class="aside"
+        >Add a filter of a period (relative to today) to compare with the one before it</mat-hint
+      >
+    }
+    @if (config().compare; as compare) {
+      <div class="row">
+        <mat-form-field subscriptSizing="dynamic">
+          <mat-label>The period of</mat-label>
+          <mat-select [value]="compare.filter" (valueChange)="setCompare({ filter: $event })">
+            @for (filter of periods(); track filter.id) {
+              <mat-option [value]="filter.id">{{ filter.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field subscriptSizing="dynamic">
+          <mat-label>Better when it goes</mat-label>
+          <mat-select [value]="compare.good" (valueChange)="setCompare({ good: $event })">
+            <mat-option value="up">Up</mat-option>
+            <mat-option value="down">Down</mat-option>
+            <mat-option value="neither">Neither way (not coloured)</mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+    }
+    <h3>Sparkline</h3>
+    <mat-slide-toggle [checked]="!!config().sparkline" (change)="sparklined($event.checked)">
+      A sparkline of it over time
+    </mat-slide-toggle>
+    @if (config().sparkline; as sparkline) {
+      <div class="row">
+        <gd-field-picker
+          label="Along"
+          use="date"
+          [entity]="entity()"
+          [field]="sparkline.field.column ? sparkline.field : null"
+          (chosen)="along($event)"
+        />
+        <mat-form-field subscriptSizing="dynamic">
+          <mat-label>By</mat-label>
+          <mat-select [value]="sparkline.bucket" (valueChange)="by($event)">
+            @for (period of sparkPeriods; track period.bucket) {
+              <mat-option [value]="period.bucket">{{ period.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+    }
+  `,
+  styles: `
+    ${settingsStyles}
+    .row {
+      align-items: start;
+    }
+    .aside {
+      font: var(--mat-sys-body-small);
+      color: var(--mat-sys-on-surface-variant);
+    }
+  `,
+})
+export class KpiSettings {
+  /** The editor's, for the dashboard's filters; none outside it. */
+  private readonly store = inject(EditorStore, { optional: true });
+
+  readonly entity = input.required<string | null>();
+  readonly config = model.required<KpiConfig>();
+  protected readonly sparkPeriods = sparkPeriods;
+
+  /** The dashboard's filters of a period relative to today, which a KPI compares through. */
+  protected readonly periods = computed(() =>
+    (this.store?.draft().filters ?? []).filter((f) => f.kind === 'relative'),
+  );
+
+  protected set(change: Partial<KpiConfig>): void {
+    this.config.set({ ...this.config(), ...change });
+  }
+
+  protected setCompare(change: Partial<KpiCompare>): void {
+    const compare = this.config().compare;
+    if (compare) {
+      this.set({ compare: { ...compare, ...change } });
+    }
+  }
+
+  /** Compared with the first period filter, more being better; or not compared. */
+  protected compared(on: boolean): void {
+    const first = this.periods()[0];
+    this.set({ compare: on && first ? { filter: first.id, good: 'up' } : null });
+  }
+
+  /** A sparkline by day, along the date picked; or none. */
+  protected sparklined(on: boolean): void {
+    this.set({
+      sparkline: on ? { field: { path: [], column: '' }, bucket: 'day', label: 'Day' } : null,
+    });
+  }
+
+  protected along(chosen: ChosenField): void {
+    const sparkline = this.config().sparkline;
+    if (sparkline) {
+      this.set({ sparkline: { ...sparkline, field: chosen.field } });
+    }
+  }
+
+  protected by(bucket: Bucket): void {
+    const sparkline = this.config().sparkline;
+    const label = sparkPeriods.find((p) => p.bucket === bucket)?.label ?? sparkline?.label ?? '';
+    if (sparkline) {
+      this.set({ sparkline: { ...sparkline, bucket, label } });
     }
   }
 }

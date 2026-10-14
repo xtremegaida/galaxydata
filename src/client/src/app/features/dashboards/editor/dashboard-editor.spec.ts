@@ -12,7 +12,8 @@ import { eventually, requestTo, settle } from '../../../../testing/http';
 import { openPage, pageProviders, textOf, wordsOf } from '../../../../testing/pages';
 import { FakeResizeObserver } from '../../../../testing/resize';
 import { dashboardRoutes } from '../dashboards.routes';
-import type { Definition } from '../model/definition';
+import type { Definition, Filter, KpiConfig } from '../model/definition';
+import { removeFilter } from '../model/definition-ops';
 import { DASHBOARD_WAITS } from '../state/waits';
 import { EditorStore } from './editor-store';
 
@@ -399,6 +400,128 @@ describe('the dashboard editor', () => {
     press('z', { ctrlKey: true });
     harness.detectChanges();
     expect(config()).toEqual({ kind: 'heading', text: '', size: 'large', align: 'start' });
+  });
+
+  it('adds a KPI compared with the period filter, its format, comparison and sparkline its settings', async () => {
+    const period: Filter = {
+      id: 'period',
+      label: 'Period',
+      field: { source: 'orders', path: [], column: 'order_date' },
+      kind: 'relative',
+      value: {
+        op: 'relative',
+        value: null,
+        valueTo: null,
+        values: null,
+        relative: { unit: 'day', count: 30, mode: 'last' },
+      },
+      visible: true,
+      editable: true,
+      multiple: false,
+      except: [],
+    };
+    const { page, http, store, harness } = await open(salesDefinition({ filters: [period] }));
+    button(page.querySelector('.add-widgets')!, 'KPI').click();
+    harness.detectChanges();
+    const made = store.selected()!;
+    const config = () => store.draft().widgets.find((w) => w.id === made)!.config as KpiConfig;
+    expect(config()).toEqual({
+      kind: 'kpi',
+      source: 'orders',
+      conditions: [],
+      emits: false,
+      listens: { mode: 'all', widgets: [] },
+      measure: { aggregate: 'count', field: null, label: 'Rows', format: null },
+      compare: { filter: 'period', good: 'up' },
+      sparkline: null,
+    });
+    expect(store.draft().layout.items[made]).toEqual({ x: 0, y: 7, w: 3, h: 3 });
+
+    // Its preview is its number, and how it changed.
+    await settle(5);
+    const asked = http.match((r) => r.url === '/api/dashboards/data' && r.body.widget === made);
+    expect(asked).toHaveLength(1);
+    asked[0].flush(
+      rowsOf('Rows', [], {
+        columns: [rowsOf('Rows', []).columns[1]],
+        rows: [['1250']],
+        previous: { value: '1000', from: '2026-01-30', to: '2026-02-28' },
+      }),
+    );
+    const cell = page.querySelector('[data-gd-cell="0,7,3,3"]')!;
+    await eventually(harness, () => !!cell.querySelector('gd-kpi-widget .value'));
+    expect(textOf(cell.querySelector('.value'))).toBe('1,250');
+    expect(textOf(cell.querySelector('.percent'))).toBe('+25%');
+
+    await eventually(harness, () => !!page.querySelector('gd-kpi-settings'));
+    const settings = page.querySelector('gd-kpi-settings')!;
+    const decimals = [...settings.querySelectorAll<HTMLInputElement>('input[type=number]')][0];
+    decimals.value = '1';
+    decimals.dispatchEvent(new Event('change'));
+    type(
+      settings.querySelector<HTMLInputElement>('gd-number-format-editor input[placeholder="R "]')!,
+      'R ',
+    );
+    harness.detectChanges();
+    expect(config().measure.format).toEqual({
+      decimals: 1,
+      prefix: 'R ',
+      suffix: null,
+      compact: false,
+    });
+    expect(textOf(settings.querySelector('gd-number-format-editor .example'))).toBe(
+      '1234567.891 shows as R 1,234,567.9',
+    );
+
+    /** Chooses an option of a select of its settings, by their labels. */
+    const choose = async (label: string, option: string) => {
+      const field = [...settings.querySelectorAll('mat-form-field')].find(
+        (f) => textOf(f.querySelector('mat-label')) === label,
+      )!;
+      field.querySelector<HTMLElement>('.mat-mdc-select-trigger')!.click();
+      harness.detectChanges();
+      await settle();
+      [...document.querySelectorAll<HTMLElement>('mat-option')]
+        .find((o) => textOf(o) === option)!
+        .click();
+      harness.detectChanges();
+      await settle();
+    };
+    /** A toggle of its settings, by its label. */
+    const toggle = (label: string) =>
+      [...settings.querySelectorAll('mat-slide-toggle')].find((t) => textOf(t) === label)!;
+    const flip = (label: string) => {
+      toggle(label).querySelector('button')!.click();
+      harness.detectChanges();
+    };
+    await choose('Better when it goes', 'Down');
+    expect(config().compare).toEqual({ filter: 'period', good: 'down' });
+    flip('With the period before');
+    expect(config().compare).toBeNull();
+    flip('With the period before');
+    expect(config().compare).toEqual({ filter: 'period', good: 'up' });
+
+    // A sparkline wants its date first, which the canvas says.
+    flip('A sparkline of it over time');
+    expect(config().sparkline).toEqual({
+      field: { path: [], column: '' },
+      bucket: 'day',
+      label: 'Day',
+    });
+    harness.detectChanges();
+    expect(textOf(cell.querySelector('.missing'))).toBe('Choose the date its sparkline is along.');
+    await choose('By', 'Week');
+    expect(config().sparkline).toEqual({
+      field: { path: [], column: '' },
+      bucket: 'week',
+      label: 'Week',
+    });
+
+    // Removing the filter compares it with nothing.
+    store.apply('Removed', (d) => removeFilter(d, 'period'));
+    expect(config().compare).toBeNull();
+    harness.detectChanges();
+    expect(toggle('With the period before').querySelector('button')!.disabled).toBe(true);
   });
 
   it('saves with Ctrl+S at the version read, and undoes and redoes by name', async () => {

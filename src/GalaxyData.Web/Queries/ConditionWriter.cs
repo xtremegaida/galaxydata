@@ -42,8 +42,12 @@ public sealed class QueryParameterAllocator
    }
 }
 
-/// <summary>A condition to write: its op and values, as <c>ValueCodec</c> writes values of the column's type.</summary>
-public sealed record ConditionSpec(ConditionOp Op, object? Value = null, object? ValueTo = null, IReadOnlyList<object?>? Values = null, RelativeRange? Relative = null)
+/// <summary>
+/// A condition to write: its op and values, as <c>ValueCodec</c> writes values of the column's type. A relative
+/// period <see cref="Before"/> is the period before the one it says (<see cref="ConditionWriter.Before"/>).
+/// </summary>
+public sealed record ConditionSpec(ConditionOp Op, object? Value = null, object? ValueTo = null, IReadOnlyList<object?>? Values = null, RelativeRange? Relative = null,
+                                   bool Before = false)
 {
    public static ConditionSpec Of(ConditionValue value)
    {
@@ -120,7 +124,7 @@ public static class ConditionWriter
                return null;
             }
             if (today is not { } day) { throw new InvalidOperationException("Relative periods need today's date"); }
-            (DateOnly start, DateOnly? end) = Period(period, day);
+            (DateOnly start, DateOnly? end) = condition.Before ? Before(period, day) : Period(period, day);
             return end is { } until ? $"({name} >= {From(start)} and {name} < {From(until)})" : $"{name} >= {From(start)}";
          }
       }
@@ -243,6 +247,20 @@ public static class ConditionWriter
          RelativeMode.Previous => (Plus(startOfThis, period.Unit, -period.Count) ?? DateOnly.MinValue, startOfThis),
          _ => (startOfThis, tomorrow),
       };
+   }
+
+   /// <summary>
+   /// The days of the period before a relative one, which it is compared with: as many periods just before it (the
+   /// last 30 days: the 30 days before them; this month: the month before); one to date, the period before up to the
+   /// same day of it (this month to the 14th: the month before to its 14th, or its last day when it has fewer).
+   /// </summary>
+   public static (DateOnly Start, DateOnly? End) Before(RelativeRange period, DateOnly today)
+   {
+      ArgumentNullException.ThrowIfNull(period);
+      if (period.Mode == RelativeMode.ToDate) { return Period(period, Plus(today, period.Unit, -1) ?? DateOnly.MinValue); }
+      (DateOnly start, _) = Period(period, today);
+      int count = period.Mode == RelativeMode.This ? 1 : period.Count;
+      return (Plus(start, period.Unit, -count) ?? DateOnly.MinValue, start);
    }
 
    /// <summary>The first day of the period <paramref name="day"/> is in; weeks start on Monday.</summary>

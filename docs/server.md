@@ -731,7 +731,7 @@ when it starts again, as each connection may have committed or not. Administrato
 
 ## Dashboards
 
-A dashboard is a grid of widgets (headings, text, pie, bar and line charts, tables) over sources (the catalog's
+A dashboard is a grid of widgets (headings, text, pie, bar and line charts, tables, KPIs) over sources (the catalog's
 tables, views and virtual entities), with filters, and slices chosen in one widget filtering those that listen to it. Its
 definition is one JSON document, kept in a canonical form (keys sorted, numbers shortest) and hashed (SHA-256), so a
 save that changes nothing is none.
@@ -745,7 +745,11 @@ config's `kind` saying which), `refresh` (`manual`, or `interval` with `seconds`
 `palette` of their own, and bars `colorBy: category` (each bar its category's colour, with one measure and no
 series). Bar and line charts split by a series may show only their largest (`seriesLimit`, 1 to 100: by the measure
 over the chart's rows, those of the bars' categories), and the rest as one, "Other" (`seriesOther`: the measure over
-the rest's rows by the dimension, so it is the rest's average, maximum or distinct count as much as its sum). A dashboard may be split into `tabs` (`[{id, label}]`, in order, at most `Dashboards:MaxTabs`), each a grid
+the rest's rows by the dimension, so it is the rest's average, maximum or distinct count as much as its sum). A KPI
+(`kind: kpi`, a scorecard) is one `measure` over its rows; it may be compared (`compare: {filter, good}`) with the same
+over the period before the one a `relative` filter holds, `good` saying which way of change is good (`up`, `down` or
+`neither`), and drawn with a `sparkline` (a dimension of a date by `day`, `week`, `month`, `quarter` or `year`). A KPI
+has no slices (`emits` is false); a comparison names a relative filter there is (a 400 otherwise). A dashboard may be split into `tabs` (`[{id, label}]`, in order, at most `Dashboards:MaxTabs`), each a grid
 of its own: every widget then names its `tab`, and its cells are in that tab's grid (the layout is otherwise as it
 was). Those are left out when unset (and no tabs, `[]`, are written as none), so a definition saved before palettes
 or tabs is written as it was. Tabs are only where widgets are shown: nothing a widget reads depends on them.
@@ -842,6 +846,16 @@ or the deepest); a chart limited to its largest series gives them (`series`, the
 more (`moreSeries`), and its rest by the dimension (`otherRows`); a line's `categories` are then its x values, its
 points' and its rest's. A chart that doesn't step is at its first whatever the offset. Its queries (`…/query`, with the
 same `page`) give the series' and the rest's too. Steps are kept as any answer is, by their queries.
+
+A KPI's one row is its number. Compared, `previous` is the number over the period before (`{value, from, to}`, its
+first and last days), written as the filter's period is with other days: the last 30 days are compared with the 30
+before them, the previous n months (and this month) with as many just before, and a period to date with the period
+before up to the same day of it (this month to the 14th, with last month to its 14th, or its last day when it has
+fewer). It follows the period that holds: the viewer's, when the filter is theirs to change; none set, there is no
+`previous`. A filter that doesn't reach the KPI (it is in the filter's `except`, or their sources aren't linked) is a
+warning, and there is nothing to compare with. A sparkline's `points` are `[day, value]`, the oldest first: the
+latest 500 periods with a date (`truncated` when there are more). Its queries (`…/query`) give `previous` and
+`sparkline` too.
 
 **Public dashboards.** `GET /api/public/dashboards/{token}` (the published copy without its sources, fields,
 conditions, links or hidden filters), `…/widgets/{w}/data?s=` (the state as base64url JSON, 4 KB at most) and

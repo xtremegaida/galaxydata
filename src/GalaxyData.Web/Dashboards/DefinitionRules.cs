@@ -138,6 +138,7 @@ public sealed partial class DefinitionRules(WidgetKinds kinds, DashboardSettings
          return;
       }
       check.NewId(filter.Id, path + ".id", check.FilterIds, "filter");
+      if (filter.Id != null) { check.FilterKinds.TryAdd(filter.Id, filter.Kind); }
       check.Label(filter.Label, path + ".label", required: true);
       if (filter.Field == null) { check.Error(path + ".field", "Give the filter's field"); }
       else
@@ -404,6 +405,9 @@ public sealed class DefinitionCheck(DashboardSettings settings, Dictionary<strin
    public HashSet<string> WidgetIds { get; } = new(StringComparer.Ordinal);
 
    public HashSet<string> FilterIds { get; } = new(StringComparer.Ordinal);
+
+   /// <summary>The filters' kinds, by id (the first's of an id given twice): filters are checked before widgets, which may name them.</summary>
+   public Dictionary<string, FilterKind> FilterKinds { get; } = new(StringComparer.Ordinal);
 
    public HashSet<string> TabIds { get; } = new(StringComparer.Ordinal);
 

@@ -13704,6 +13704,28 @@
           }
         }
       },
+      "KpiCompare": {
+        "required": [
+          "filter",
+          "good"
+        ],
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string"
+          },
+          "good": {
+            "$ref": "#/components/schemas/KpiGood"
+          }
+        }
+      },
+      "KpiGood": {
+        "enum": [
+          "up",
+          "down",
+          "neither"
+        ]
+      },
       "LabelColorDto": {
         "required": [
           "label",
@@ -17362,6 +17384,9 @@
           },
           {
             "$ref": "#/components/schemas/WidgetConfigTableConfig"
+          },
+          {
+            "$ref": "#/components/schemas/WidgetConfigKpiConfig"
           }
         ],
         "discriminator": {
@@ -17372,7 +17397,8 @@
             "pie": "#/components/schemas/WidgetConfigPieConfig",
             "bar": "#/components/schemas/WidgetConfigBarConfig",
             "line": "#/components/schemas/WidgetConfigLineConfig",
-            "table": "#/components/schemas/WidgetConfigTableConfig"
+            "table": "#/components/schemas/WidgetConfigTableConfig",
+            "kpi": "#/components/schemas/WidgetConfigKpiConfig"
           }
         }
       },
@@ -17512,6 +17538,63 @@
           },
           "align": {
             "$ref": "#/components/schemas/HeadingAlign"
+          }
+        }
+      },
+      "WidgetConfigKpiConfig": {
+        "required": [
+          "measure",
+          "compare",
+          "sparkline",
+          "source",
+          "conditions",
+          "emits",
+          "listens"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "kpi"
+            ],
+            "type": "string"
+          },
+          "measure": {
+            "$ref": "#/components/schemas/Measure"
+          },
+          "compare": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/KpiCompare"
+              }
+            ]
+          },
+          "sparkline": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Dimension"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "conditions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WidgetCondition"
+            }
+          },
+          "emits": {
+            "type": "boolean"
+          },
+          "listens": {
+            "$ref": "#/components/schemas/Listens"
           }
         }
       },
@@ -17873,6 +17956,25 @@
               "integer"
             ],
             "format": "int64"
+          },
+          "previous": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WidgetPreviousDto"
+              }
+            ]
+          },
+          "points": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "array"
+            }
           }
         }
       },
@@ -17894,6 +17996,25 @@
           "count": {
             "type": "boolean",
             "default": false
+          }
+        }
+      },
+      "WidgetPreviousDto": {
+        "required": [
+          "value",
+          "from",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "value": { },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
           }
         }
       },
@@ -17943,6 +18064,26 @@
             ]
           },
           "rest": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/QueryTextDto"
+              }
+            ]
+          },
+          "previous": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/QueryTextDto"
+              }
+            ]
+          },
+          "sparkline": {
             "oneOf": [
               {
                 "type": "null"

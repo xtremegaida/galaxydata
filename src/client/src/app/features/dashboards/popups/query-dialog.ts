@@ -35,15 +35,15 @@ export interface QueryDialogData {
 
 /**
  * Which of a widget's queries: its rows', a series' top categories', a pie's total's, the largest series' (ranked),
- * and the rest of them ("Other").
+ * the rest of them ("Other"), and a KPI's over the period before and its sparkline's.
  */
-type Which = 'main' | 'categories' | 'total' | 'series' | 'rest';
+type Which = 'main' | 'categories' | 'total' | 'series' | 'rest' | 'previous' | 'sparkline';
 
 /**
  * A widget's query in GDQ, with its parameters' values; its SQL and its plan, explained when their tabs are first
  * shown; and a way to open it in the query editor, run. A bar chart by a series also has the query of its top
- * categories, a pie with "Other" that of its total, and a chart limited to its largest series those of its series
- * and of their rest.
+ * categories, a pie with "Other" that of its total, a chart limited to its largest series those of its series and
+ * of their rest, and a KPI those of the period before and of its sparkline.
  */
 @Component({
   selector: 'gd-query-dialog',
@@ -220,6 +220,8 @@ export class QueryDialog {
       ...(query.total ? [{ which: 'total' as const, label: 'Its total' }] : []),
       ...(query.series ? [{ which: 'series' as const, label: 'Its top series' }] : []),
       ...(query.rest ? [{ which: 'rest' as const, label: 'Its Other' }] : []),
+      ...(query.previous ? [{ which: 'previous' as const, label: 'The period before' }] : []),
+      ...(query.sparkline ? [{ which: 'sparkline' as const, label: 'Its sparkline' }] : []),
     ];
   });
 

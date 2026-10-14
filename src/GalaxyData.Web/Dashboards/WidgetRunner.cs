@@ -40,6 +40,11 @@ public sealed record WidgetColumnDto(string Name, ColumnRole Role, int Index, st
 /// and the measure's, as "Other" is drawn). A chart stepped into its "Other" has <see cref="Offset"/> slices or
 /// series before those shown; <see cref="Next"/> is where its "Other" steps to (none: no further).
 /// </para>
+/// <para>
+/// A KPI's one row is its number; compared, <see cref="Previous"/> is the number over the period before; with a
+/// sparkline, <see cref="Points"/> are the period's first day and the measure, the oldest first (<see cref="Truncated"/>:
+/// the latest of more).
+/// </para>
 /// </summary>
 public sealed record WidgetDataDto(IReadOnlyList<WidgetColumnDto> Columns, IReadOnlyList<IReadOnlyList<object?>> Rows, bool Truncated, long Offset, long? Total,
                                    IReadOnlyList<object?>? Categories, object? Other, DateTime RefreshedAt, bool Cached, IReadOnlyList<DashboardIssue> Issues,
@@ -47,19 +52,26 @@ public sealed record WidgetDataDto(IReadOnlyList<WidgetColumnDto> Columns, IRead
                                    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<object?>? Series = null,
                                    bool MoreSeries = false,
                                    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<IReadOnlyList<object?>>? OtherRows = null,
-                                   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? Next = null);
+                                   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? Next = null,
+                                   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WidgetPreviousDto? Previous = null,
+                                   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<IReadOnlyList<object?>>? Points = null);
+
+/// <summary>A KPI's number over the period before its filter's (null: there is none, as a sum of no rows), from its first day to its last.</summary>
+public sealed record WidgetPreviousDto(object? Value, DateOnly From, DateOnly To);
 
 /// <summary>A query's text and its parameters' values.</summary>
 public sealed record QueryTextDto(string Text, IReadOnlyList<QueryParameterDto> Parameters);
 
 /// <summary>
 /// A widget's queries, as they run: the categories found first (bars by a series), its rows, the total for "Other",
-/// its underlying rows; and for a chart limited to its largest series, the query ranking them and their rest
-/// ("Other", when there is one).
+/// its underlying rows; for a chart limited to its largest series, the query ranking them and their rest ("Other",
+/// when there is one); and for a KPI, its number over the period before, and its sparkline.
 /// </summary>
 public sealed record WidgetQueryDto(QueryTextDto Main, QueryTextDto? Categories, QueryTextDto? Total, QueryTextDto Underlying,
                                     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] QueryTextDto? Series = null,
-                                    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] QueryTextDto? Rest = null);
+                                    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] QueryTextDto? Rest = null,
+                                    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] QueryTextDto? Previous = null,
+                                    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] QueryTextDto? Sparkline = null);
 
 /// <summary>A value a filter's field has, and how many rows have it.</summary>
 public sealed record FilterValueDto(object? Value, long Rows);
@@ -112,7 +124,8 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
       int limit = plan.Paged ? Math.Clamp(page?.Limit ?? plan.Limit, 1, TableKind.MaxPageSize) : plan.Limit;
       bool count = plan.Paged && page?.Count == true;
       string key = Key(catalog.Version, "data", $"{offset}/{limit}/{count}",
-         plan.Categories, plan.Main(PlanFound.None), plan.Total, plan.Series?.Ranking(PlanFound.None), plan.Series?.Rest?.Invoke(PlanFound.None));
+         plan.Categories, plan.Main(PlanFound.None), plan.Total, plan.Series?.Ranking(PlanFound.None), plan.Series?.Rest?.Invoke(PlanFound.None), plan.Previous?.Query,
+         plan.Sparkline?.Query);
       TimeSpan duration = mode == RunMode.Public ? Settings.PublicCacheDuration : Settings.CacheDuration;
       (Computed computed, bool cached, DateTime at) = await results.GetAsync(key, duration, refresh && mode == RunMode.SignedIn,
          async ct =>
@@ -132,7 +145,7 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
          };
       }
       return new WidgetDataDto(computed.Columns, computed.Rows, computed.Truncated, offset, computed.Total, computed.Categories, computed.Other, at, cached, warnings,
-         Series: computed.Series, MoreSeries: computed.MoreSeries, OtherRows: computed.OtherRows, Next: computed.Next);
+         Series: computed.Series, MoreSeries: computed.MoreSeries, OtherRows: computed.OtherRows, Next: computed.Next, Previous: computed.Previous, Points: computed.Points);
    }
 
    /// <summary>
@@ -149,7 +162,8 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
       PlanFound categories = new(found.Categories);
       BuiltQuery? rest = found.Series is { More: true } && plan.Series?.Rest is { } of ? of(found) : null;
       return new WidgetQueryDto(Text(plan.Main(found)), plan.Categories is { } c ? Text(c) : null, plan.Total is { } t ? Text(t) : null, Text(plan.Underlying),
-         plan.Series is { } series ? Text(series.Ranking(categories)) : null, rest is { } r ? Text(r) : null);
+         plan.Series is { } series ? Text(series.Ranking(categories)) : null, rest is { } r ? Text(r) : null, plan.Previous is { } p ? Text(p.Query) : null,
+         plan.Sparkline is { } s ? Text(s.Query) : null);
    }
 
    /// <summary>The slices or series a page asks a chart to step over into its "Other".</summary>
@@ -221,7 +235,8 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
 
    private sealed record Computed(IReadOnlyList<WidgetColumnDto> Columns, IReadOnlyList<IReadOnlyList<object?>> Rows, bool Truncated, long? Total,
                                   IReadOnlyList<object?>? Categories, object? Other, IReadOnlyList<object?>? Series = null, bool MoreSeries = false,
-                                  IReadOnlyList<IReadOnlyList<object?>>? OtherRows = null, long? Next = null);
+                                  IReadOnlyList<IReadOnlyList<object?>>? OtherRows = null, long? Next = null, WidgetPreviousDto? Previous = null,
+                                  IReadOnlyList<IReadOnlyList<object?>>? Points = null);
 
    /// <summary>What a plan's first queries find: the categories a series' bars are limited to (and whether there are more), then the series ranked.</summary>
    private static async Task<(PlanFound Found, bool MoreCategories)> FindAsync(QueryEngine engine, WidgetPlan plan, TimeSpan timeout, CancellationToken cancellationToken)
@@ -325,9 +340,28 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
             otherRows = [.. restRows.Select(r => (IReadOnlyList<object?>)[ValueCodec.Encode(r[d], restColumns[d].Type), ValueCodec.Encode(r[m], restColumns[m].Type)])];
          }
       }
+      WidgetPreviousDto? previous = null;
+      if (plan.Previous is { } period)
+      {
+         (List<object?[]> was, ResultSchema schema) = await RunAsync(engine, period.Query, null, timeout, cancellationToken);
+         previous = new WidgetPreviousDto(was.Count == 1 ? ValueCodec.Encode(was[0][0], schema.VisibleColumns[0].Type) : null, period.From, period.To);
+      }
+      IReadOnlyList<IReadOnlyList<object?>>? points = null;
+      if (plan.Sparkline is { } sparkline)
+      {
+         (List<object?[]> latest, ResultSchema schema) = await RunAsync(engine, sparkline.Query, null, timeout, cancellationToken);
+         List<ResultColumn> pointColumns = [.. schema.VisibleColumns];
+         int d = pointColumns.FindIndex(c => c.Name == "d0");
+         int m = pointColumns.FindIndex(c => c.Name == "m0");
+         // Rows without a date have no place on it.
+         List<object?[]> dated = [.. latest.Where(r => r[d] != null).Take(sparkline.Limit)];
+         truncated |= latest.Count > sparkline.Limit;
+         dated.Reverse();
+         points = [.. dated.Select(r => (IReadOnlyList<object?>)[ValueCodec.Encode(r[d], pointColumns[d].Type), ValueCodec.Encode(r[m], pointColumns[m].Type)])];
+      }
       List<IReadOnlyList<object?>> encoded = [.. rows.Select(r => (IReadOnlyList<object?>)[.. ordinals.Select(o => ValueCodec.Encode(r[o], visible[o].Type))])];
       IReadOnlyList<object?>? seriesValues = found.Series is { } ranked ? [.. ranked.Shown.Select(v => ValueCodec.Encode(v, ranked.Type))] : null;
-      return new Computed(columns, encoded, truncated, total, categoryValues, other, seriesValues, found.Series?.More ?? false, otherRows, next);
+      return new Computed(columns, encoded, truncated, total, categoryValues, other, seriesValues, found.Series?.More ?? false, otherRows, next, previous, points);
    }
 
    /// <summary>

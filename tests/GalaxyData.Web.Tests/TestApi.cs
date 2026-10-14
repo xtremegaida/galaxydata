@@ -112,10 +112,10 @@ internal static class JsonResponses
    }
 }
 
-/// <summary>A clock that moves when told to.</summary>
-internal sealed class ManualClock : TimeProvider
+/// <summary>A clock that moves when told to, from now or the time it is given.</summary>
+internal sealed class ManualClock(DateTimeOffset? start = null) : TimeProvider
 {
-   private DateTimeOffset now = DateTimeOffset.UtcNow;
+   private DateTimeOffset now = start ?? DateTimeOffset.UtcNow;
 
    public override DateTimeOffset GetUtcNow() => now;
 

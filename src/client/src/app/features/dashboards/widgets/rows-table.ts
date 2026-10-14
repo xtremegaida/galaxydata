@@ -327,6 +327,9 @@ export class RowsTable {
         return (column.role === 'series' ? config.series?.bucket : config.dimension.bucket) ?? null;
       case 'table':
         return config.dimensions[column.index]?.bucket ?? null;
+      case 'kpi':
+        // Its sparkline's points, as the Data popup lists them.
+        return config.sparkline?.bucket ?? null;
     }
   }
 }

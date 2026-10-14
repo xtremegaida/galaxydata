@@ -4,6 +4,7 @@ import type { WidgetConfig } from './definition';
 import {
   barDefaults,
   headingDefaults,
+  kpiDefaults,
   lineDefaults,
   pieDefaults,
   tableDefaults,
@@ -57,6 +58,17 @@ export const builtInKinds: readonly WidgetKind[] = [
     defaults: () => textDefaults(),
     view: () => import('../widgets/text-widget').then((m) => m.TextWidget),
     editor: () => settings().then((m) => m.TextSettings),
+  },
+  {
+    kind: 'kpi',
+    label: 'KPI',
+    icon: 'speed',
+    defaultSize: { w: 3, h: 3 },
+    minWidthPx: 160,
+    data: true,
+    defaults: kpiDefaults,
+    view: () => import('../widgets/kpi-widget').then((m) => m.KpiWidget),
+    editor: () => settings().then((m) => m.KpiSettings),
   },
   {
     kind: 'bar',

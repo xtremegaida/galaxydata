@@ -9,6 +9,7 @@ using GalaxyData.Web.Dashboards;
 using GalaxyData.Web.Hosting;
 using GalaxyData.Web.Problems;
 using GalaxyData.Web.Tests.Catalog;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Shouldly;
 using Xunit;
@@ -215,6 +216,53 @@ public sealed class DashboardDataApiTests
       query.GetProperty("rest").GetProperty("text").GetString()
          .ShouldBe("(shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).where(r0 => (not (r0.customer_id in [$f4, $f5]) or r0.customer_id == null)).groupBy(d0: status).select(d0, m0: count()).orderBy(d0)");
       query.GetProperty("main").GetProperty("parameters")[3].GetProperty("value").GetString().ShouldBe("2", "the second largest customer's bars");
+   }
+
+   /// <summary>A KPI's one row is its number; compared, the number over the period before is given with its days; with a sparkline, its points, the oldest first.</summary>
+   [Fact]
+   public async Task AKpiGivesItsNumberThePeriodBeforeAndItsPoints()
+   {
+      // The orders are of January and February: on 1 March, the last 30 days hold February's two, and the 30 before January's.
+      ManualClock clock = new(new DateTimeOffset(2026, 3, 1, 12, 0, 0, TimeSpan.Zero));
+      WebAppFactory factory = new() { ServiceChanges = services => services.AddSingleton<TimeProvider>(clock) };
+      await using WebAppFactory _ = factory;
+      TestApi admin = await TestApi.SignedInAsync(factory);
+      await TestSources.AddSqliteAsync(admin, "shop", await TestSources.ShopAsync(factory));
+      DashboardFilter period = new("period", "Period", new SourceField("orders", [], "order_date"), FilterKind.Relative,
+         new ConditionValue(ConditionOp.Relative, Relative: new RelativeRange(RelativeUnit.Day, 30, RelativeMode.Last)), true, true, false, []);
+      KpiConfig kpi = new("orders", [], false, All, new Measure(Aggregate.Count, null, "Orders", new NumberFormat(null, null, null, true)), new KpiCompare("period", KpiGood.Up),
+         new Dimension(new FieldRef([], "order_date"), Bucket.Day, "Day"));
+      DashboardDefinition slice = Slice(("orders", kpi), ("by-status", Bar("status"))) with { Filters = [period] };
+      async Task<JsonElement> DataAsync(object? state = null) =>
+         await (await admin.PostAsync("/api/dashboards/data", new { slice = Definitions.Json(slice), widget = "orders", state })).JsonAsync(HttpStatusCode.OK);
+
+      JsonElement data = await DataAsync();
+      data.GetProperty("columns").EnumerateArray().Select(c => $"{c.GetProperty("name").GetString()} {c.GetProperty("role").GetString()} {c.GetProperty("label").GetString()}")
+         .ShouldBe(["m0 measure Orders"]);
+      (Rows(data), data.GetProperty("truncated").GetBoolean()).ShouldBe(("\"2\"", false));
+      data.GetProperty("previous").GetRawText().ShouldBe("""{"value":"2","from":"2026-01-01","to":"2026-01-30"}""");
+      Texts(data, "points").ShouldBe("\"2026-02-01\" \"1\" / \"2026-02-14\" \"1\"");
+      (await DataAsync()).GetProperty("cached").GetBoolean().ShouldBeTrue();
+
+      // The viewer's period, and the choices it listens to, hold for the period before too.
+      JsonElement year = await DataAsync(new
+      {
+         filters = new Dictionary<string, object> { ["period"] = new { op = "relative", relative = new { unit = "year", count = 1, mode = "last" } } },
+         selections = new Dictionary<string, object> { ["by-status"] = new { mode = "include", keys = new[] { new[] { "open" } } } },
+      });
+      (Rows(year), year.GetProperty("previous").GetRawText()).ShouldBe(("\"2\"", """{"value":"0","from":"2024-03-02","to":"2025-03-01"}"""));
+      Texts(year, "points").ShouldBe("\"2026-01-05\" \"1\" / \"2026-02-01\" \"1\"");
+      JsonElement cleared = await DataAsync(new { filters = new Dictionary<string, object?> { ["period"] = null } });
+      (Rows(cleared), cleared.TryGetProperty("previous", out JsonElement _)).ShouldBe(("\"4\"", false), "no period: nothing to compare with");
+
+      JsonElement query = await (await admin.PostAsync("/api/dashboards/query", new { slice = Definitions.Json(slice), widget = "orders" })).JsonAsync(HttpStatusCode.OK);
+      query.GetProperty("main").GetProperty("text").GetString().ShouldBe("(shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2)).groupBy().select(m0: count())");
+      query.GetProperty("previous").GetProperty("text").GetString().ShouldBe(query.GetProperty("main").GetProperty("text").GetString(), "the period's text, of other days");
+      query.GetProperty("previous").GetProperty("parameters").EnumerateArray().Select(p => p.GetProperty("value").GetString()).ShouldBe(["2026-01-01", "2026-01-31"]);
+      query.GetProperty("sparkline").GetProperty("text").GetString()
+         .ShouldBe("(shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2)).groupBy(d0: date(order_date)).select(d0, m0: count()).orderBy(desc(d0)).take(501)");
+      JsonElement bars = await (await admin.PostAsync("/api/dashboards/query", new { slice = Definitions.Json(slice), widget = "by-status" })).JsonAsync(HttpStatusCode.OK);
+      (bars.TryGetProperty("previous", out JsonElement _), bars.TryGetProperty("sparkline", out JsonElement _)).ShouldBe((false, false));
    }
 
    [Fact]

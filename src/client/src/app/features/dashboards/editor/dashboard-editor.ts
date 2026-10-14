@@ -35,7 +35,7 @@ import { chartPalette } from '../charts/series-colors';
 import { type Definition, palettesOf } from '../model/definition';
 import { addWidget } from '../model/definition-ops';
 import { PaletteLibrary } from '../palettes/palette-library';
-import { overTime } from '../model/widget-defaults';
+import { comparedWith, overTime } from '../model/widget-defaults';
 import { WIDGET_KINDS, type WidgetKind } from '../model/widget-registry';
 import { InlineHost } from '../state/dashboard-host';
 import { DashboardStore } from '../state/dashboard-store';
@@ -446,7 +446,10 @@ export class DashboardEditor implements HasUnsavedChanges {
   protected add(kind: WidgetKind): void {
     const first = this.store.draft().sources[0];
     const source = first?.id ?? null;
-    const config = overTime(kind.defaults(source), this.timeOf(first?.entity ?? null));
+    const config = comparedWith(
+      overTime(kind.defaults(source), this.timeOf(first?.entity ?? null)),
+      this.store.draft().filters,
+    );
     let made = '';
     this.store.apply(`Added a ${kind.label.toLowerCase()}`, (d) => {
       const added = addWidget(d, config, kind.defaultSize, null, this.store.tab());
