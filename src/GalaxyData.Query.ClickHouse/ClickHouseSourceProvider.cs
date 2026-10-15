@@ -73,7 +73,11 @@ public sealed class ClickHouseSourceProvider : SourceProvider
       return new ClickHouseDataSource(connectionString, client, disposeHttpClient: true);
    }
 
-   /// <summary>The settings, on every statement of the connection.</summary>
+   /// <summary>
+   /// The settings, on every statement of the connection. A data source's connections share one dictionary of
+   /// settings (ClickHouse.Driver's), which its connections read as they run statements: it is written once, by the
+   /// first connection prepared, before any of them runs one, and only read after that.
+   /// </summary>
    public override ValueTask PrepareConnectionAsync(DbConnection connection, CancellationToken cancellationToken)
    {
       if (connection is ClickHouseConnection clickHouse) { Apply(clickHouse.CustomSettings); }
@@ -88,10 +92,22 @@ public sealed class ClickHouseSourceProvider : SourceProvider
       clickHouse.QueryId = Guid.NewGuid().ToString("N");
    }
 
+   /// <summary>Connections' settings are written one connection at a time.</summary>
+   private static readonly Lock Writing = new();
+
+   /// <summary>The settings, each written only if the dictionary hasn't it as it is (one it has is only read), one dictionary at a time.</summary>
    private static void Apply(IDictionary<string, object> settings)
    {
-      foreach ((string name, object value) in Settings) { settings[name] = value; }
+      lock (Writing)
+      {
+         foreach ((string name, object value) in Settings)
+         {
+            if (!settings.TryGetValue(name, out object? had) || !string.Equals(Text(had), Text(value), StringComparison.Ordinal)) { settings[name] = value; }
+         }
+      }
    }
+
+   private static string? Text(object? value) => Convert.ToString(value, CultureInfo.InvariantCulture);
 
    /// <summary>
    /// Stops the HTTP request, and the statement on the server: a server goes on with a statement whose client has
