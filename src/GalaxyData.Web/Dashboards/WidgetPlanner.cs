@@ -78,7 +78,7 @@ public sealed record OtherStep(int Skip, int Size, int Depth)
 /// rows (its source with every condition that reaches it). <see cref="Limit"/> rows (or categories) are shown, one
 /// more fetched to tell there are more; tables are paged by the engine instead. <see cref="Series"/>: the series
 /// ranked and their rest, for a chart limited to its largest; <see cref="Step"/>: where a chart that steps into its
-/// "Other" is.
+/// "Other" is; <see cref="Whole"/>: its rows read whole, to work out what those queries give in memory instead.
 /// </summary>
 public sealed record WidgetPlan(
    IReadOnlyList<PlannedColumn> Columns,
@@ -92,13 +92,41 @@ public sealed record WidgetPlan(
    public SeriesPlan? Series { get; init; }
 
    public OtherStep? Step { get; init; }
+
+   public WholePlan? Whole { get; init; }
+}
+
+/// <summary>How a measure's groups add up to a coarser group's: added, or the least or the greatest of them.</summary>
+public enum Combine
+{
+   Sum,
+   Min,
+   Max,
+}
+
+/// <summary>What a chart's whole rows make: a pie's slices, bars by a series, or lines by a series.</summary>
+public enum WholeShape
+{
+   Slices,
+   Bars,
+   Lines,
 }
 
 /// <summary>
-/// How much a state may ask: slices in a selection, values in a condition; rows a chart shows; whether it is a public
-/// dashboard's; how deep a chart's "Other" may be stepped into.
+/// A chart's rows read whole, in one query (<see cref="Query"/>: every group of its dimension, and its series, ordered
+/// by them, one more than <see cref="PlanLimits.MaxWholeRows"/> to tell there are too many), from which what its
+/// queries give is worked out in memory, the measure's groups added up as <see cref="Combine"/> says: its categories
+/// (bars, by <see cref="Categories"/>), its series ranked, its rows (the first <see cref="MainTake"/>), their rest
+/// (the first <see cref="RestTake"/>; none: all) and their total.
 /// </summary>
-public sealed record PlanLimits(int MaxSelectionKeys, int MaxFilterValues, int MaxChartRows, bool Public, int MaxOtherDepth = 1_000);
+public sealed record WholePlan(BuiltQuery Query, Combine Combine, WholeShape Shape, WidgetSort? Categories, int MainTake, int? RestTake);
+
+/// <summary>
+/// How much a state may ask: slices in a selection, values in a condition; rows a chart shows; whether it is a public
+/// dashboard's; how deep a chart's "Other" may be stepped into; how many rows of a chart are read whole to be limited
+/// in memory (0: none).
+/// </summary>
+public sealed record PlanLimits(int MaxSelectionKeys, int MaxFilterValues, int MaxChartRows, bool Public, int MaxOtherDepth = 1_000, int MaxWholeRows = 0);
 
 /// <summary>
 /// Writes a widget's queries from its config and the dashboard's state. The rows a widget keeps are its source's
@@ -736,6 +764,24 @@ public sealed class PlanContext
          Aggregate.Avg => $"avg({member})",
          Aggregate.Min => $"min({member})",
          _ => $"max({member})",
+      };
+   }
+
+   /// <summary>
+   /// How a measure's groups add up to a coarser group's, when charts' rows may be read whole (the limits allow some):
+   /// counts and sums are added, and the least and greatest of numbers and dates kept; null for measures that don't
+   /// add up so (averages, distinct counts, and the least and greatest of text, which the database's collation orders).
+   /// </summary>
+   public Combine? Combines(Measure measure, string path)
+   {
+      ArgumentNullException.ThrowIfNull(measure);
+      if (Limits.MaxWholeRows <= 0) { return null; }
+      return measure.Aggregate switch
+      {
+         Aggregate.Count or Aggregate.CountValues or Aggregate.Sum => Combine.Sum,
+         Aggregate.Min or Aggregate.Max when measure.Field != null && Field(measure.Field, path + ".field") is { } field && (field.Type.IsNumeric || field.Type.IsTemporal) =>
+            measure.Aggregate == Aggregate.Min ? Combine.Min : Combine.Max,
+         _ => null,
       };
    }
 

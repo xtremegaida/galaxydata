@@ -92,8 +92,8 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
    private DashboardSettings Settings => options.Value.Dashboards;
 
    public PlanLimits Limits(RunMode mode) => mode == RunMode.Public
-      ? new PlanLimits(Settings.MaxPublicSelectionKeys, Settings.MaxPublicFilterValues, Settings.MaxChartRows, Public: true, OtherDepth)
-      : new PlanLimits(Settings.MaxSelectionKeys, Settings.MaxFilterValues, Settings.MaxChartRows, Public: false, OtherDepth);
+      ? new PlanLimits(Settings.MaxPublicSelectionKeys, Settings.MaxPublicFilterValues, Settings.MaxChartRows, Public: true, OtherDepth, Settings.MaxWholeRows)
+      : new PlanLimits(Settings.MaxSelectionKeys, Settings.MaxFilterValues, Settings.MaxChartRows, Public: false, OtherDepth, Settings.MaxWholeRows);
 
    /// <summary>How deep "Other" may be stepped into: no deeper than a chart's rows.</summary>
    private int OtherDepth => Math.Min(Settings.MaxOtherDepth, Settings.MaxChartRows);
@@ -119,7 +119,8 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
          {
             // Only queries that run wait their turn: answers kept are given at once.
             await using IAsyncDisposable? turn = gate == null ? null : await gate(ct);
-            return await ComputeAsync(engine, plan, timeout, offset, limit, count, catalog, ct);
+            WholeRead? whole = plan.Whole is { } read ? await WholeAsync(engine, read, catalog.Version, timeout, duration, refresh && mode == RunMode.SignedIn, ct) : null;
+            return await ComputeAsync(engine, plan, whole, timeout, offset, limit, count, ct);
          }, cancellationToken);
       if (mode == RunMode.Public && computed.Columns.Any(c => c.Role == ColumnRole.Key))
       {
@@ -131,7 +132,9 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
             Rows = [.. computed.Rows.Select(r => (IReadOnlyList<object?>)[.. shown.Select(i => r[i])])],
          };
       }
-      return new WidgetDataDto(computed.Columns, computed.Rows, computed.Truncated, offset, computed.Total, computed.Categories, computed.Other, at, cached, warnings,
+      // Worked out from rows read whole a while ago: as old as they are, and kept.
+      return new WidgetDataDto(computed.Columns, computed.Rows, computed.Truncated, offset, computed.Total, computed.Categories, computed.Other, computed.ReadAt ?? at,
+         cached || computed.Kept, warnings,
          Series: computed.Series, MoreSeries: computed.MoreSeries, OtherRows: computed.OtherRows, Next: computed.Next);
    }
 
@@ -145,7 +148,12 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
       CatalogState catalog = await CatalogAsync(response, cancellationToken);
       (WidgetPlan plan, _) = Plan(definition, widget, state, RunMode.SignedIn, catalog, Skip(page));
       QueryEngine engine = engines.For(catalog);
-      (PlanFound found, _) = await FindAsync(engine, plan, Settings.WidgetTimeout, cancellationToken);
+      if (plan.Whole is { } whole && !results.Remembers(Key(catalog.Version, Overflowed, string.Empty, whole.Query)))
+      {
+         // Read whole, the chart's rows come of this one query, whatever is stepped into.
+         return new WidgetQueryDto(Text(whole.Query), null, null, Text(plan.Underlying), null, null);
+      }
+      (PlanFound found, _) = await FindAsync(new EngineRows(engine, plan, Settings.WidgetTimeout), plan, cancellationToken);
       PlanFound categories = new(found.Categories);
       BuiltQuery? rest = found.Series is { More: true } && plan.Series?.Rest is { } of ? of(found) : null;
       return new WidgetQueryDto(Text(plan.Main(found)), plan.Categories is { } c ? Text(c) : null, plan.Total is { } t ? Text(t) : null, Text(plan.Underlying),
@@ -175,8 +183,9 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
       (FilterValuesDto values, _, _) = await results.GetAsync(Key(catalog.Version, "values", string.Empty, null, query, null), duration, refresh: false, async ct =>
       {
          await using IAsyncDisposable? turn = gate == null ? null : await gate(ct);
-         (List<object?[]> rows, ResultSchema schema) = await RunAsync(engine, query, null, timeout, ct);
-         ScalarType type = schema.VisibleColumns[0].Type;
+         Fetched fetched = await RunAsync(engine, query, null, timeout, ct);
+         List<object?[]> rows = fetched.Rows;
+         ScalarType type = fetched.Columns[0].Type;
          return new FilterValuesDto(TypeDto.Of(type),
             [.. rows.Take(FilterValuesMax).Select(r => new FilterValueDto(ValueCodec.Encode(r[0], type), Convert.ToInt64(r[1], CultureInfo.InvariantCulture)))], rows.Count > FilterValuesMax);
       }, cancellationToken);
@@ -219,52 +228,115 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
    private static ProblemResultException Problem(int status, string code, string title, string detail) =>
       new(ApiProblems.Result(status, code, title, detail));
 
+   /// <summary>
+   /// What a widget's rows are, as its answer gives them. Worked out from rows read whole: when they were read
+   /// (<see cref="ReadAt"/>), and whether they were kept from before (<see cref="Kept"/>).
+   /// </summary>
    private sealed record Computed(IReadOnlyList<WidgetColumnDto> Columns, IReadOnlyList<IReadOnlyList<object?>> Rows, bool Truncated, long? Total,
                                   IReadOnlyList<object?>? Categories, object? Other, IReadOnlyList<object?>? Series = null, bool MoreSeries = false,
-                                  IReadOnlyList<IReadOnlyList<object?>>? OtherRows = null, long? Next = null);
+                                  IReadOnlyList<IReadOnlyList<object?>>? OtherRows = null, long? Next = null, DateTime? ReadAt = null, bool Kept = false);
+
+   /// <summary>How long a chart's rows being too many to read whole is remembered, so they aren't read again soon to find so.</summary>
+   private static readonly TimeSpan OverflowKept = TimeSpan.FromHours(1);
+
+   /// <summary>The kind of a key that remembers a chart's rows were too many to read whole.</summary>
+   private const string Overflowed = "whole-overflow";
+
+   /// <summary>A chart's rows read whole (none: too many), when they were read, and whether they were kept from before.</summary>
+   private sealed record WholeRead(Fetched? Rows)
+   {
+      public DateTime At { get; init; }
+
+      public bool Kept { get; init; }
+   }
+
+   /// <summary>
+   /// A chart's rows read whole: kept a while under their query alone (so every step into "Other" is of the same rows,
+   /// read once), or read now; none when there are more than may be read, which is remembered a while, so the chart's
+   /// queries run without reading them first. Rows kept take a size of the cache's by how many they are.
+   /// </summary>
+   private async Task<WholeRead?> WholeAsync(QueryEngine engine, WholePlan whole, string catalog, TimeSpan timeout, TimeSpan duration, bool refresh,
+                                             CancellationToken cancellationToken)
+   {
+      string overflow = Key(catalog, Overflowed, string.Empty, whole.Query);
+      if (results.Remembers(overflow)) { return null; }
+      int most = Settings.MaxWholeRows;
+      (WholeRead read, bool kept, DateTime at) = await results.GetAsync(Key(catalog, "whole", string.Empty, whole.Query), duration, refresh, async ct =>
+      {
+         Fetched fetched = await RunAsync(engine, whole.Query, null, timeout, ct);
+         return new WholeRead(fetched.Rows.Count > most ? null : fetched);
+      }, cancellationToken, read => 1 + (read.Rows?.Rows.Count ?? 0) / 1000);
+      if (read.Rows == null)
+      {
+         results.Remember(overflow, OverflowKept);
+         return null;
+      }
+      return read with { At = at, Kept = kept };
+   }
 
    /// <summary>What a plan's first queries find: the categories a series' bars are limited to (and whether there are more), then the series ranked.</summary>
-   private static async Task<(PlanFound Found, bool MoreCategories)> FindAsync(QueryEngine engine, WidgetPlan plan, TimeSpan timeout, CancellationToken cancellationToken)
+   private static async Task<(PlanFound Found, bool MoreCategories)> FindAsync(IChartRows source, WidgetPlan plan, CancellationToken cancellationToken)
    {
       PlanFound found = PlanFound.None;
       bool more = false;
-      if (plan.Categories is { } first)
+      if (plan.Categories != null)
       {
-         (List<object?[]> rows, ResultSchema schema) = await RunAsync(engine, first, null, timeout, cancellationToken);
-         more = rows.Count > plan.Limit;
-         found = new PlanFound(new CategoryValues([.. rows.Take(plan.Limit).Select(r => r[0])], schema.VisibleColumns[0].Type));
+         Fetched categories = await source.CategoriesAsync(cancellationToken);
+         more = categories.Rows.Count > plan.Limit;
+         found = new PlanFound(new CategoryValues([.. categories.Rows.Take(plan.Limit).Select(r => r[0])], categories.Columns[0].Type));
       }
       if (plan.Series is { } limited)
       {
-         (List<object?[]> rows, ResultSchema schema) = await RunAsync(engine, limited.Ranking(found), null, timeout, cancellationToken);
-         found = found with { Series = new SeriesValues([.. rows.Select(r => r[0])], schema.VisibleColumns[0].Type, plan.Step?.Skip ?? 0, limited.Limit) };
+         Fetched ranked = await source.RankingAsync(found, cancellationToken);
+         found = found with { Series = new SeriesValues([.. ranked.Rows.Select(r => r[0])], ranked.Columns[0].Type, plan.Step?.Skip ?? 0, limited.Limit) };
       }
       return (found, more);
    }
 
-   private async Task<Computed> ComputeAsync(QueryEngine engine, WidgetPlan plan, TimeSpan timeout, long offset, int limit, bool count, CatalogState catalog,
+   /// <summary>The widget's rows: worked out from its rows read whole, when they were (and add up here); else by its queries.</summary>
+   private async Task<Computed> ComputeAsync(QueryEngine engine, WidgetPlan plan, WholeRead? whole, TimeSpan timeout, long offset, int limit, bool count,
                                              CancellationToken cancellationToken)
    {
-      (PlanFound found, bool truncated) = await FindAsync(engine, plan, timeout, cancellationToken);
+      if (whole?.Rows is { } rows)
+      {
+         try
+         {
+            Computed computed = await ComputeAsync(new WholeRows(plan, rows), engine, plan, timeout, offset, limit, count, cancellationToken);
+            return computed with { ReadAt = whole.At, Kept = whole.Kept };
+         }
+         catch (WholeRowsException)
+         {
+            // A value that doesn't add up here: the chart's queries give its rows.
+         }
+      }
+      return await ComputeAsync(new EngineRows(engine, plan, timeout), engine, plan, timeout, offset, limit, count, cancellationToken);
+   }
+
+   private async Task<Computed> ComputeAsync(IChartRows source, QueryEngine engine, WidgetPlan plan, TimeSpan timeout, long offset, int limit, bool count,
+                                             CancellationToken cancellationToken)
+   {
+      (PlanFound found, bool truncated) = await FindAsync(source, plan, cancellationToken);
       IReadOnlyList<object?>? categoryValues = found.Categories is { } categories ? [.. categories.Values.Select(v => ValueCodec.Encode(v, categories.Type))] : null;
-      BuiltQuery main = plan.Main(found);
       List<object?[]> rows;
       List<object?[]> before = [];
-      ResultSchema mainSchema;
+      IReadOnlyList<FetchedColumn> mainColumns;
       long? total = null;
       if (plan.Paged)
       {
+         BuiltQuery main = plan.Main(found);
          PreparedQuery prepared = Prepared(engine, main, new PageRequest(offset, limit + 1), timeout);
          ComposedQuery composed = new(main.Text, main.Parameters, null);
          FetchedPage page = await PagedRows.FetchAsync(engine, prepared, composed, limit, offset, count, options.Value.Query.CountTimeout, cancellationToken);
          rows = page.Rows;
          truncated = page.More;
          total = page.Total;
-         mainSchema = prepared.Schema!;
+         mainColumns = Columns(prepared.Schema!);
       }
       else
       {
-         (rows, mainSchema) = await RunAsync(engine, main, null, timeout, cancellationToken);
+         Fetched fetched = await source.MainAsync(found, cancellationToken);
+         rows = fetched.Rows;
+         mainColumns = fetched.Columns;
          if (plan.Series == null && plan.Step is { Skip: > 0 } step)
          {
             // A pie stepped into its "Other": the slices before those shown are read for what "Other" holds, not shown.
@@ -278,7 +350,7 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
             rows = rows[..shown];
          }
       }
-      List<ResultColumn> visible = [.. mainSchema.VisibleColumns];
+      List<FetchedColumn> visible = [.. mainColumns];
       List<WidgetColumnDto> columns = [];
       List<int> ordinals = [];
       foreach (PlannedColumn column in plan.Columns)
@@ -290,21 +362,22 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
       }
       object? other = null;
       long? next = null;
-      if (plan.Total is { } totalQuery)
+      if (plan.Total != null)
       {
-         (List<object?[]> all, ResultSchema schema) = await RunAsync(engine, totalQuery, null, timeout, cancellationToken);
+         Fetched all = await source.TotalAsync(cancellationToken);
          int measure = ordinals[plan.Columns.ToList().FindIndex(c => c.Role == ColumnRole.Measure)];
-         other = Rest(all.Count == 1 ? all[0][0] : null, before.Concat(rows).Select(r => r[measure]), schema.VisibleColumns[0].Type);
+         other = Rest(all.Rows.Count == 1 ? all.Rows[0][0] : null, before.Concat(rows).Select(r => r[measure]), all.Columns[0].Type);
          next = plan.Step?.Next(truncated && other != null);
       }
       IReadOnlyList<IReadOnlyList<object?>>? otherRows = null;
       if (found.Series is { } series)
       {
          next = plan.Step?.Next(series.More);
-         if (series.More && plan.Series?.Rest is { } rest)
+         if (series.More && plan.Series?.Rest != null)
          {
-            (List<object?[]> restRows, ResultSchema restSchema) = await RunAsync(engine, rest(found), null, timeout, cancellationToken);
-            List<ResultColumn> restColumns = [.. restSchema.VisibleColumns];
+            Fetched rest = await source.RestAsync(found, cancellationToken);
+            List<object?[]> restRows = rest.Rows;
+            List<FetchedColumn> restColumns = [.. rest.Columns];
             int d = restColumns.FindIndex(c => c.Name == "d0");
             int m = restColumns.FindIndex(c => c.Name == "m0");
             if (plan.Categories == null)
@@ -399,12 +472,27 @@ public sealed class WidgetRunner(CatalogService catalogs, QueryEngines engines, 
       return prepared;
    }
 
-   private static async Task<(List<object?[]> Rows, ResultSchema Schema)> RunAsync(QueryEngine engine, BuiltQuery query, PageRequest? paging, TimeSpan timeout,
-                                                                                   CancellationToken cancellationToken)
+   private static async Task<Fetched> RunAsync(QueryEngine engine, BuiltQuery query, PageRequest? paging, TimeSpan timeout, CancellationToken cancellationToken)
    {
       PreparedQuery prepared = Prepared(engine, query, paging, timeout);
       await using QueryResult result = await prepared.ExecuteAsync(cancellationToken);
-      return ([.. await result.ToListAsync(cancellationToken)], result.Schema);
+      return new Fetched([.. await result.ToListAsync(cancellationToken)], Columns(result.Schema));
+   }
+
+   private static List<FetchedColumn> Columns(ResultSchema schema) => [.. schema.VisibleColumns.Select(c => new FetchedColumn(c.Name, c.Type))];
+
+   /// <summary>A chart's rows as its queries give them, run one after another.</summary>
+   private sealed class EngineRows(QueryEngine engine, WidgetPlan plan, TimeSpan timeout) : IChartRows
+   {
+      public Task<Fetched> CategoriesAsync(CancellationToken cancellationToken) => RunAsync(engine, plan.Categories!, null, timeout, cancellationToken);
+
+      public Task<Fetched> RankingAsync(PlanFound found, CancellationToken cancellationToken) => RunAsync(engine, plan.Series!.Ranking(found), null, timeout, cancellationToken);
+
+      public Task<Fetched> MainAsync(PlanFound found, CancellationToken cancellationToken) => RunAsync(engine, plan.Main(found), null, timeout, cancellationToken);
+
+      public Task<Fetched> RestAsync(PlanFound found, CancellationToken cancellationToken) => RunAsync(engine, plan.Series!.Rest!(found), null, timeout, cancellationToken);
+
+      public Task<Fetched> TotalAsync(CancellationToken cancellationToken) => RunAsync(engine, plan.Total!, null, timeout, cancellationToken);
    }
 
    private static QueryTextDto Text(BuiltQuery query) => new(query.Text, PagedRows.Parameters(query.Parameters));

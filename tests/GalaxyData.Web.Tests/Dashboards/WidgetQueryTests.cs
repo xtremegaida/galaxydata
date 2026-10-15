@@ -165,6 +165,13 @@ public sealed class WidgetQueryTests
             return;
          }
          text.AppendLine("columns: " + string.Join(", ", plan.Columns.Select(c => $"{c.Name} {c.Role} {c.Label}")) + $"; limit {plan.Limit}{(plan.Paged ? ", paged" : string.Empty)}");
+         if (plan.Whole is { } whole)
+         {
+            text.AppendLine($"whole ({whole.Shape}, {whole.Combine}, main take {whole.MainTake}, rest take {whole.RestTake?.ToString(CultureInfo.InvariantCulture) ?? "all"}"
+                            + $"{(whole.Categories is { } sort ? $", categories by {sort.By}{(sort.Descending ? " desc" : string.Empty)}" : string.Empty)}): " + whole.Query.Text);
+            if (whole.Query.Parameters.All.Any()) { text.AppendLine("  " + Parameters(whole.Query.Parameters)); }
+            text.Append(await harness.RowsAsync(whole.Query));
+         }
          if (plan.Categories is { } first)
          {
             text.AppendLine("categories: " + first.Text);
@@ -335,6 +342,36 @@ public sealed class WidgetQueryTests
       await report.CaseAsync(harness, "A line by day, the largest status, the rest as Other", definition, "days");
       await report.CaseAsync(harness, "A pie stepped into its Other: the slice before read too", definition, "pie", skip: 1);
       await report.CaseAsync(harness, "Deeper than Other may be stepped into", definition, "by-customer", skip: 2, limits: Signed with { MaxOtherDepth = 2 });
+
+      Golden.Match(report.ToString());
+   }
+
+   /// <summary>Charts whose limits are worked out in memory read their rows whole, in one query; with a measure that doesn't add up from its groups', they don't.</summary>
+   [Fact]
+   public async Task ChartsAreReadWholeInOneQuery()
+   {
+      await using Harness harness = await Harness.CreateAsync();
+      Report report = new();
+      PlanLimits whole = Signed with { MaxWholeRows = 100 };
+      DashboardWidget byCustomer = W("by-customer", Bar("orders", D("status"), D("customer_id")) with { SeriesLimit = 1, SeriesOther = true });
+      DashboardWidget byCity = W("by-city", Bar("orders", D("status"), D("city", null, "customer")) with { SeriesLimit = 1, SeriesOther = true, Sort = new WidgetSort(SortTarget.Dimension, 0, true) });
+      DashboardWidget unlimited = W("unlimited", Bar("orders", D("status"), D("customer_id")));
+      DashboardWidget latest = W("latest", Bar("orders", D("status"), D("customer_id"), measures: [Of(Aggregate.Max, "order_date")]) with { SeriesLimit = 1, SeriesOther = true });
+      DashboardWidget averages = W("averages", Bar("orders", D("status"), D("customer_id"), measures: [Of(Aggregate.Avg, "total")]) with { SeriesLimit = 1, SeriesOther = true });
+      DashboardWidget days = W("days", Line("orders", D("order_date", Bucket.Day)) with { Series = D("status"), SeriesLimit = 1, SeriesOther = true });
+      DashboardWidget pie = W("pie", Pie("orders", D("status"), Of(Aggregate.Sum, "total"), other: true, limit: 1));
+      DashboardWidget slices = W("slices", Pie("orders", D("status"), limit: 1));
+      DashboardDefinition definition = Dashboard([byCustomer, byCity, unlimited, latest, averages, days, pie, slices]);
+
+      await report.CaseAsync(harness, "Bars by customer, the largest one, the rest as Other: their categories, series, bars and rest come of one query", definition, "by-customer",
+         limits: whole);
+      await report.CaseAsync(harness, "Through a navigation, categories sorted by the dimension, descending", definition, "by-city", skip: 1, limits: whole);
+      await report.CaseAsync(harness, "Every series: the categories and bars of one query", definition, "unlimited", limits: whole);
+      await report.CaseAsync(harness, "The latest date: the greatest of the groups'", definition, "latest", limits: whole);
+      await report.CaseAsync(harness, "Averages don't add up from their groups': queries", definition, "averages", limits: whole);
+      await report.CaseAsync(harness, "A line by day, the largest status, the rest as Other", definition, "days", limits: whole);
+      await report.CaseAsync(harness, "A pie with Other: its slices and total of one query", definition, "pie", limits: whole);
+      await report.CaseAsync(harness, "A pie without Other is one query already", definition, "slices", limits: whole);
 
       Golden.Match(report.ToString());
    }

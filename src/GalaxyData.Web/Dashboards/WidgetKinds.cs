@@ -84,6 +84,20 @@ internal static class GroupQueries
    public static int Take(int limit, PlanContext context) => Math.Min(limit, context.Limits.MaxChartRows) + 1;
 
    /// <summary>
+   /// A chart's rows read whole, when its measure adds up from its groups' (<paramref name="combine"/>): every group of
+   /// <paramref name="keys"/>, ordered by them (the database's order, for ties), one more than may be read to tell there
+   /// are too many.
+   /// </summary>
+   public static WholePlan? Whole(string rows, IReadOnlyList<(string Name, string Expression, ScalarType Type)> keys, string measure, Combine? combine, WholeShape shape,
+                                  WidgetSort? categories, int mainTake, int? restTake, PlanContext context)
+   {
+      if (combine is not { } how) { return null; }
+      string text = Group(rows, [.. keys.Select(k => (k.Name, k.Expression))], [("m0", measure)], [.. Ties(keys.Select(k => (k.Name, k.Type)), [])],
+         context.Limits.MaxWholeRows + 1);
+      return new WholePlan(new BuiltQuery(text, context.Parameters.Values), how, shape, categories, mainTake, restTake);
+   }
+
+   /// <summary>
    /// Whether <paramref name="member"/>'s value is among <paramref name="values"/> (of <paramref name="type"/>):
    /// <c>x in [$f1, …]</c>, or <c>x == null</c> for a null among them (a null listed would never match); none listed,
    /// <c>false</c>. Not among them (<paramref name="among"/> false), as a list's "not in" is written: rows without a
@@ -203,8 +217,13 @@ public sealed class PieKind : WidgetKind<PieConfig>
       BuiltQuery main = new(GroupQueries.Group(rows, [("d0", dimension.Expression)], [("m0", measure)], ["desc(m0)", .. GroupQueries.RankTies(keys)],
          Math.Min(skip + limit, context.Limits.MaxChartRows) + 1), context.Parameters.Values);
       BuiltQuery? total = config.Other ? new BuiltQuery(GroupQueries.Group(rows, [], [("m0", measure)], [], null), context.Parameters.Values) : null;
+      // With "Other", its slices are read whole: one query for them and their total, and for every step into it.
+      WholePlan? whole = config.Other
+         ? GroupQueries.Whole(rows, [("d0", dimension.Expression, dimension.Type)], measure, context.Combines(config.Measure, context.Path + ".measure"), WholeShape.Slices, null,
+            Math.Min(skip + limit, context.Limits.MaxChartRows) + 1, null, context)
+         : null;
       return new WidgetPlan(GroupQueries.Columns(config.Dimension, null, [config.Measure]), null, _ => main, total, new BuiltQuery(rows, context.Parameters.Values),
-         limit, Paged: false) { Step = step };
+         limit, Paged: false) { Step = step, Whole = whole };
    }
 }
 
@@ -275,7 +294,10 @@ public sealed class BarKind : WidgetKind<BarConfig>
             context.Limits.MaxChartRows + 1), parameters.Values);
       }
 
-      WidgetPlan plan = new(columns, categories, Main, null, underlying, limit, Paged: false);
+      // Read whole, the categories, the series ranked, the bars and their rest come of one query.
+      WholePlan? whole = GroupQueries.Whole(rows, [("d0", dimension.Expression, dimension.Type), ("s0", series.Expression, series.Type)], measures[0].Expression,
+         context.Combines(config.Measures[0], context.Path + ".measures[0]"), WholeShape.Bars, config.Sort, context.Limits.MaxChartRows + 1, null, context);
+      WidgetPlan plan = new(columns, categories, Main, null, underlying, limit, Paged: false) { Whole = whole };
       if (config.SeriesLimit is not { } seriesLimit) { return plan; }
       int size = Math.Min(seriesLimit, DefinitionRules.MaxSeries);
       OtherStep? step = context.Step(size, config.SeriesOther == true);
@@ -381,6 +403,9 @@ public sealed class LineKind : WidgetKind<LineConfig>
       {
          Series = new SeriesPlan(Ranking, size, config.SeriesOther == true ? Rest : null),
          Step = step,
+         // Read whole, the series ranked, the points and their rest come of one query.
+         Whole = GroupQueries.Whole(rows, [("d0", dimension.Expression, dimension.Type), ("s0", series.Expression, series.Type)], measures[0].Expression,
+            context.Combines(config.Measures[0], context.Path + ".measures[0]"), WholeShape.Lines, null, take, take, context),
       };
    }
 }

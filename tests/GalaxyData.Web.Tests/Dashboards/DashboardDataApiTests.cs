@@ -175,10 +175,17 @@ public sealed class DashboardDataApiTests
       (bars.GetProperty("offset").GetInt64(), Next(bars), Rows(bars)).ShouldBe((0L, (long?)null, "\"open\" \"2\" / \"cancelled\" \"1\" / \"shipped\" \"1\""), "bars without series don't step");
    }
 
-   [Fact]
-   public async Task SeriesShowTheLargestAndOtherStepsIntoTheRest()
+   /// <summary>The same whether the charts' rows are read whole and limited in memory, or limited by queries.</summary>
+   [Theory]
+   [InlineData(true)]
+   [InlineData(false)]
+   public async Task SeriesShowTheLargestAndOtherStepsIntoTheRest(bool whole)
    {
-      (WebAppFactory factory, TestApi admin) = await ShopAsync(new Dictionary<string, string?> { ["GalaxyData:Dashboards:MaxOtherDepth"] = "2" });
+      (WebAppFactory factory, TestApi admin) = await ShopAsync(new Dictionary<string, string?>
+      {
+         ["GalaxyData:Dashboards:MaxOtherDepth"] = "2",
+         ["GalaxyData:Dashboards:MaxWholeRows"] = whole ? "20000" : "0",
+      });
       await using WebAppFactory _ = factory;
       Measure count = new(Aggregate.Count, null, "Orders", null);
       BarConfig bars = Bar("status") with { Series = D("customer_id"), SeriesLimit = 1, SeriesOther = true };
@@ -210,6 +217,13 @@ public sealed class DashboardDataApiTests
 
       JsonElement query = await (await admin.PostAsync("/api/dashboards/query", new { slice = Definitions.Json(slice), widget = "bars", page = new { offset = 1 } }))
          .JsonAsync(HttpStatusCode.OK);
+      if (whole)
+      {
+         query.GetProperty("main").GetProperty("text").GetString()
+            .ShouldBe("shop.orders.groupBy(d0: status, s0: customer_id).select(d0, s0, m0: count()).orderBy(d0, s0).take(20001)", "one query, whatever the step");
+         query.EnumerateObject().Select(p => p.Name).ShouldNotContain("series");
+         return;
+      }
       query.GetProperty("series").GetProperty("text").GetString()
          .ShouldBe("(shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).groupBy(s0: customer_id).select(s0, m0: count()).orderBy(desc(m0), s0).take(3)");
       query.GetProperty("rest").GetProperty("text").GetString()

@@ -129,6 +129,14 @@ public sealed class DashboardSettings
    [Range(1, 10_000)]
    public int MaxOtherDepth { get; set; } = 1_000;
 
+   /// <summary>
+   /// The most rows of a chart read whole, in one query, to be limited in memory (its first categories, its largest
+   /// series, its "Other", every step into it) instead of by a query for each; a chart with more, or whose measure
+   /// doesn't add up from its groups', is limited by queries. 0: always by queries.
+   /// </summary>
+   [Range(0, 1_000_000)]
+   public int MaxWholeRows { get; set; } = 20_000;
+
    /// <summary>The most slices a selection of a widget's may hold, signed in and in public dashboards.</summary>
    [Range(1, 10_000)]
    public int MaxSelectionKeys { get; set; } = 50;

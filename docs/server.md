@@ -96,6 +96,7 @@ parts (`GalaxyData__DataDirectory`).
 | `Dashboards:MaxDefinitionLength` | `262144` | The longest a dashboard's definition may be, as JSON, in characters. |
 | `Dashboards:MaxChartRows` | `10000` | The most rows (points, bars, slices) a chart shows. |
 | `Dashboards:MaxOtherDepth` | `1000` | How deep a chart's "Other" may be stepped into: the most slices or series before the last shown (no more than `MaxChartRows`). |
+| `Dashboards:MaxWholeRows` | `20000` | The most rows of a chart read whole, in one query, to be limited in memory (its first categories, largest series, "Other", every step); a chart with more is limited by queries. 0: always by queries. |
 | `Dashboards:MaxSelectionKeys`, `MaxPublicSelectionKeys` | `50`, `25` | The most slices chosen in a widget, signed in and through a public link. |
 | `Dashboards:MaxFilterValues`, `MaxPublicFilterValues` | `500`, `100` | The most values a condition may list, signed in and through a public link. |
 | `Dashboards:MinRefreshSeconds` | `30` | The shortest a dashboard's refresh interval may be. |
@@ -842,6 +843,28 @@ or the deepest); a chart limited to its largest series gives them (`series`, the
 more (`moreSeries`), and its rest by the dimension (`otherRows`); a line's `categories` are then its x values, its
 points' and its rest's. A chart that doesn't step is at its first whatever the offset. Its queries (`…/query`, with the
 same `page`) give the series' and the rest's too. Steps are kept as any answer is, by their queries.
+
+**Charts read whole.** A chart's limits take queries one after another, each needing what the one before found:
+bars by a series find their categories, then rank their series, then read their bars and the rest; a line limited to
+its largest series ranks them, then reads its points and the rest; a pie with "Other" reads its slices, then the total.
+Where the database's time goes on each query more than on the rows it gives, they are read whole instead: every group
+of the chart's dimension and series, in one query ordered by them (`…/query` gives it as the main one), at most
+`Dashboards:MaxWholeRows`, and what each query would give is worked out from them in memory. So:
+
+- **The same answer.** The groups are the database's; their measure adds up to coarser groups': counts and sums are
+  added, and the least and greatest of numbers and dates kept. Charts of a measure that doesn't add up so (an
+  average, a distinct count, the least or greatest of text, which the database's collation orders) are limited by
+  queries, as are rows of a value the application doesn't add (a sum too large).
+- **Ties** are broken in the database's order of the dimension, and series by their values (text by its characters'
+  codes, guids as their text). On SQLite, DuckDB and ClickHouse that is the queries' order; elsewhere only equal
+  measures at the edge of what is shown may break another way.
+- **Every step is of the rows read first.** They are kept for `Dashboards:CacheDuration` under their query alone, so
+  steps into "Other" and back, and charts of the same rows, read none again; such an answer is as old as the rows
+  (`cached`, and when they were read). Rows kept count against `Dashboards:CacheSize` by how many they are (one for
+  each thousand).
+- **Too many rows** (more than `MaxWholeRows`): the chart is limited by queries, and that is remembered for an hour,
+  so they aren't read whole again first.
+- Bars and lines without a series, pies without "Other", and tables are one query already.
 
 **Public dashboards.** `GET /api/public/dashboards/{token}` (the published copy without its sources, fields,
 conditions, links or hidden filters), `…/widgets/{w}/data?s=` (the state as base64url JSON, 4 KB at most) and

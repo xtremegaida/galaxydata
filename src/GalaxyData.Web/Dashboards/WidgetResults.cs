@@ -32,17 +32,33 @@ public sealed class WidgetResults : IDisposable
 
    /// <summary>
    /// The answer kept under <paramref name="key"/> (unless <paramref name="refresh"/>), or one being worked out, or one
-   /// worked out now by <paramref name="compute"/> and kept for <paramref name="duration"/>; whether it was kept, and when it was worked out.
+   /// worked out now by <paramref name="compute"/> and kept for <paramref name="duration"/>; whether it was kept, and when
+   /// it was worked out. <paramref name="size"/>: how much of the cache's size an answer takes (1 unless said).
    /// </summary>
    public async Task<(T Value, bool Cached, DateTime At)> GetAsync<T>(string key, TimeSpan duration, bool refresh, Func<CancellationToken, Task<T>> compute,
-                                                                     CancellationToken cancellationToken) where T : class
+                                                                     CancellationToken cancellationToken, Func<T, long>? size = null) where T : class
    {
       ArgumentNullException.ThrowIfNull(key);
       ArgumentNullException.ThrowIfNull(compute);
-      if (!refresh && cache.TryGetValue(key, out Entry? kept) && kept != null) { return (Open<T>(kept), true, kept.At); }
-      Lazy<Task<Entry>> work = running.GetOrAdd(key, k => new Lazy<Task<Entry>>(() => RunAsync(k, duration, async ct => await compute(ct))));
+      if (!refresh && cache.TryGetValue(key, out Entry? kept) && kept is { Value: not Remembered }) { return (Open<T>(kept), true, kept.At); }
+      Lazy<Task<Entry>> work = running.GetOrAdd(key, k => new Lazy<Task<Entry>>(() =>
+         RunAsync(k, duration, async ct => await compute(ct), size == null ? null : value => size((T)value))));
       Entry entry = await work.Value.WaitAsync(cancellationToken);
       return (Open<T>(entry), false, entry.At);
+   }
+
+   /// <summary>Remembers <paramref name="key"/> for <paramref name="duration"/>: something learnt, as a chart's rows being too many to read whole.</summary>
+   public void Remember(string key, TimeSpan duration)
+   {
+      ArgumentNullException.ThrowIfNull(key);
+      cache.Set(key, new Entry(Remembered.Instance, null, clock.GetUtcNow().UtcDateTime), new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = duration });
+   }
+
+   /// <summary>Whether <paramref name="key"/> is remembered (<see cref="Remember"/>).</summary>
+   public bool Remembers(string key)
+   {
+      ArgumentNullException.ThrowIfNull(key);
+      return cache.TryGetValue(key, out Entry? kept) && kept is { Value: Remembered };
    }
 
    public void Dispose() => cache.Dispose();
@@ -53,7 +69,7 @@ public sealed class WidgetResults : IDisposable
       return (T)entry.Value!;
    }
 
-   private async Task<Entry> RunAsync(string key, TimeSpan duration, Func<CancellationToken, Task<object>> compute)
+   private async Task<Entry> RunAsync(string key, TimeSpan duration, Func<CancellationToken, Task<object>> compute, Func<object, long>? size)
    {
       Entry entry;
       try
@@ -61,7 +77,10 @@ public sealed class WidgetResults : IDisposable
          // Its own token: whoever asked first may go, the others still want it. Queries have their own timeouts.
          object value = await Task.Run(() => compute(CancellationToken.None));
          entry = new Entry(value, null, clock.GetUtcNow().UtcDateTime);
-         if (duration > TimeSpan.Zero) { cache.Set(key, entry, new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = duration }); }
+         if (duration > TimeSpan.Zero)
+         {
+            cache.Set(key, entry, new MemoryCacheEntryOptions { Size = Math.Max(1, size?.Invoke(value) ?? 1), AbsoluteExpirationRelativeToNow = duration });
+         }
       }
       catch (Exception e) when (e is not OutOfMemoryException)
       {
@@ -76,4 +95,10 @@ public sealed class WidgetResults : IDisposable
    }
 
    private sealed record Entry(object? Value, ExceptionDispatchInfo? Failure, DateTime At);
+
+   /// <summary>What a remembered key holds: no answer.</summary>
+   private sealed class Remembered
+   {
+      public static readonly Remembered Instance = new();
+   }
 }

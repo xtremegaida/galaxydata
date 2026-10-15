@@ -1,0 +1,186 @@
+### Bars by customer, the largest one, the rest as Other: their categories, series, bars and rest come of one query
+columns: d0 Dimension status, s0 Series customer_id, m0 Measure Rows; limit 25
+whole (Bars, Sum, main take 10001, rest take all, categories by Measure desc): shop.orders.groupBy(d0: status, s0: customer_id).select(d0, s0, m0: count()).orderBy(d0, s0).take(101)
+d0 | s0 | m0
+"cancelled" | "3" | "1"
+"open" | "1" | "1"
+"open" | "2" | "1"
+"shipped" | "1" | "1"
+categories: shop.orders.groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+d0 | m0
+"open" | "2"
+"cancelled" | "1"
+"shipped" | "1"
+series (the largest 1, from 0): (shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).groupBy(s0: customer_id).select(s0, m0: count()).orderBy(desc(m0), s0).take(2)
+  $f1 = "open" (string), $f2 = "cancelled" (string), $f3 = "shipped" (string)
+s0 | m0
+"1" | "2"
+"2" | "1"
+main: (shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).where(r0 => r0.customer_id in [$f4]).groupBy(d0: status, s0: customer_id).select(d0, s0, m0: count()).orderBy(d0, s0).take(10001)
+  $f1 = "open" (string), $f2 = "cancelled" (string), $f3 = "shipped" (string), $f4 = "1" (int64)
+d0 | s0 | m0
+"open" | "1" | "1"
+"shipped" | "1" | "1"
+more series: True; next: 1
+rest: (shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).where(r0 => (not (r0.customer_id in [$f4]) or r0.customer_id == null)).groupBy(d0: status).select(d0, m0: count()).orderBy(d0)
+  $f1 = "open" (string), $f2 = "cancelled" (string), $f3 = "shipped" (string), $f4 = "1" (int64)
+d0 | m0
+"cancelled" | "1"
+"open" | "1"
+underlying: shop.orders
+
+### Through a navigation, categories sorted by the dimension, descending
+columns: d0 Dimension status, s0 Series city, m0 Measure Rows; limit 25
+whole (Bars, Sum, main take 10001, rest take all, categories by Dimension desc): shop.orders.groupBy(d0: status, s0: customer.city).select(d0, s0, m0: count()).orderBy(d0, s0).take(101)
+d0 | s0 | m0
+"cancelled" | null | "1"
+"open" | "Cape Town" | "1"
+"open" | "Johannesburg" | "1"
+"shipped" | "Cape Town" | "1"
+categories: shop.orders.groupBy(d0: status).select(d0, m0: count()).orderBy(desc(d0)).take(26)
+d0 | m0
+"shipped" | "1"
+"open" | "2"
+"cancelled" | "1"
+series (the largest 1, from 1): (shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).groupBy(s0: customer.city).select(s0, m0: count()).orderBy(desc(m0), s0).take(3)
+  $f1 = "shipped" (string), $f2 = "open" (string), $f3 = "cancelled" (string)
+s0 | m0
+"Cape Town" | "2"
+null | "1"
+"Johannesburg" | "1"
+main: (shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).where(r0 => r0.customer.city == null).groupBy(d0: status, s0: customer.city).select(d0, s0, m0: count()).orderBy(d0, s0).take(10001)
+  $f1 = "shipped" (string), $f2 = "open" (string), $f3 = "cancelled" (string)
+d0 | s0 | m0
+"cancelled" | null | "1"
+more series: True; next: 2
+rest: (shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).where(r0 => (r0.customer.city != null and not (r0.customer.city in [$f4]))).groupBy(d0: status).select(d0, m0: count()).orderBy(d0)
+  $f1 = "shipped" (string), $f2 = "open" (string), $f3 = "cancelled" (string), $f4 = "Cape Town" (string)
+d0 | m0
+"open" | "1"
+underlying: shop.orders
+
+### Every series: the categories and bars of one query
+columns: d0 Dimension status, s0 Series customer_id, m0 Measure Rows; limit 25
+whole (Bars, Sum, main take 10001, rest take all, categories by Measure desc): shop.orders.groupBy(d0: status, s0: customer_id).select(d0, s0, m0: count()).orderBy(d0, s0).take(101)
+d0 | s0 | m0
+"cancelled" | "3" | "1"
+"open" | "1" | "1"
+"open" | "2" | "1"
+"shipped" | "1" | "1"
+categories: shop.orders.groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(26)
+d0 | m0
+"open" | "2"
+"cancelled" | "1"
+"shipped" | "1"
+main: (shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).groupBy(d0: status, s0: customer_id).select(d0, s0, m0: count()).orderBy(d0, s0).take(10001)
+  $f1 = "open" (string), $f2 = "cancelled" (string), $f3 = "shipped" (string)
+d0 | s0 | m0
+"cancelled" | "3" | "1"
+"open" | "1" | "1"
+"open" | "2" | "1"
+"shipped" | "1" | "1"
+underlying: shop.orders
+
+### The latest date: the greatest of the groups'
+columns: d0 Dimension status, s0 Series customer_id, m0 Measure order_date; limit 25
+whole (Bars, Max, main take 10001, rest take all, categories by Measure desc): shop.orders.groupBy(d0: status, s0: customer_id).select(d0, s0, m0: max(order_date)).orderBy(d0, s0).take(101)
+d0 | s0 | m0
+"cancelled" | "3" | "2026-02-14"
+"open" | "1" | "2026-01-05"
+"open" | "2" | "2026-02-01"
+"shipped" | "1" | "2026-01-09"
+categories: shop.orders.groupBy(d0: status).select(d0, m0: max(order_date)).orderBy(desc(m0), d0).take(26)
+d0 | m0
+"cancelled" | "2026-02-14"
+"open" | "2026-02-01"
+"shipped" | "2026-01-09"
+series (the largest 1, from 0): (shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).groupBy(s0: customer_id).select(s0, m0: max(order_date)).orderBy(desc(m0), s0).take(2)
+  $f1 = "cancelled" (string), $f2 = "open" (string), $f3 = "shipped" (string)
+s0 | m0
+"3" | "2026-02-14"
+"2" | "2026-02-01"
+main: (shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).where(r0 => r0.customer_id in [$f4]).groupBy(d0: status, s0: customer_id).select(d0, s0, m0: max(order_date)).orderBy(d0, s0).take(10001)
+  $f1 = "cancelled" (string), $f2 = "open" (string), $f3 = "shipped" (string), $f4 = "3" (int64)
+d0 | s0 | m0
+"cancelled" | "3" | "2026-02-14"
+more series: True; next: 1
+rest: (shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).where(r0 => (not (r0.customer_id in [$f4]) or r0.customer_id == null)).groupBy(d0: status).select(d0, m0: max(order_date)).orderBy(d0)
+  $f1 = "cancelled" (string), $f2 = "open" (string), $f3 = "shipped" (string), $f4 = "3" (int64)
+d0 | m0
+"open" | "2026-02-01"
+"shipped" | "2026-01-09"
+underlying: shop.orders
+
+### Averages don't add up from their groups': queries
+columns: d0 Dimension status, s0 Series customer_id, m0 Measure total; limit 25
+categories: shop.orders.groupBy(d0: status).select(d0, m0: avg(total)).orderBy(desc(m0), d0).take(26)
+d0 | m0
+"open" | "131.125"
+"shipped" | "99.5"
+"cancelled" | "0"
+series (the largest 1, from 0): (shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).groupBy(s0: customer_id).select(s0, m0: avg(total)).orderBy(desc(m0), s0).take(2)
+  $f1 = "open" (string), $f2 = "shipped" (string), $f3 = "cancelled" (string)
+s0 | m0
+"1" | "174.75"
+"2" | "12.25"
+main: (shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).where(r0 => r0.customer_id in [$f4]).groupBy(d0: status, s0: customer_id).select(d0, s0, m0: avg(total)).orderBy(d0, s0).take(10001)
+  $f1 = "open" (string), $f2 = "shipped" (string), $f3 = "cancelled" (string), $f4 = "1" (int64)
+d0 | s0 | m0
+"open" | "1" | "250"
+"shipped" | "1" | "99.5"
+more series: True; next: 1
+rest: (shop.orders).where(r0 => r0.status in [$f1, $f2, $f3]).where(r0 => (not (r0.customer_id in [$f4]) or r0.customer_id == null)).groupBy(d0: status).select(d0, m0: avg(total)).orderBy(d0)
+  $f1 = "open" (string), $f2 = "shipped" (string), $f3 = "cancelled" (string), $f4 = "1" (int64)
+d0 | m0
+"cancelled" | "0"
+"open" | "12.25"
+underlying: shop.orders
+
+### A line by day, the largest status, the rest as Other
+columns: d0 Dimension order_date, s0 Series status, m0 Measure Rows; limit 1000
+whole (Lines, Sum, main take 1001, rest take 1001): shop.orders.groupBy(d0: date(order_date), s0: status).select(d0, s0, m0: count()).orderBy(d0, s0).take(101)
+d0 | s0 | m0
+"2026-01-05" | "open" | "1"
+"2026-01-09" | "shipped" | "1"
+"2026-02-01" | "open" | "1"
+"2026-02-14" | "cancelled" | "1"
+series (the largest 1, from 0): shop.orders.groupBy(s0: status).select(s0, m0: count()).orderBy(desc(m0), s0).take(2)
+s0 | m0
+"open" | "2"
+"cancelled" | "1"
+main: (shop.orders).where(r0 => r0.status in [$f1]).groupBy(d0: date(order_date), s0: status).select(d0, s0, m0: count()).orderBy(d0, s0).take(1001)
+  $f1 = "open" (string)
+d0 | s0 | m0
+"2026-01-05" | "open" | "1"
+"2026-02-01" | "open" | "1"
+more series: True; next: 1
+rest: (shop.orders).where(r0 => (not (r0.status in [$f1]) or r0.status == null)).groupBy(d0: date(order_date)).select(d0, m0: count()).orderBy(d0).take(1001)
+  $f1 = "open" (string)
+d0 | m0
+"2026-01-09" | "1"
+"2026-02-14" | "1"
+underlying: shop.orders
+
+### A pie with Other: its slices and total of one query
+columns: d0 Dimension status, m0 Measure total; limit 1
+whole (Slices, Sum, main take 2, rest take all): shop.orders.groupBy(d0: status).select(d0, m0: sum(total)).orderBy(d0).take(101)
+d0 | m0
+"cancelled" | "0.00"
+"open" | "262.25"
+"shipped" | "99.50"
+main: shop.orders.groupBy(d0: status).select(d0, m0: sum(total)).orderBy(desc(m0), d0).take(2)
+d0 | m0
+"open" | "262.25"
+"shipped" | "99.50"
+total: shop.orders.groupBy().select(m0: sum(total))
+m0
+"361.75"
+underlying: shop.orders
+
+### A pie without Other is one query already
+columns: d0 Dimension status, m0 Measure Rows; limit 1
+main: shop.orders.groupBy(d0: status).select(d0, m0: count()).orderBy(desc(m0), d0).take(2)
+d0 | m0
+"open" | "2"
+"cancelled" | "1"
+underlying: shop.orders
