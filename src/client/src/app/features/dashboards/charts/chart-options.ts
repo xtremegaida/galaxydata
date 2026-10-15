@@ -138,7 +138,7 @@ export function pieOption(
   const items: Item[] = data.rows.map((row) => {
     const key: Key = [row[d]];
     return {
-      name: categoryText(row[d], type, config.dimension.bucket, locale),
+      name: categoryText(row[d], type, config.dimension.bucket, locale, config.dimension.booleans),
       value: chartNumber(row[m]),
       key,
       raw: row[m],
@@ -287,7 +287,13 @@ export function barOption(
         };
       });
       all = all.concat(items);
-      const name = categoryText(value, data.columns[s].type, config.series?.bucket, locale);
+      const name = categoryText(
+        value,
+        data.columns[s].type,
+        config.series?.bucket,
+        locale,
+        config.series?.booleans,
+      );
       return {
         type: 'bar',
         name,
@@ -335,7 +341,7 @@ export function barOption(
     }
   }
   const names = categories.map((category) =>
-    categoryText(category, type, config.dimension.bucket, locale),
+    categoryText(category, type, config.dimension.bucket, locale, config.dimension.booleans),
   );
   const format = measures[0]?.c.format ?? null;
   const categoryAxis = {
@@ -356,8 +362,11 @@ export function barOption(
     nameTextStyle: { color: theme.muted },
     axisLabel: {
       color: theme.muted,
+      // Bars stacked to 100% are percentages of their bar, whatever the measure's format.
       formatter: (n: number) =>
-        formatNumber(n, { ...(format ?? emptyFormat), compact: true, decimals: null }, locale),
+        config.stack === 'percent'
+          ? `${formatNumber(n, null, locale)}%`
+          : formatNumber(n, { ...(format ?? emptyFormat), compact: true, decimals: null }, locale),
     },
     splitLine: { lineStyle: { color: theme.grid, width: 1, type: 'solid' as const } },
   };
@@ -452,7 +461,13 @@ export function lineOption(
     // The largest first, when they are limited; as they came otherwise.
     for (const value of data.series ? [...data.series] : unique(data.rows.map((row) => row[s]))) {
       lines.push({
-        name: categoryText(value, data.columns[s].type, config.series?.bucket, locale),
+        name: categoryText(
+          value,
+          data.columns[s].type,
+          config.series?.bucket,
+          locale,
+          config.series?.booleans,
+        ),
         entity: 'series:' + keyText([value]),
         items: categories.map((category) => {
           const row = data.rows.find((r) => same(r[d], category) && same(r[s], value));
@@ -488,7 +503,7 @@ export function lineOption(
     }
   }
   const names = categories.map((category) =>
-    categoryText(category, type, config.dimension.bucket, locale),
+    categoryText(category, type, config.dimension.bucket, locale, config.dimension.booleans),
   );
   const format = measures[0]?.c.format ?? null;
   return {

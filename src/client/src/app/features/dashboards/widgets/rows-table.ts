@@ -10,10 +10,10 @@ import { MatIconButton } from '@angular/material/button';
 import { MatIcon } from '@angular/material/icon';
 import { MatTooltip } from '@angular/material/tooltip';
 import { cellText } from '../../browse/grid/grid-columns';
-import { categoryText, formatNumber } from '../charts/chart-values';
+import { booleanText, categoryText, formatNumber } from '../charts/chart-values';
 import {
-  type Bucket,
   type DataConfig,
+  type Dimension,
   type Key,
   type NumberFormat,
   type Selection,
@@ -298,10 +298,16 @@ export class RowsTable {
       return formatNumber(value, this.formatOf(column), this.locale);
     }
     if (column.role === 'dimension' || column.role === 'series') {
-      return categoryText(value, column.type, this.bucketOf(column), this.locale);
+      const dimension = this.dimensionOf(column);
+      return categoryText(value, column.type, dimension?.bucket, this.locale, dimension?.booleans);
     }
     if (column.format || numeric.has(column.type.kind)) {
       return value === null ? 'NULL' : formatNumber(value, this.formatOf(column), this.locale);
+    }
+    if (column.type.kind === 'boolean' && value !== null && value !== undefined) {
+      const config = this.config();
+      const labels = config.kind === 'table' ? config.columns[column.index]?.booleans : null;
+      return booleanText(value, labels);
     }
     return cellText(value, column.type);
   }
@@ -317,16 +323,17 @@ export class RowsTable {
       : { decimals: scale, prefix: null, suffix: null, compact: false };
   }
 
-  private bucketOf(column: WidgetColumn): Bucket | null {
+  /** The dimension a column of a chart's or a grouped table's is of: its period, its labels for true and false. */
+  private dimensionOf(column: WidgetColumn): Dimension | null {
     const config = this.config();
     switch (config.kind) {
       case 'pie':
-        return config.dimension.bucket;
+        return config.dimension;
       case 'bar':
       case 'line':
-        return (column.role === 'series' ? config.series?.bucket : config.dimension.bucket) ?? null;
+        return (column.role === 'series' ? config.series : config.dimension) ?? null;
       case 'table':
-        return config.dimensions[column.index]?.bucket ?? null;
+        return config.dimensions[column.index] ?? null;
     }
   }
 }

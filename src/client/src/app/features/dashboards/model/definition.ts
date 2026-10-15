@@ -14,7 +14,10 @@ export type ConditionValue = Schema<'ConditionValue'>;
 export type FieldRef = Schema<'FieldRef'>;
 export type Dimension = Schema<'Dimension'>;
 export type Measure = Schema<'Measure'>;
+export type MeasureTerm = Schema<'MeasureTerm'>;
+export type WidgetCondition = Schema<'WidgetCondition'>;
 export type NumberFormat = Schema<'NumberFormat'>;
+export type BooleanLabels = Schema<'BooleanLabels'>;
 export type Bucket = Schema<'Bucket'>;
 export type LegendPosition = Schema<'LegendPosition'>;
 

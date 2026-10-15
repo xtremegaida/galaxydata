@@ -134,6 +134,62 @@ public sealed class DefinitionRulesTests
       Fields(With(new HeadingConfig(null!, HeadingSize.Large, HeadingAlign.Start))).ShouldBe(["definition.widgets[1].config.text"]);
    }
 
+   /// <summary>
+   /// A measure's conditions, and what it is divided by, are checked as a widget's are; percentages and durations
+   /// (in a unit, never shortened); labels for true and false. What isn't given isn't written.
+   /// </summary>
+   [Fact]
+   public void MeasuresKeepRowsDivideAndShowAsAsked()
+   {
+      DashboardDefinition sales = Definitions.Sales();
+      DashboardDefinition With(WidgetConfig config) => sales with { Widgets = [sales.Widgets[0], sales.Widgets[1] with { Config = config }, sales.Widgets[2]] };
+      BarConfig bar = Definitions.Bar("orders", "status");
+      WidgetCondition open = new(new FieldRef([], "status"), new ConditionValue(ConditionOp.Eq, Value: "open"));
+      Measure share = new(Aggregate.Count, null, "Open", new NumberFormat(1, null, null, false, NumberStyle.Percent), [open], new MeasureTerm(Aggregate.Count, null, []));
+      Measure waited = new(Aggregate.Avg, new FieldRef([], "wait_ms"), "Wait", new NumberFormat(null, null, null, false, NumberStyle.Duration, DurationUnit.Milliseconds));
+      Dimension status = bar.Dimension with { Booleans = new BooleanLabels("Done", "Not yet") };
+
+      (DashboardDefinition? fine, Dictionary<string, string[]> errors) = Check(With(bar with { Dimension = status, Measures = [share, waited, bar.Measures[0] with { Where = [] }] }));
+      errors.ShouldBeEmpty();
+      string json = DefinitionJson.Write(fine!);
+      json.ShouldContain("\"where\":[{\"field\":{\"path\":[],\"column\":\"status\"},\"value\":{\"op\":\"eq\",\"value\":\"open\"");
+      json.ShouldContain("\"per\":{\"aggregate\":\"count\",\"field\":null}", Case.Sensitive, "no conditions written as none");
+      json.ShouldContain("\"format\":{\"decimals\":1,\"prefix\":null,\"suffix\":null,\"compact\":false,\"style\":\"percent\"}");
+      json.ShouldContain("\"style\":\"duration\",\"unit\":\"milliseconds\"");
+      json.ShouldContain("\"booleans\":{\"true\":\"Done\",\"false\":\"Not yet\"}");
+      json.ShouldContain("{\"aggregate\":\"count\",\"field\":null,\"label\":\"Rows\",\"format\":null}", Case.Sensitive, "a measure as it was before");
+      DefinitionJson.Write(Check(DefinitionJson.Read(json)).Checked!).ShouldBe(json, "the same once read back");
+
+      Fields(With(bar with
+      {
+         Dimension = status with { Booleans = new BooleanLabels(null!, new string('x', 61)) },
+         Measures =
+         [
+            share with { Where = [open with { Field = null! }], Per = new MeasureTerm(Aggregate.Sum, null, [open with { Value = new ConditionValue(ConditionOp.Between, Value: 1) }]) },
+            waited with { Format = waited.Format! with { Unit = null, Compact = true } },
+            share with { Format = share.Format! with { Unit = DurationUnit.Seconds }, Where = [.. Enumerable.Repeat(open, 21)] },
+         ],
+      })).ShouldBe(
+      [
+         "definition.widgets[1].config.dimension.booleans.false",
+         "definition.widgets[1].config.dimension.booleans.true",
+         "definition.widgets[1].config.measures[0].per.field",
+         "definition.widgets[1].config.measures[0].per.where[0].value.valueTo",
+         "definition.widgets[1].config.measures[0].where[0].field",
+         "definition.widgets[1].config.measures[1].format.compact",
+         "definition.widgets[1].config.measures[1].format.unit",
+         "definition.widgets[1].config.measures[2].format.unit",
+         "definition.widgets[1].config.measures[2].where",
+      ]);
+      TableConfig raw = new("orders", [], true, Definitions.All, TableMode.Raw, [], [], [new TableColumn(new FieldRef([], "paid"), "Paid", null, new BooleanLabels("Paid", ""))],
+         new WidgetSort(SortTarget.Column, 0, false), 50);
+      Check(With(raw)).Errors.ShouldBeEmpty("an empty label is no's");
+      Fields(With(raw with { Columns = [raw.Columns[0] with { Booleans = new BooleanLabels("Paid", null!) }] }))
+         .ShouldBe(["definition.widgets[1].config.columns[0].booleans.false"]);
+      Fields(With(Definitions.Pie("orders", "status", Aggregate.Sum, "total", other: true) with { Measure = share with { Format = null } }))
+         .ShouldBe(["definition.widgets[1].config.other"], "the rest of a ratio isn't a slice that adds up");
+   }
+
    [Fact]
    public void AHeadingIsReadAsTheClientWritesIt()
    {

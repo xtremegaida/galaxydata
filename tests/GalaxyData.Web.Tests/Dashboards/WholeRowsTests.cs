@@ -41,6 +41,11 @@ public sealed class WholeRowsTests
    private static PieConfig Pie(Dimension dimension, Measure measure, int limit) =>
       new("visits", [], true, All, dimension, measure, limit, true, false, true, LegendPosition.Right);
 
+   private static readonly WidgetCondition InZa = new(new FieldRef([], "country"), new ConditionValue(ConditionOp.Eq, Value: "ZA"));
+
+   /// <summary>Charts whose measure doesn't add up from its groups', so are limited by queries.</summary>
+   private static readonly string[] ByQueries = ["average", "pages-per-visit"];
+
    /// <summary>The charts, by id: each with the steps into its "Other" asked.</summary>
    private static readonly (string Id, WidgetConfig Config, int[] Steps)[] Charts =
    [
@@ -54,6 +59,8 @@ public sealed class WholeRowsTests
       ("longest", Bar(D("device"), D("country"), Of(Aggregate.Max, "seconds"), seriesLimit: 3, other: true), [0, 3]),
       ("amounts", Bar(D("device"), D("channel"), Of(Aggregate.Sum, "amount"), seriesLimit: 2, other: true), [0, 2]),
       ("average", Bar(D("device"), D("channel"), Of(Aggregate.Avg, "pages"), seriesLimit: 2, other: true), [0, 2]),
+      ("pages-in-za", Bar(D("device"), D("channel"), Of(Aggregate.Sum, "pages") with { Where = [InZa] }, seriesLimit: 2, other: true), [0, 2]),
+      ("pages-per-visit", Bar(D("device"), D("channel"), Of(Aggregate.Sum, "pages") with { Per = new MeasureTerm(Aggregate.Count, null) }, seriesLimit: 2, other: true), [0, 2]),
       ("days-top-channels", Line(D("day"), D("channel"), Count(), 3), [0, 3, 6]),
       ("days-cut", Line(D("day"), D("channel"), Count(), 2, limit: 30), [0, 2]),
       ("months-countries", Line(D("day", Bucket.Month), D("country"), Of(Aggregate.Sum, "pages"), 2), [0, 2, 4]),
@@ -149,13 +156,13 @@ public sealed class WholeRowsTests
             Answer(answer).ShouldBe(expected, $"{id} at {step}");
             // A step asked for the first time is kept only when it is worked out from rows read whole before (for the first
             // step, or another chart's of the same rows).
-            if (step != steps[0]) { answer.GetProperty("cached").GetBoolean().ShouldBe(id != "average", $"{id} at {step}: read whole"); }
+            if (step != steps[0]) { answer.GetProperty("cached").GetBoolean().ShouldBe(!ByQueries.Contains(id), $"{id} at {step}: read whole"); }
          }
          // Steps back, from the rows kept.
          Answer(await DataAsync(byWhole, slice, id, 0)).ShouldBe(Answer(await DataAsync(byQueries, slice, id, 0)), $"{id} back at 0");
       }
 
-      // The charts that are read whole are read in one query, whatever their step; an average doesn't add up from its groups'.
+      // The charts that are read whole are read in one query, whatever their step; an average or a ratio doesn't add up from its groups'.
       JsonElement one = await QueryAsync(byWhole, slice, "weeks-top-channels");
       one.GetProperty("main").GetProperty("text").GetString()
          .ShouldBe("web.visits.groupBy(d0: startOfWeek(day), s0: channel).select(d0, s0, m0: count()).orderBy(d0, s0).take(20001)");
@@ -163,6 +170,9 @@ public sealed class WholeRowsTests
       new[] { "series", "rest" }.Where(name => one.TryGetProperty(name, out _)).ShouldBeEmpty();
       (await QueryAsync(byWhole, slice, "channels-pie")).GetProperty("total").ValueKind.ShouldBe(JsonValueKind.Null);
       (await QueryAsync(byWhole, slice, "average")).TryGetProperty("series", out _).ShouldBeTrue("ranked by queries");
+      (await QueryAsync(byWhole, slice, "pages-per-visit")).TryGetProperty("series", out _).ShouldBeTrue("ranked by queries");
+      (await QueryAsync(byWhole, slice, "pages-in-za")).GetProperty("main").GetProperty("text").GetString()
+         .ShouldBe("web.visits.groupBy(d0: device, s0: channel).select(d0, s0, m0: sum(r0 => iif(r0.country == $f1, r0.pages, null))).orderBy(d0, s0).take(20001)");
       (await QueryAsync(byQueries, slice, "weeks-top-channels")).TryGetProperty("series", out _).ShouldBeTrue();
    }
 

@@ -751,6 +751,22 @@ of its own: every widget then names its `tab`, and its cells are in that tab's g
 was). Those are left out when unset (and no tabs, `[]`, are written as none), so a definition saved before palettes
 or tabs is written as it was. Tabs are only where widgets are shown: nothing a widget reads depends on them.
 
+**Measures, rates and how numbers show.** A measure is an `aggregate` (`count` of rows, `countValues`,
+`countDistinct`, `approxCountDistinct`, `sum`, `avg`, `min`, `max`) of a `field` (none for `count`), with a `label`
+and a `format`. It may aggregate only the rows its `where` keeps (conditions as a widget's own: the bounced sessions
+of each group, `count(r0 => r0.bounced == $f1)`; other aggregates take the field where the conditions hold,
+`sum(r0 => iif(…, r0.total, null))`), and be divided by another aggregate, `per` (`{aggregate, field, where}`), which
+makes it a rate or ratio: form visits submitted per form visit started, page views per session. A ratio is null where
+what it is divided by is 0 (`… / nullif(…, 0)`: databases differ over dividing by zero), and its "Other" is the ratio
+over the rest's rows; a pie's rest isn't a slice of one. The `avg` of a true/false field is the share of its values
+that are true (0 to 1): a bounce rate is `{aggregate: avg, field: bounced}`. A `format` has `decimals` (null: as they
+are), a `prefix` and `suffix`, `compact` (1.2K), and a `style`: `number` (left out), `percent` (a share of 1 times
+100 with %: 0.256 shows as 25.6%; to one place unless decimals are given) or `duration` with a `unit` (`milliseconds`,
+`seconds`, `minutes`, `hours`, `days`), shown in its two largest parts (2m 15s, 1h 5m, 3d 4h; 45s under a minute,
+850ms under a second), never shortened. A dimension and a raw table's column of true/false values may have `booleans`
+(`{true, false}`: how they show, as Bounced and Went on; an empty one, or none, is Yes or No). `where`, `per`, `style`,
+`unit` and `booleans` are left out when unset, so a definition saved before them is written as it was.
+
 - **Checked as it is saved:** its shape, ids (`[a-z0-9-]`, unique in their lists), what refers to what, each kind's
   rules and the limits (`Dashboards:*`): a 400 by the field's JSON path (`definition.widgets[2].config.measures[0]`).
 - **Checked against the catalog as it is shown and run:** entities, columns, navigations and types may change after a
@@ -852,9 +868,10 @@ of the chart's dimension and series, in one query ordered by them (`…/query` g
 `Dashboards:MaxWholeRows`, and what each query would give is worked out from them in memory. So:
 
 - **The same answer.** The groups are the database's; their measure adds up to coarser groups': counts and sums are
-  added, and the least and greatest of numbers and dates kept. Charts of a measure that doesn't add up so (an
-  average, a distinct count, the least or greatest of text, which the database's collation orders) are limited by
-  queries, as are rows of a value the application doesn't add (a sum too large).
+  added, and the least and greatest of numbers and dates kept, whatever rows their conditions keep. Charts of a
+  measure that doesn't add up so (an average or share, a ratio, a distinct count, the least or greatest of text, which
+  the database's collation orders) are limited by queries, as are rows of a value the application doesn't add (a sum
+  too large).
 - **Ties** are broken in the database's order of the dimension, and series by their values (text by its characters'
   codes, guids as their text). On SQLite, DuckDB and ClickHouse that is the queries' order; elsewhere only equal
   measures at the edge of what is shown may break another way.

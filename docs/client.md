@@ -556,6 +556,11 @@ the server keeps and checks).
   moves few); distinct keeps labels apart within a chart; what has a colour keeps it while the chart is shown (a
   filter repaints nothing). Embedded, the overrides come with each answer's rows (`colors`). Pages read the palettes
   with the dashboard, and again as they refresh; a palette changed elsewhere shows then, or once reloaded.
+- **Numbers and values** (`charts/chart-values.ts`): measures and raw columns show as their `format` says, in the
+  locale: numbers (exactly, as text of decimals is), percentages (times 100: 25.7%) or durations (`durationText`:
+  2m 15s, 1h 5m, 45.3s, 850ms); a chart stacked to 100% labels its axis in percentages of the bar whatever the
+  measure's format. True and false show by the labels their dimension or column gives them (`booleanText`), or Yes
+  and No, in charts, legends, tables and chips; slices are still keyed (and palettes still match) by the values.
 - **Choosing slices.** A click chooses a slice alone, Ctrl (⌘) adds or takes it out, Alt leaves it out; a menu at
   the slice (right-click, or a long press) does the same, and so do a chart's table's buttons. Slices chosen in a
   widget filter the widgets that listen to it (on linked sources), and show as chips ("Status: open, shipped",
@@ -591,6 +596,12 @@ field, each with Go to).
   out one tab's cells alone (`perTab`), property-tested.
 - **Fields** are picked by name (`customer.country`: columns, and navigations to one row stepped into), by the types
   their use takes (numbers to sum, periods for dates).
+- **Measures** (`controls/measure-list.ts`): an aggregate of a field (an average of yes-or-no values is the share
+  yes, a percentage unless its format was chosen), its row conditions (Only rows where…), Divided by another
+  aggregate with its own (a rate: Bounce rate, Submitted per started), a label, and how its numbers show
+  (`controls/number-format.ts`: numbers, percentages or durations of a unit, decimals, text before and after,
+  shortened; an example says how one shows). A raw table's numeric columns take a format too, and dimensions and
+  raw columns of yes-or-no values their labels for yes and no (`controls/boolean-labels.ts`; left empty, Yes and No).
 - **Previews:** each widget's rows, of its slice of the definition (what its rows depend on), asked for as edits
   pause and only when that changes; a widget still being made says what it needs.
 - **Every edit is a step** undone and redone by name (Ctrl+Z; Ctrl+Shift+Z or Ctrl+Y), edits of one field (or a

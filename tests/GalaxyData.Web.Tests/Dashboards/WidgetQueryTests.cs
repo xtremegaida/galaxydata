@@ -376,6 +376,65 @@ public sealed class WidgetQueryTests
       Golden.Match(report.ToString());
    }
 
+   /// <summary>
+   /// Measures of the rows their conditions keep, ratios of two aggregates (none where the second is 0), and shares:
+   /// the average of true/false values. A ratio of the rest ("Other") is of the rest's rows, as an average's is.
+   /// </summary>
+   [Fact]
+   public async Task MeasuresKeepRowsAndDivide()
+   {
+      await using Harness harness = await Harness.CreateAsync();
+      (await harness.Admin.PostAsync("/api/overlay/virtual-entities", new { name = "reports.flagged_orders", query = "shop.orders.select(id, status, total, customer_id, big: total > 50)" }))
+         .StatusCode.ShouldBe(HttpStatusCode.Created);
+      Report report = new();
+      WidgetCondition open = new(F("status"), new ConditionValue(ConditionOp.Eq, Value: "open"));
+      WidgetCondition shipped = new(F("status"), new ConditionValue(ConditionOp.Eq, Value: "shipped"));
+      WidgetCondition notOpen = new(F("status"), new ConditionValue(ConditionOp.NotIn, Values: ["open"]));
+      MeasureTerm rows = new(Aggregate.Count, null);
+      DashboardWidget cities = W("cities", Bar("orders", D("city", null, "customer"), measures:
+      [
+         Count() with { Label = "Open share", Where = [open], Per = rows },
+         Of(Aggregate.Sum, "total") with { Label = "Open total", Where = [open] },
+         Count() with { Label = "Open per shipped", Where = [open], Per = new MeasureTerm(Aggregate.Count, null, [shipped]) },
+         Of(Aggregate.Sum, "total") with { Label = "Total per customer", Per = new MeasureTerm(Aggregate.CountDistinct, F("customer_id")) },
+         Of(Aggregate.CountValues, "ship_address_id") with { Label = "Shipped somewhere, not open", Where = [notOpen, shipped] },
+      ]));
+      DashboardWidget shares = W("shares", new TableConfig("flagged", [], true, All, TableMode.Grouped, [D("status")],
+      [
+         Of(Aggregate.Avg, "big") with { Label = "Big share" },
+         Of(Aggregate.Avg, "big") with { Label = "Big share of those over 10", Where = [new WidgetCondition(F("total"), new ConditionValue(ConditionOp.Gt, Value: 10))] },
+         Of(Aggregate.CountDistinct, "customer_id") with { Label = "Customers with a big order", Where = [new WidgetCondition(F("big"), new ConditionValue(ConditionOp.Eq, Value: true))] },
+      ], [], new WidgetSort(SortTarget.Dimension, 0, false), 50));
+      DashboardWidget rest = W("rest", Bar("orders", D("status"), D("customer_id"), measures: [Count() with { Label = "Open share", Where = [open], Per = rows }])
+         with { SeriesLimit = 1, SeriesOther = true });
+      DashboardWidget wrong = W("wrong", Bar("orders", D("status"), measures:
+      [
+         Count() with { Where = [new WidgetCondition(F("colour"), new ConditionValue(ConditionOp.Eq, Value: "red"))] },
+         Of(Aggregate.Sum, "total") with { Per = new MeasureTerm(Aggregate.Sum, F("status")) },
+         Count() with { Where = [new WidgetCondition(F("total"), new ConditionValue(ConditionOp.Eq, Value: "lots"))] },
+      ]) with { Dimension = D("status") with { Booleans = new BooleanLabels("Yes", "No") } });
+      DashboardDefinition definition = Dashboard([cities, shares, rest, wrong], sources:
+      [
+         new DashboardSource("orders", "shop.orders", "Orders"), new DashboardSource("customers", "shop.customers", "Customers"),
+         new DashboardSource("flagged", "reports.flagged_orders", "Flagged orders"),
+      ], links: [new DashboardLink("orders", "customers", ["customer"])]);
+
+      await report.CaseAsync(harness, "Counted where conditions hold, summed where they hold, and divided (none where by 0)", definition, "cities");
+      await report.CaseAsync(harness, "Shares of true values, of those the conditions keep; distinct values where a condition holds", definition, "shares");
+      await report.CaseAsync(harness, "A ratio by the largest series: Other's is of the rest's rows", definition, "rest");
+      await report.CaseAsync(harness, "A condition's field missing, a ratio of what has no sum, a value that isn't the field's; labels for true and false of text",
+         definition, "wrong");
+      Golden.Match(report.ToString());
+
+      // The rows a widget's measures are of are its rows: its measures' conditions aren't theirs.
+      DashboardFilter status = new("status", "Status", new SourceField("orders", [], "status"), FilterKind.Values, new ConditionValue(ConditionOp.In, Values: ["open"]),
+         true, true, true, []);
+      (WidgetPlan? plan, _, _) = await harness.PlanAsync(definition with { Filters = [status] }, "cities");
+      plan!.Main(PlanFound.None).Parameters.All.Select(p => p.Name).Order().ShouldBe(["f1", "f2", "f3", "f4", "f5", "f6", "f7"]);
+      plan.Underlying.Text.ShouldBe("(shop.orders).where(r0 => r0.status in [$f7])");
+      plan.Underlying.Parameters.All.Select(p => p.Name).ShouldBe(["f7"]);
+   }
+
    [Fact]
    public async Task WhatDoesntFitTheCatalogIsAnIssue()
    {

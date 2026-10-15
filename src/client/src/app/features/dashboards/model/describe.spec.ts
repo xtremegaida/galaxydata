@@ -73,6 +73,23 @@ describe('what dashboards say', () => {
         'en-ZA',
       ),
     ).toEqual({ name: 'Month · Status', values: 'Jan 2026 · open, Feb 2026 · (no value)' });
+    const bounced: Widget = {
+      id: 'bounced',
+      title: null,
+      config: {
+        ...barDefaults('sessions'),
+        dimension: {
+          field: { path: [], column: 'bounced' },
+          bucket: null,
+          label: 'Visit',
+          booleans: { true: 'Bounced', false: '' },
+        },
+      },
+    };
+    expect(selectionText(bounced, { mode: 'exclude', keys: [[true], [false]] }, 'en-ZA')).toEqual({
+      name: 'Visit',
+      values: 'not Bounced, No',
+    });
     const raw: Widget = {
       id: 'rows',
       title: 'Orders',

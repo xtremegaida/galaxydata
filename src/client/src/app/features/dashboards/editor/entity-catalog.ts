@@ -85,13 +85,15 @@ export class EntityCatalog {
 const numeric = new Set(['int16', 'int32', 'int64', 'decimal', 'single', 'double']);
 const dated = new Set(['date', 'dateTime', 'dateTimeOffset']);
 
-/** Which types a field may be, by what it is for. */
-export type FieldUse = 'any' | 'number' | 'ordered' | 'dimension';
+/** Which types a field may be, by what it is for: an average's, numbers or true/false values (the share true). */
+export type FieldUse = 'any' | 'number' | 'average' | 'ordered' | 'dimension';
 
 export function fieldAllowed(type: TypeDto, use: FieldUse): boolean {
   switch (use) {
     case 'number':
       return numeric.has(type.kind);
+    case 'average':
+      return numeric.has(type.kind) || type.kind === 'boolean';
     case 'ordered':
       return type.kind !== 'boolean' && type.kind !== 'binary' && type.kind !== 'guid';
     case 'dimension':

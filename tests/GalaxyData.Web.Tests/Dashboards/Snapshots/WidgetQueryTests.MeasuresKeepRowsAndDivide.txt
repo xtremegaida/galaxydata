@@ -1,0 +1,52 @@
+### Counted where conditions hold, summed where they hold, and divided (none where by 0)
+columns: d0 Dimension city, m0 Measure Open share, m1 Measure Open total, m2 Measure Open per shipped, m3 Measure Total per customer, m4 Measure Shipped somewhere, not open; limit 25
+main: shop.orders.groupBy(d0: customer.city).select(d0, m0: count(r0 => r0.status == $f1) / nullif(count(), 0), m1: sum(r0 => iif(r0.status == $f2, r0.total, null)), m2: count(r0 => r0.status == $f3) / nullif(count(r0 => r0.status == $f4), 0), m3: sum(total) / nullif(countDistinct(customer_id), 0), m4: count(r0 => (not (r0.status in [$f5]) or r0.status == null) and r0.status == $f6 and r0.ship_address_id != null)).orderBy(desc(m0), d0).take(26)
+  $f1 = "open" (string), $f2 = "open" (string), $f3 = "open" (string), $f4 = "shipped" (string), $f5 = "open" (string), $f6 = "shipped" (string)
+d0 | m0 | m1 | m2 | m3 | m4
+"Johannesburg" | 1 | "12.25" | null | "12.25" | "0"
+"Cape Town" | 0.5 | "250.00" | 1 | "349.5" | "1"
+null | 0 | "0.00" | null | "0" | "0"
+underlying: shop.orders
+
+### Shares of true values, of those the conditions keep; distinct values where a condition holds
+columns: d0 Dimension status, m0 Measure Big share, m1 Measure Big share of those over 10, m2 Measure Customers with a big order; limit 50, paged
+main: reports.flagged_orders.groupBy(d0: status).select(d0, m0: avg(toInt(big)), m1: avg(r0 => iif(r0.total > $f1, toInt(r0.big), null)), m2: countDistinct(r0 => iif(r0.big == $f2, r0.customer_id, null))).orderBy(d0)
+  $f1 = "10" (decimal(10,2)), $f2 = true (boolean)
+d0 | m0 | m1 | m2
+"cancelled" | 0 | null | "0"
+"open" | 0.5 | 0.5 | "1"
+"shipped" | 1 | 1 | "1"
+underlying: reports.flagged_orders
+
+### A ratio by the largest series: Other's is of the rest's rows
+columns: d0 Dimension status, s0 Series customer_id, m0 Measure Open share; limit 25
+categories: shop.orders.groupBy(d0: status).select(d0, m0: count(r0 => r0.status == $f1) / nullif(count(), 0)).orderBy(desc(m0), d0).take(26)
+  $f1 = "open" (string)
+d0 | m0
+"open" | 1
+"cancelled" | 0
+"shipped" | 0
+series (the largest 1, from 0): (shop.orders).where(r0 => r0.status in [$f2, $f3, $f4]).groupBy(s0: customer_id).select(s0, m0: count(r0 => r0.status == $f1) / nullif(count(), 0)).orderBy(desc(m0), s0).take(2)
+  $f1 = "open" (string), $f2 = "open" (string), $f3 = "cancelled" (string), $f4 = "shipped" (string)
+s0 | m0
+"2" | 1
+"1" | 0.5
+main: (shop.orders).where(r0 => r0.status in [$f2, $f3, $f4]).where(r0 => r0.customer_id in [$f5]).groupBy(d0: status, s0: customer_id).select(d0, s0, m0: count(r0 => r0.status == $f1) / nullif(count(), 0)).orderBy(d0, s0).take(10001)
+  $f1 = "open" (string), $f2 = "open" (string), $f3 = "cancelled" (string), $f4 = "shipped" (string), $f5 = "2" (int64)
+d0 | s0 | m0
+"open" | "2" | 1
+more series: True; next: 1
+rest: (shop.orders).where(r0 => r0.status in [$f2, $f3, $f4]).where(r0 => (not (r0.customer_id in [$f5]) or r0.customer_id == null)).groupBy(d0: status).select(d0, m0: count(r0 => r0.status == $f1) / nullif(count(), 0)).orderBy(d0)
+  $f1 = "open" (string), $f2 = "open" (string), $f3 = "cancelled" (string), $f4 = "shipped" (string), $f5 = "2" (int64)
+d0 | m0
+"cancelled" | 0
+"open" | 1
+"shipped" | 0
+underlying: shop.orders
+
+### A condition's field missing, a ratio of what has no sum, a value that isn't the field's; labels for true and false of text
+issue Warning (wrong, widgets[3].config.dimension.booleans): status isn't true or false: its labels for true and false show nowhere
+issue Error (wrong, widgets[3].config.measures[0].where[0].field): shop.orders has no column colour
+issue Error (wrong, widgets[3].config.measures[1].per.aggregate): status is string, which has no sum
+issue Error (wrong, widgets[3].config.measures[2].where[0].value.value): "lots" isn't a number
+(no plan)

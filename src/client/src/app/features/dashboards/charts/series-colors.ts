@@ -183,7 +183,7 @@ export function coloredEntities(
   const values = (
     index: number,
     prefix: string,
-    bucket: ChartConfig['dimension']['bucket'] | undefined,
+    dimension: ChartConfig['dimension'] | null | undefined,
     first: readonly unknown[] = [],
   ) => {
     const seen = new Set<string>();
@@ -195,7 +195,13 @@ export function coloredEntities(
         listed.push({
           entity,
           label: labelText(value),
-          shown: categoryText(value, data.columns[index].type, bucket ?? null, locale),
+          shown: categoryText(
+            value,
+            data.columns[index].type,
+            dimension?.bucket ?? null,
+            locale,
+            dimension?.booleans,
+          ),
         });
       }
     }
@@ -206,14 +212,12 @@ export function coloredEntities(
       .filter((c) => c.role === 'measure')
       .map((c) => ({ entity: 'measure:' + c.label, label: c.label, shown: c.label }));
   if (config.kind === 'pie') {
-    return d < 0 ? [] : values(d, '', config.dimension.bucket);
+    return d < 0 ? [] : values(d, '', config.dimension);
   }
   if (s >= 0) {
-    return values(s, 'series:', config.series?.bucket, data.series ?? []);
+    return values(s, 'series:', config.series, data.series ?? []);
   }
-  return byCategory(config, data) && d >= 0
-    ? values(d, 'category:', config.dimension.bucket)
-    : measures();
+  return byCategory(config, data) && d >= 0 ? values(d, 'category:', config.dimension) : measures();
 }
 
 /** Whether a bar chart's bars take their categories' colours: asked to, with one measure and no series. */
