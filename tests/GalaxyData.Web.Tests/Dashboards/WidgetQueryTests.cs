@@ -202,6 +202,18 @@ public sealed class WidgetQueryTests
             text.AppendLine("total: " + total.Text);
             text.Append(await harness.RowsAsync(total));
          }
+         if (plan.Previous is { } previous)
+         {
+            text.AppendLine($"previous ({previous.From:yyyy-MM-dd} to {previous.To:yyyy-MM-dd}): " + previous.Query.Text);
+            if (previous.Query.Parameters.All.Any()) { text.AppendLine("  " + Parameters(previous.Query.Parameters)); }
+            text.Append(await harness.RowsAsync(previous.Query));
+         }
+         if (plan.Sparkline is { } sparkline)
+         {
+            text.AppendLine($"sparkline (the latest {sparkline.Limit}): " + sparkline.Query.Text);
+            if (sparkline.Query.Parameters.All.Any()) { text.AppendLine("  " + Parameters(sparkline.Query.Parameters)); }
+            text.Append(await harness.RowsAsync(sparkline.Query));
+         }
          if (chain.Series is { } series)
          {
             text.AppendLine($"more series: {series.More}; next: {plan.Step?.Next(series.More)?.ToString(CultureInfo.InvariantCulture) ?? "none"}");
@@ -433,6 +445,58 @@ public sealed class WidgetQueryTests
       plan!.Main(PlanFound.None).Parameters.All.Select(p => p.Name).Order().ShouldBe(["f1", "f2", "f3", "f4", "f5", "f6", "f7"]);
       plan.Underlying.Text.ShouldBe("(shop.orders).where(r0 => r0.status in [$f7])");
       plan.Underlying.Parameters.All.Select(p => p.Name).ShouldBe(["f7"]);
+   }
+
+   /// <summary>
+   /// A KPI is one number, over the widget's rows; compared, the same over the period before the one its relative
+   /// filter holds (the viewer's, when they set it), written as the period is; with a sparkline, by a period, the
+   /// latest first.
+   /// </summary>
+   [Fact]
+   public async Task AKpiIsOneNumberComparedWithThePeriodBefore()
+   {
+      await using Harness harness = await Harness.CreateAsync();
+      Report report = new();
+      static KpiConfig Kpi(string source, Measure measure, string? compare = null, Dimension? sparkline = null) =>
+         new(source, [], false, All, measure, compare == null ? null : new KpiCompare(compare, KpiGood.Up), sparkline);
+      static DashboardFilter Period(RelativeUnit unit, int count, RelativeMode mode) =>
+         new("period", "Period", new SourceField("orders", [], "order_date"), FilterKind.Relative,
+            new ConditionValue(ConditionOp.Relative, Relative: new RelativeRange(unit, count, mode)), true, true, false, []);
+      static DashboardState Viewer(ConditionValue? period) => new(new Dictionary<string, ConditionValue?> { ["period"] = period });
+      DashboardWidget orders = W("orders", Kpi("orders", Count()));
+      DashboardWidget revenue = W("revenue", Kpi("orders", Of(Aggregate.Sum, "total"), "period"));
+      DashboardWidget customers = W("customers", Kpi("customers", Count(), "period"));
+      DashboardWidget daily = W("daily", Kpi("orders", Count(), "period", D("order_date", Bucket.Day)));
+      DashboardWidget monthly = W("monthly", Kpi("orders", Of(Aggregate.Sum, "total"), sparkline: D("placed_at", Bucket.Month)));
+      DashboardWidget words = W("words", Kpi("orders", Count(), sparkline: D("status", Bucket.Day)));
+      DashboardWidget byStatus = W("by-status", Bar("orders", D("status")));
+      DashboardWidget openShare = W("open-share", Kpi("orders", Count() with
+      {
+         Label = "Open share", Where = [new WidgetCondition(F("status"), new ConditionValue(ConditionOp.Eq, Value: "open"))], Per = new MeasureTerm(Aggregate.Count, null),
+      }, "period"));
+      DashboardFilter last30 = Period(RelativeUnit.Day, 30, RelativeMode.Last);
+
+      await report.CaseAsync(harness, "The number alone: every order", Dashboard([orders]), "orders");
+      await report.CaseAsync(harness, "Revenue over the last 30 days (to 2026-03-01), and over the 30 days before", Dashboard([revenue], [last30]), "revenue");
+      await report.CaseAsync(harness, "The previous month, and the month before it", Dashboard([revenue], [Period(RelativeUnit.Month, 1, RelativeMode.Previous)]), "revenue");
+      await report.CaseAsync(harness, "This month to date (its first day), and the month before to its first", Dashboard([revenue], [Period(RelativeUnit.Month, 1, RelativeMode.ToDate)]),
+         "revenue");
+      await report.CaseAsync(harness, "This year, and the year before (no orders: a sum of none)", Dashboard([revenue], [Period(RelativeUnit.Year, 1, RelativeMode.This)]), "revenue");
+      await report.CaseAsync(harness, "A viewer's period: the last two months, and the two before", Dashboard([revenue], [last30]), "revenue",
+         Viewer(new ConditionValue(ConditionOp.Relative, Relative: new RelativeRange(RelativeUnit.Month, 2, RelativeMode.Last))));
+      await report.CaseAsync(harness, "No period set by the viewer: nothing to compare with", Dashboard([revenue], [last30]), "revenue", Viewer(null));
+      await report.CaseAsync(harness, "Choosing a status: the open orders of the period, and of the period before", Dashboard([revenue, byStatus], [last30]), "revenue",
+         Choose("by-status", SelectionMode.Include, ["open"]));
+      await report.CaseAsync(harness, "Through a link: customers with an order in the period, and in the period before", Dashboard([customers], [last30]), "customers");
+      await report.CaseAsync(harness, "Left out of its filter: nothing to compare with", Dashboard([revenue], [last30 with { Except = ["revenue"] }]), "revenue");
+      await report.CaseAsync(harness, "Its filter on a source not linked to it: nothing to compare with", Dashboard([customers], [last30], links: []), "customers");
+      await report.CaseAsync(harness, "A sparkline by day, compared too", Dashboard([daily], [last30]), "daily");
+      await report.CaseAsync(harness, "A sparkline by month of a date-time with an offset (its UTC months)", Dashboard([monthly]), "monthly");
+      await report.CaseAsync(harness, "A sparkline over text", Dashboard([words]), "words");
+      await report.CaseAsync(harness, "A rate of the rows a condition keeps, and over the period before (with the condition's value)", Dashboard([openShare], [last30]),
+         "open-share");
+
+      Golden.Match(report.ToString());
    }
 
    [Fact]

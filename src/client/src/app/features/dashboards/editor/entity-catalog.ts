@@ -86,7 +86,7 @@ const numeric = new Set(['int16', 'int32', 'int64', 'decimal', 'single', 'double
 const dated = new Set(['date', 'dateTime', 'dateTimeOffset']);
 
 /** Which types a field may be, by what it is for: an average's, numbers or true/false values (the share true). */
-export type FieldUse = 'any' | 'number' | 'average' | 'ordered' | 'dimension';
+export type FieldUse = 'any' | 'number' | 'average' | 'ordered' | 'dimension' | 'date';
 
 export function fieldAllowed(type: TypeDto, use: FieldUse): boolean {
   switch (use) {
@@ -98,6 +98,8 @@ export function fieldAllowed(type: TypeDto, use: FieldUse): boolean {
       return type.kind !== 'boolean' && type.kind !== 'binary' && type.kind !== 'guid';
     case 'dimension':
       return type.kind !== 'binary';
+    case 'date':
+      return dated.has(type.kind);
     case 'any':
       return true;
   }

@@ -37,6 +37,10 @@ html {
   --gd-chart-8: light-dark(#e34948, #e66767);
   // The rest of a pie ("Other"), and series past the eighth.
   --gd-chart-neutral: light-dark(#9a9ca3, #74777f);
+  // A change for the better or the worse (a KPI's against the period before), as text with its arrow: at least 4.5:1
+  // on the page's and a widget's surfaces in both schemes; never a series' colour.
+  --gd-good: light-dark(#0b7a0b, #4fc94f);
+  --gd-bad: light-dark(#ba1a1a, #ff8a80);
 }
 
 body {

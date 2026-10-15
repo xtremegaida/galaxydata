@@ -8,7 +8,13 @@ import {
   reachedFrom,
 } from './definition';
 import { untabbed } from './tabs';
-import { barDefaults, lineDefaults, pieDefaults, tableDefaults } from './widget-defaults';
+import {
+  barDefaults,
+  kpiDefaults,
+  lineDefaults,
+  pieDefaults,
+  tableDefaults,
+} from './widget-defaults';
 
 /**
  * What a widget's rows depend on, as a definition of its own: the widget; the sources linked to its own, and their
@@ -131,5 +137,8 @@ function emitterOf(config: DataConfig): WidgetConfig {
         ? { ...tableDefaults(config.source), ...base, dimensions: config.dimensions }
         : // Its slices are its entity's keys: its own config does, without conditions.
           { ...config, ...base, conditions: [] };
+    case 'kpi':
+      // A KPI never emits (the server refuses one that says it does), so it isn't listened to: its defaults.
+      return { ...kpiDefaults(config.source), listens: base.listens };
   }
 }

@@ -73,13 +73,23 @@ public sealed record OtherStep(int Skip, int Size, int Depth)
    public long? Next(bool more) => more && Skip + 2L * Size <= Depth ? Skip + Size : null;
 }
 
+/// <summary>A KPI's number over the period before its filter's: the query, and the period's first and last days.</summary>
+public sealed record PreviousPlan(BuiltQuery Query, DateOnly From, DateOnly To);
+
+/// <summary>A KPI's sparkline: the measure by period, the latest first (<c>d0</c>, <c>m0</c>), of which <see cref="Limit"/> are drawn (one more is fetched).</summary>
+public sealed record SparklinePlan(BuiltQuery Query, int Limit);
+
+/// <summary>A widget's rows over the period before a filter's (their text and parameters), and that period's first and last days.</summary>
+public sealed record PeriodRows(string Rows, QueryParameters Parameters, DateOnly From, DateOnly To);
+
 /// <summary>
 /// The queries of a widget: its rows (<see cref="Main"/>; for bars by a series, of the categories the first query
 /// found; for a chart's largest series, of those shown), the total "Other" is worked out from, and its underlying
 /// rows (its source with every condition that reaches it). <see cref="Limit"/> rows (or categories) are shown, one
 /// more fetched to tell there are more; tables are paged by the engine instead. <see cref="Series"/>: the series
 /// ranked and their rest, for a chart limited to its largest; <see cref="Step"/>: where a chart that steps into its
-/// "Other" is; <see cref="Whole"/>: its rows read whole, to work out what those queries give in memory instead.
+/// "Other" is; <see cref="Whole"/>: its rows read whole, to work out what those queries give in memory instead. A
+/// KPI's <see cref="Previous"/>: its number over the period before; <see cref="Sparkline"/>: its points.
 /// </summary>
 public sealed record WidgetPlan(
    IReadOnlyList<PlannedColumn> Columns,
@@ -93,6 +103,10 @@ public sealed record WidgetPlan(
    public SeriesPlan? Series { get; init; }
 
    public OtherStep? Step { get; init; }
+
+   public PreviousPlan? Previous { get; init; }
+
+   public SparklinePlan? Sparkline { get; init; }
 
    public WholePlan? Whole { get; init; }
 }
@@ -253,8 +267,18 @@ internal sealed class ConditionSet(WidgetPlanner planner, string? widget, string
       list.Add(write);
    }
 
-   /// <summary>The dashboard's filters that apply to the widget (all but <paramref name="except"/> for a filter's values), with the values the viewer may have set.</summary>
-   public void AddFilters(string? except = null)
+   /// <summary>
+   /// The days the filter moved to its period before (<see cref="AddFilters"/>' <c>before</c>) was written for, from the
+   /// first to the day after the last; none till it is written, or when it holds no period for the widget.
+   /// </summary>
+   public (DateOnly Start, DateOnly? End)? Moved { get; private set; }
+
+   /// <summary>
+   /// The dashboard's filters that apply to the widget (all but <paramref name="except"/> for a filter's values), with
+   /// the values the viewer may have set; the relative filter <paramref name="before"/> holding the period before its
+   /// own, as a KPI compares with.
+   /// </summary>
+   public void AddFilters(string? except = null, string? before = null)
    {
       DashboardDefinition definition = Dashboard.Definition;
       Dictionary<string, ConditionValue?> given = planner.State.Filters ?? [];
@@ -274,10 +298,13 @@ internal sealed class ConditionSet(WidgetPlanner planner, string? widget, string
          int index = i;
          ConditionValue condition = value;
          string at = field;
+         bool moved = filter.Id == before && condition is { Op: ConditionOp.Relative, Relative: not null };
          Add(filter.Field.Source, row =>
          {
             ResolvedField? resolved = Dashboard.Field(filter.Field.Source, new FieldRef(filter.Field.Path, filter.Field.Column), $"filters[{index}].field", widget);
-            return resolved == null ? null : Write(resolved, filter.Label, ConditionSpec.Of(condition), at, row);
+            string? text = resolved == null ? null : Write(resolved, filter.Label, ConditionSpec.Of(condition) with { Before = moved }, at, row);
+            if (moved && text != null) { Moved = ConditionWriter.Before(condition.Relative!, planner.Today); }
+            return text;
          });
       }
    }
@@ -623,12 +650,14 @@ public sealed record DimensionExpression(string Expression, ScalarType Type, Fun
 public sealed class PlanContext
 {
    private readonly WidgetPlanner planner;
+   private readonly DataWidgetConfig config;
    private string? where;
    private bool written;
 
    internal PlanContext(WidgetPlanner planner, DashboardWidget widget, int index, ResolvedSource source, DataWidgetConfig config, int skip = 0)
    {
       this.planner = planner;
+      this.config = config;
       Widget = widget;
       Index = index;
       Source = source;
@@ -685,15 +714,46 @@ public sealed class PlanContext
    }
 
    /// <summary>The widget's rows as a query of their own: <see cref="Base"/>, with only the parameters it uses (not its measures' conditions').</summary>
-   public BuiltQuery Underlying()
+   public BuiltQuery Underlying() => Using(Base(), Parameters.Values);
+
+   /// <summary>A query of <paramref name="text"/> with only those of <paramref name="parameters"/> it uses.</summary>
+   public static BuiltQuery Using(string text, QueryParameters parameters)
    {
-      string rows = Base();
+      ArgumentNullException.ThrowIfNull(text);
+      ArgumentNullException.ThrowIfNull(parameters);
       QueryParameters used = new();
-      foreach (QueryParameter parameter in Parameters.Values.All.Where(p => Regex.IsMatch(rows, @"\$" + Regex.Escape(p.Name) + @"(?!\w)")))
+      foreach (QueryParameter parameter in parameters.All.Where(p => Regex.IsMatch(text, @"\$" + Regex.Escape(p.Name) + @"(?!\w)")))
       {
          used.Add(parameter.Name, parameter.Value, parameter.Type);
       }
-      return new BuiltQuery(rows, used);
+      return new BuiltQuery(text, used);
+   }
+
+   /// <summary>
+   /// The widget's rows over the period before the one the relative filter <paramref name="filter"/> holds: every
+   /// condition that reaches it, but that filter's period moved back (<see cref="ConditionWriter.Before"/>), with
+   /// parameters after the widget's (which they include, so a measure written for its rows is of these too). None
+   /// when it holds no period (none is set), or anything is wrong already (said once); a warning on
+   /// <paramref name="path"/> when it can't reach the widget (left out of it, or not linked to it).
+   /// </summary>
+   public PeriodRows? Before(string filter, string path)
+   {
+      if (planner.StateErrors > 0 || planner.ErrorsOf(Widget.Id) > 0) { return null; }
+      if (planner.Dashboard.Definition.Filters.Find(f => f.Id == filter) is not { } found) { return null; }
+      if (found.Except.Contains(Widget.Id) || !Conditions.Reached().Contains(found.Field.Source))
+      {
+         Issue(IssueSeverity.Warning, $"{found.Label} doesn't reach it: there is no period before to compare with", path);
+         return null;
+      }
+      QueryParameterAllocator parameters = new(Parameters.Values, Source.Path);
+      ConditionSet conditions = new(planner, Widget.Id, Source.Id, parameters);
+      conditions.AddFilters(before: filter);
+      conditions.AddSelections(config.Listens);
+      conditions.AddOwn(config, Index);
+      string? before = conditions.Where();
+      if (conditions.Moved is not { } days) { return null; }
+      DateOnly to = days.End is { } end ? end.AddDays(-1) : DateOnly.MaxValue;
+      return new PeriodRows(QueryText.Compose(Source.Path, before == null ? [] : [before]), parameters.Values, days.Start, to);
    }
 
    public void Issue(IssueSeverity severity, string message, string field) => planner.Dashboard.Issue(severity, message, Widget.Id, field);

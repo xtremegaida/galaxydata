@@ -2337,6 +2337,12 @@ export interface components {
             name: null | string;
             columns: string[];
         };
+        KpiCompare: {
+            filter: string;
+            good: components["schemas"]["KpiGood"];
+        };
+        /** @enum {unknown} */
+        KpiGood: "up" | "down" | "neither";
         LabelColorDto: {
             label: null | string;
             light: string;
@@ -3204,7 +3210,7 @@ export interface components {
             field: components["schemas"]["FieldRef"];
             value: components["schemas"]["ConditionValue"];
         };
-        WidgetConfig: components["schemas"]["WidgetConfigTextConfig"] | components["schemas"]["WidgetConfigHeadingConfig"] | components["schemas"]["WidgetConfigPieConfig"] | components["schemas"]["WidgetConfigBarConfig"] | components["schemas"]["WidgetConfigLineConfig"] | components["schemas"]["WidgetConfigTableConfig"];
+        WidgetConfig: components["schemas"]["WidgetConfigTextConfig"] | components["schemas"]["WidgetConfigHeadingConfig"] | components["schemas"]["WidgetConfigPieConfig"] | components["schemas"]["WidgetConfigBarConfig"] | components["schemas"]["WidgetConfigLineConfig"] | components["schemas"]["WidgetConfigTableConfig"] | components["schemas"]["WidgetConfigKpiConfig"];
         WidgetConfigBarConfig: {
             /** @enum {string} */
             kind?: "bar";
@@ -3237,6 +3243,17 @@ export interface components {
             text: string;
             size: components["schemas"]["HeadingSize"];
             align: components["schemas"]["HeadingAlign"];
+        };
+        WidgetConfigKpiConfig: {
+            /** @enum {string} */
+            kind?: "kpi";
+            measure: components["schemas"]["Measure"];
+            compare: null | components["schemas"]["KpiCompare"];
+            sparkline: null | components["schemas"]["Dimension"];
+            source: string;
+            conditions: components["schemas"]["WidgetCondition"][];
+            emits: boolean;
+            listens: components["schemas"]["Listens"];
         };
         WidgetConfigLineConfig: {
             /** @enum {string} */
@@ -3321,6 +3338,8 @@ export interface components {
             otherRows?: null | unknown[][];
             /** Format: int64 */
             next?: null | number;
+            previous?: null | components["schemas"]["WidgetPreviousDto"];
+            points?: null | unknown[][];
         };
         WidgetPage: {
             /**
@@ -3333,6 +3352,13 @@ export interface components {
             /** @default false */
             count: boolean;
         };
+        WidgetPreviousDto: {
+            value: unknown;
+            /** Format: date */
+            from: string;
+            /** Format: date */
+            to: string;
+        };
         WidgetQueryDto: {
             main: components["schemas"]["QueryTextDto"];
             categories: null | components["schemas"]["QueryTextDto"];
@@ -3340,6 +3366,8 @@ export interface components {
             underlying: components["schemas"]["QueryTextDto"];
             series?: null | components["schemas"]["QueryTextDto"];
             rest?: null | components["schemas"]["QueryTextDto"];
+            previous?: null | components["schemas"]["QueryTextDto"];
+            sparkline?: null | components["schemas"]["QueryTextDto"];
         };
         WidgetSort: {
             by: components["schemas"]["SortTarget"];
@@ -3494,6 +3522,8 @@ export type InsertMode = components['schemas']['InsertMode'];
 export type IssueSeverity = components['schemas']['IssueSeverity'];
 export type KeyDto = components['schemas']['KeyDto'];
 export type KeySchema = components['schemas']['KeySchema'];
+export type KpiCompare = components['schemas']['KpiCompare'];
+export type KpiGood = components['schemas']['KpiGood'];
 export type LabelColorDto = components['schemas']['LabelColorDto'];
 export type LabelMatching = components['schemas']['LabelMatching'];
 export type LayoutOverride = components['schemas']['LayoutOverride'];
@@ -3632,12 +3662,14 @@ export type WidgetCondition = components['schemas']['WidgetCondition'];
 export type WidgetConfig = components['schemas']['WidgetConfig'];
 export type WidgetConfigBarConfig = components['schemas']['WidgetConfigBarConfig'];
 export type WidgetConfigHeadingConfig = components['schemas']['WidgetConfigHeadingConfig'];
+export type WidgetConfigKpiConfig = components['schemas']['WidgetConfigKpiConfig'];
 export type WidgetConfigLineConfig = components['schemas']['WidgetConfigLineConfig'];
 export type WidgetConfigPieConfig = components['schemas']['WidgetConfigPieConfig'];
 export type WidgetConfigTableConfig = components['schemas']['WidgetConfigTableConfig'];
 export type WidgetConfigTextConfig = components['schemas']['WidgetConfigTextConfig'];
 export type WidgetDataDto = components['schemas']['WidgetDataDto'];
 export type WidgetPage = components['schemas']['WidgetPage'];
+export type WidgetPreviousDto = components['schemas']['WidgetPreviousDto'];
 export type WidgetQueryDto = components['schemas']['WidgetQueryDto'];
 export type WidgetSort = components['schemas']['WidgetSort'];
 export type $defs = Record<string, never>;

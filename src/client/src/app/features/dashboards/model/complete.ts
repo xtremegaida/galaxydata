@@ -28,6 +28,11 @@ export function missingOf(config: DataConfig, sources: readonly { id: string }[]
         return 'Choose what its series are.';
       }
       return measures(config.measures);
+    case 'kpi':
+      if (config.sparkline && !config.sparkline.field.column) {
+        return 'Choose the date its sparkline is along.';
+      }
+      return measures([config.measure]);
     case 'table':
       if (config.mode === 'raw') {
         return config.columns.length === 0 || config.columns.some((c) => !c.field.column)

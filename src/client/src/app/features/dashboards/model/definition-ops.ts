@@ -461,7 +461,7 @@ export function updateFilter(
   id: string,
   change: Partial<Omit<Filter, 'id'>>,
 ): Definition {
-  return {
+  const updated = {
     ...definition,
     filters: definition.filters.map((f) => {
       if (f.id !== id) {
@@ -470,6 +470,21 @@ export function updateFilter(
       const next = { ...f, ...change };
       // A hidden filter is never the viewers' to change.
       return next.visible ? next : { ...next, editable: false };
+    }),
+  };
+  // A filter that isn't of a period any more has none before it to compare with.
+  return change.kind && change.kind !== 'relative' ? comparedNoMore(updated, id) : updated;
+}
+
+/** KPIs compared with filter `id` compared with `to` instead (none: not compared). */
+function comparedNoMore(definition: Definition, id: string, to: string | null = null): Definition {
+  return {
+    ...definition,
+    widgets: definition.widgets.map((w) => {
+      const config = configOf(w);
+      return config.kind === 'kpi' && config.compare?.filter === id
+        ? { ...w, config: { ...config, compare: to ? { ...config.compare, filter: to } : null } }
+        : w;
     }),
   };
 }
@@ -483,14 +498,22 @@ export function renameNewFilter(definition: Definition, id: string, label: strin
   const next = label.trim() ? newId(label, others) : id;
   return next === id
     ? definition
-    : {
-        ...definition,
-        filters: definition.filters.map((f) => (f.id === id ? { ...f, id: next } : f)),
-      };
+    : comparedNoMore(
+        {
+          ...definition,
+          filters: definition.filters.map((f) => (f.id === id ? { ...f, id: next } : f)),
+        },
+        id,
+        next,
+      );
 }
 
+/** A filter removed, and KPIs compared with it compared no more. */
 export function removeFilter(definition: Definition, id: string): Definition {
-  return { ...definition, filters: definition.filters.filter((f) => f.id !== id) };
+  return comparedNoMore(
+    { ...definition, filters: definition.filters.filter((f) => f.id !== id) },
+    id,
+  );
 }
 
 /** Whether a filter applies to a widget, set either way. */

@@ -27,13 +27,15 @@ export type PieConfig = Schema<'WidgetConfigPieConfig'> & { kind: 'pie' };
 export type BarConfig = Schema<'WidgetConfigBarConfig'> & { kind: 'bar' };
 export type LineConfig = Schema<'WidgetConfigLineConfig'> & { kind: 'line' };
 export type TableConfig = Schema<'WidgetConfigTableConfig'> & { kind: 'table' };
+export type KpiConfig = Schema<'WidgetConfigKpiConfig'> & { kind: 'kpi' };
+export type KpiCompare = Schema<'KpiCompare'>;
 
 /** What a widget shows, by its kind. */
 export type WidgetConfig =
-  TextConfig | HeadingConfig | PieConfig | BarConfig | LineConfig | TableConfig;
+  TextConfig | HeadingConfig | PieConfig | BarConfig | LineConfig | TableConfig | KpiConfig;
 
 /** The kinds of widgets of data: they have a source, queries and rows. */
-export type DataConfig = PieConfig | BarConfig | LineConfig | TableConfig;
+export type DataConfig = PieConfig | BarConfig | LineConfig | TableConfig | KpiConfig;
 
 export type ChartConfig = PieConfig | BarConfig | LineConfig;
 

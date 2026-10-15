@@ -17,6 +17,7 @@ import { Message } from '../../../core/ui/message';
 import { QueryResults } from '../../query/query-results';
 import type { QueryRun } from '../../query/query-results';
 import type { DataConfig, WidgetData } from '../model/definition';
+import { pointsData } from '../model/kpi';
 import type { WidgetQuery } from '../state/dashboard-host';
 import { RowsTable } from '../widgets/rows-table';
 
@@ -99,7 +100,7 @@ export interface DataDialogData {
         <ng-container *ngTemplateOutlet="shown" />
       }
       <ng-template #shown>
-        @if (data.data.truncated) {
+        @if (data.data.truncated && !points) {
           <p class="aside">The first {{ data.data.rows.length }} rows, as the widget shows them.</p>
         }
         <gd-rows-table
@@ -108,6 +109,18 @@ export interface DataDialogData {
           [config]="data.config"
           [label]="data.title"
         />
+        @if (points; as points) {
+          <h3 class="points">Its sparkline</h3>
+          @if (points.truncated) {
+            <p class="aside">The latest {{ points.rows.length }}, as the sparkline draws them.</p>
+          }
+          <gd-rows-table
+            class="rows"
+            [data]="points"
+            [config]="data.config"
+            [label]="data.title + ', its sparkline'"
+          />
+        }
       </ng-template>
     </mat-dialog-content>
     <mat-dialog-actions align="end">
@@ -126,6 +139,10 @@ export interface DataDialogData {
     .results {
       height: 60vh;
     }
+    .points {
+      margin: 16px 0 4px;
+      font: var(--mat-sys-title-small);
+    }
     .aside {
       margin: 8px 0;
       font: var(--mat-sys-body-small);
@@ -135,6 +152,9 @@ export interface DataDialogData {
 })
 export class DataDialog {
   protected readonly data = inject<DataDialogData>(MAT_DIALOG_DATA);
+  /** A KPI's sparkline's points, listed under its number. */
+  protected readonly points =
+    this.data.config.kind === 'kpi' ? pointsData(this.data.data, this.data.config) : null;
   protected readonly tab = signal(0);
   protected readonly message = (error: unknown) => problemMessage(problemOf(error));
 

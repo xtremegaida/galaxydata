@@ -1,0 +1,157 @@
+### The number alone: every order
+columns: m0 Measure Rows; limit 1
+main: shop.orders.groupBy().select(m0: count())
+m0
+"4"
+underlying: shop.orders
+
+### Revenue over the last 30 days (to 2026-03-01), and over the 30 days before
+columns: m0 Measure total; limit 1
+main: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2)).groupBy().select(m0: sum(total))
+  $f1 = "2026-01-31" (date), $f2 = "2026-03-02" (date)
+m0
+"12.25"
+previous (2026-01-01 to 2026-01-30): (shop.orders).where(r0 => (r0.order_date >= $f3 and r0.order_date < $f4)).groupBy().select(m0: sum(total))
+  $f3 = "2026-01-01" (date), $f4 = "2026-01-31" (date)
+m0
+"349.50"
+underlying: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2))
+
+### The previous month, and the month before it
+columns: m0 Measure total; limit 1
+main: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2)).groupBy().select(m0: sum(total))
+  $f1 = "2026-02-01" (date), $f2 = "2026-03-01" (date)
+m0
+"12.25"
+previous (2026-01-01 to 2026-01-31): (shop.orders).where(r0 => (r0.order_date >= $f3 and r0.order_date < $f4)).groupBy().select(m0: sum(total))
+  $f3 = "2026-01-01" (date), $f4 = "2026-02-01" (date)
+m0
+"349.50"
+underlying: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2))
+
+### This month to date (its first day), and the month before to its first
+columns: m0 Measure total; limit 1
+main: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2)).groupBy().select(m0: sum(total))
+  $f1 = "2026-03-01" (date), $f2 = "2026-03-02" (date)
+m0
+"0.00"
+previous (2026-02-01 to 2026-02-01): (shop.orders).where(r0 => (r0.order_date >= $f3 and r0.order_date < $f4)).groupBy().select(m0: sum(total))
+  $f3 = "2026-02-01" (date), $f4 = "2026-02-02" (date)
+m0
+"12.25"
+underlying: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2))
+
+### This year, and the year before (no orders: a sum of none)
+columns: m0 Measure total; limit 1
+main: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2)).groupBy().select(m0: sum(total))
+  $f1 = "2026-01-01" (date), $f2 = "2027-01-01" (date)
+m0
+"361.75"
+previous (2025-01-01 to 2025-12-31): (shop.orders).where(r0 => (r0.order_date >= $f3 and r0.order_date < $f4)).groupBy().select(m0: sum(total))
+  $f3 = "2025-01-01" (date), $f4 = "2026-01-01" (date)
+m0
+"0.00"
+underlying: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2))
+
+### A viewer's period: the last two months, and the two before
+columns: m0 Measure total; limit 1
+main: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2)).groupBy().select(m0: sum(total))
+  $f1 = "2026-01-02" (date), $f2 = "2026-03-02" (date)
+m0
+"361.75"
+previous (2025-11-02 to 2026-01-01): (shop.orders).where(r0 => (r0.order_date >= $f3 and r0.order_date < $f4)).groupBy().select(m0: sum(total))
+  $f3 = "2025-11-02" (date), $f4 = "2026-01-02" (date)
+m0
+"0.00"
+underlying: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2))
+
+### No period set by the viewer: nothing to compare with
+columns: m0 Measure total; limit 1
+main: shop.orders.groupBy().select(m0: sum(total))
+m0
+"361.75"
+underlying: shop.orders
+
+### Choosing a status: the open orders of the period, and of the period before
+columns: m0 Measure total; limit 1
+main: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2) and r0.status == $f3).groupBy().select(m0: sum(total))
+  $f1 = "2026-01-31" (date), $f2 = "2026-03-02" (date), $f3 = "open" (string)
+m0
+"12.25"
+previous (2026-01-01 to 2026-01-30): (shop.orders).where(r0 => (r0.order_date >= $f4 and r0.order_date < $f5) and r0.status == $f6).groupBy().select(m0: sum(total))
+  $f4 = "2026-01-01" (date), $f5 = "2026-01-31" (date), $f6 = "open" (string)
+m0
+"250.00"
+underlying: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2) and r0.status == $f3)
+
+### Through a link: customers with an order in the period, and in the period before
+columns: m0 Measure Rows; limit 1
+main: (shop.customers).where(r0 => r0.orders.any(r1 => (r1.order_date >= $f1 and r1.order_date < $f2))).groupBy().select(m0: count())
+  $f1 = "2026-01-31" (date), $f2 = "2026-03-02" (date)
+m0
+"2"
+previous (2026-01-01 to 2026-01-30): (shop.customers).where(r0 => r0.orders.any(r1 => (r1.order_date >= $f3 and r1.order_date < $f4))).groupBy().select(m0: count())
+  $f3 = "2026-01-01" (date), $f4 = "2026-01-31" (date)
+m0
+"1"
+underlying: (shop.customers).where(r0 => r0.orders.any(r1 => (r1.order_date >= $f1 and r1.order_date < $f2)))
+
+### Left out of its filter: nothing to compare with
+issue Warning (revenue, widgets[0].config.compare.filter): Period doesn't reach it: there is no period before to compare with
+columns: m0 Measure total; limit 1
+main: shop.orders.groupBy().select(m0: sum(total))
+m0
+"361.75"
+underlying: shop.orders
+
+### Its filter on a source not linked to it: nothing to compare with
+issue Warning (customers, widgets[0].config.compare.filter): Period doesn't reach it: there is no period before to compare with
+columns: m0 Measure Rows; limit 1
+main: shop.customers.groupBy().select(m0: count())
+m0
+"3"
+underlying: shop.customers
+
+### A sparkline by day, compared too
+columns: m0 Measure Rows; limit 1
+main: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2)).groupBy().select(m0: count())
+  $f1 = "2026-01-31" (date), $f2 = "2026-03-02" (date)
+m0
+"2"
+previous (2026-01-01 to 2026-01-30): (shop.orders).where(r0 => (r0.order_date >= $f3 and r0.order_date < $f4)).groupBy().select(m0: count())
+  $f3 = "2026-01-01" (date), $f4 = "2026-01-31" (date)
+m0
+"2"
+sparkline (the latest 500): (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2)).groupBy(d0: date(order_date)).select(d0, m0: count()).orderBy(desc(d0)).take(501)
+  $f1 = "2026-01-31" (date), $f2 = "2026-03-02" (date)
+d0 | m0
+"2026-02-14" | "1"
+"2026-02-01" | "1"
+underlying: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2))
+
+### A sparkline by month of a date-time with an offset (its UTC months)
+columns: m0 Measure total; limit 1
+main: shop.orders.groupBy().select(m0: sum(total))
+m0
+"361.75"
+sparkline (the latest 500): shop.orders.groupBy(d0: startOfMonth(placed_at)).select(d0, m0: sum(total)).orderBy(desc(d0)).take(501)
+d0 | m0
+"2026-01-01" | "361.75"
+null | "0.00"
+underlying: shop.orders
+
+### A sparkline over text
+issue Error (words, widgets[0].config.sparkline.bucket): status is string, which has no day
+(no plan)
+
+### A rate of the rows a condition keeps, and over the period before (with the condition's value)
+columns: m0 Measure Open share; limit 1
+main: (shop.orders).where(r0 => (r0.order_date >= $f2 and r0.order_date < $f3)).groupBy().select(m0: count(r0 => r0.status == $f1) / nullif(count(), 0))
+  $f1 = "open" (string), $f2 = "2026-01-31" (date), $f3 = "2026-03-02" (date)
+m0
+0.5
+previous (2026-01-01 to 2026-01-30): (shop.orders).where(r0 => (r0.order_date >= $f4 and r0.order_date < $f5)).groupBy().select(m0: count(r0 => r0.status == $f1) / nullif(count(), 0))
+  $f1 = "open" (string), $f4 = "2026-01-01" (date), $f5 = "2026-01-31" (date)
+m0
+0.5
+underlying: (shop.orders).where(r0 => (r0.order_date >= $f2 and r0.order_date < $f3))

@@ -323,7 +323,10 @@ export class RowsTable {
       : { decimals: scale, prefix: null, suffix: null, compact: false };
   }
 
-  /** The dimension a column of a chart's or a grouped table's is of: its period, its labels for true and false. */
+  /**
+   * The dimension a column of a chart's, a grouped table's or a KPI's sparkline's is of: its period, its labels for
+   * true and false.
+   */
   private dimensionOf(column: WidgetColumn): Dimension | null {
     const config = this.config();
     switch (config.kind) {
@@ -334,6 +337,9 @@ export class RowsTable {
         return (column.role === 'series' ? config.series : config.dimension) ?? null;
       case 'table':
         return config.dimensions[column.index] ?? null;
+      case 'kpi':
+        // Its sparkline's points, as the Data popup lists them.
+        return config.sparkline ?? null;
     }
   }
 }

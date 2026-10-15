@@ -79,12 +79,13 @@ public sealed partial class PublicDashboards(IOptions<GalaxyDataOptions> options
       DashboardDefinition definition = dashboard.Definition;
       int floor = (int)Math.Ceiling(Settings.PublicCacheDuration.TotalSeconds);
       RefreshPolicy refresh = definition.Refresh is { Mode: RefreshMode.Interval, Seconds: { } seconds } && seconds < floor ? definition.Refresh with { Seconds = floor } : definition.Refresh;
+      HashSet<string> visible = [.. definition.Filters.Where(f => f.Visible).Select(f => f.Id)];
       DashboardDefinition shown = definition with
       {
          Sources = [],
          Links = [],
          Filters = [.. definition.Filters.Where(f => f.Visible).Select(f => f with { Field = new SourceField(string.Empty, [], string.Empty), Except = [] })],
-         Widgets = [.. definition.Widgets.Select(w => w with { Config = Strip(w.Config) })],
+         Widgets = [.. definition.Widgets.Select(w => w with { Config = Strip(w.Config, visible) })],
          Refresh = refresh,
       };
       List<PublicPaletteDto> named = [.. palettes.Values.OrderBy(p => p.Id).Select(p =>
@@ -181,8 +182,11 @@ public sealed partial class PublicDashboards(IOptions<GalaxyDataOptions> options
       foreach (SemaphoreSlim gate in gates.Values) { gate.Dispose(); }
    }
 
-   /// <summary>A widget's config without its source, conditions and fields: what it shows stays.</summary>
-   private static WidgetConfig Strip(WidgetConfig config)
+   /// <summary>
+   /// A widget's config without its source, conditions and fields: what it shows stays. A KPI compared through a
+   /// hidden filter names none, as the copy hasn't got it.
+   /// </summary>
+   private static WidgetConfig Strip(WidgetConfig config, HashSet<string> visible)
    {
       static FieldRef Blank() => new([], string.Empty);
       static Dimension Plain(Dimension dimension) => dimension with { Field = Blank() };
@@ -203,6 +207,11 @@ public sealed partial class PublicDashboards(IOptions<GalaxyDataOptions> options
          {
             Source = string.Empty, Conditions = [], Emits = table.Emits && table.Mode == TableMode.Grouped, Dimensions = [.. table.Dimensions.Select(Plain)],
             Measures = [.. table.Measures.Select(Bare)], Columns = [.. table.Columns.Select(c => c with { Field = Blank() })],
+         },
+         KpiConfig kpi => kpi with
+         {
+            Source = string.Empty, Conditions = [], Measure = Bare(kpi.Measure), Sparkline = kpi.Sparkline == null ? null : Plain(kpi.Sparkline),
+            Compare = kpi.Compare is { } compare && !visible.Contains(compare.Filter) ? compare with { Filter = string.Empty } : kpi.Compare,
          },
          _ => config,
       };

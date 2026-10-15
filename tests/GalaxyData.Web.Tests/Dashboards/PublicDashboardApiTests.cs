@@ -267,6 +267,43 @@ public sealed class PublicDashboardApiTests
       }
    }
 
+   /// <summary>A public KPI has no source or fields, and names no hidden filter; its number, the period before and its points are given.</summary>
+   [Fact]
+   public async Task AnyoneSeesAKpiWithoutItsFieldsOrHiddenFilters()
+   {
+      ConditionValue years = new(ConditionOp.Relative, Relative: new RelativeRange(RelativeUnit.Year, 20, RelativeMode.Last));
+      DashboardFilter shown = new("period", "Period", new SourceField("sales", [], "order_date"), FilterKind.Relative, years, true, true, false, []);
+      DashboardFilter hidden = new("since", "Since", new SourceField("sales", [], "order_date"), FilterKind.Relative, years, false, false, false, []);
+      Measure revenue = new(Aggregate.Sum, new FieldRef([], "total"), "Revenue", new NumberFormat(2, "R ", null, false));
+      KpiConfig compared = new("sales", [], false, All, revenue, new KpiCompare("period", KpiGood.Up), new Dimension(new FieldRef([], "order_date"), Bucket.Month, "Month"));
+      KpiConfig secret = compared with { Compare = new KpiCompare("since", KpiGood.Down), Sparkline = null };
+      List<DashboardWidget> widgets = [new("revenue", "Revenue", compared), new("secret", null, secret)];
+      DashboardDefinition definition = Definitions.Blank() with
+      {
+         Sources = [new DashboardSource("sales", "shop.orders", "Sales")],
+         Filters = [shown, hidden],
+         Widgets = widgets,
+         Layout = DashboardLayout.Default() with { Items = widgets.Select((w, i) => (w.Id, new Placement(0, i, 3, 3))).ToDictionary(p => p.Id, p => p.Item2) },
+      };
+      Setup setup = await PublicAsync(definition: definition);
+      await using WebAppFactory factory = setup.Factory;
+      TestApi anyone = new(setup.Factory);
+
+      JsonElement read = await (await anyone.Client.GetAsync($"/api/public/dashboards/{setup.Token}", Token)).JsonAsync(HttpStatusCode.OK);
+      JsonElement config = read.GetProperty("definition").GetProperty("widgets")[0].GetProperty("config");
+      (config.GetProperty("kind").GetString(), config.GetProperty("source").GetString(), config.GetProperty("measure").GetProperty("field").GetProperty("column").GetString())
+         .ShouldBe(("kpi", string.Empty, string.Empty));
+      (config.GetProperty("sparkline").GetProperty("field").GetProperty("column").GetString(), config.GetProperty("sparkline").GetProperty("bucket").GetString())
+         .ShouldBe((string.Empty, "month"));
+      config.GetProperty("compare").GetRawText().ShouldBe("""{"filter":"period","good":"up"}""");
+      read.GetProperty("definition").GetProperty("widgets")[1].GetProperty("config").GetProperty("compare").GetRawText()
+         .ShouldBe("""{"filter":"","good":"down"}""", "the hidden filter isn't named");
+
+      JsonElement data = await (await anyone.Client.GetAsync($"/api/public/dashboards/{setup.Token}/widgets/revenue/data", Token)).JsonAsync(HttpStatusCode.OK);
+      (Rows(data), data.GetProperty("previous").GetProperty("value").GetString()).ShouldBe(("\"361.75\"", "0.00"), "no orders twenty years before");
+      data.GetProperty("points").GetRawText().ShouldBe("""[["2026-01-01","349.50"],["2026-02-01","12.25"]]""");
+   }
+
    [Fact]
    public async Task ALinkIsntThereWhenItShouldntWork()
    {

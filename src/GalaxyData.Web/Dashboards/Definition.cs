@@ -192,6 +192,7 @@ public sealed record DashboardWidget(
 [JsonDerivedType(typeof(BarConfig), "bar")]
 [JsonDerivedType(typeof(LineConfig), "line")]
 [JsonDerivedType(typeof(TableConfig), "table")]
+[JsonDerivedType(typeof(KpiConfig), "kpi")]
 public abstract record WidgetConfig;
 
 /// <summary>Markdown: headings and notes are widgets, as a dashboard has no title of its own.</summary>
@@ -502,6 +503,31 @@ public sealed record TableConfig(
    List<TableColumn> Columns,
    WidgetSort? Sort,
    int PageSize) : DataWidgetConfig(Source, Conditions, Emits, Listens);
+
+/// <summary>Which way a KPI's change is good: up (more is better), down (less is), or neither (it isn't coloured).</summary>
+public enum KpiGood
+{
+   Up,
+   Down,
+   Neither,
+}
+
+/// <summary>A KPI's comparison: with its number over the period before the one the relative filter <see cref="Filter"/> holds, and which way of change is good.</summary>
+public sealed record KpiCompare(string Filter, KpiGood Good);
+
+/// <summary>
+/// A KPI (a scorecard): one number, the measure over the widget's rows. Compared (<see cref="Compare"/>; none: not
+/// compared) with the same over the period before the one a relative filter holds; with a sparkline
+/// (<see cref="Sparkline"/>; none: no sparkline) of the measure by a period of a date. It has no slices to choose.
+/// </summary>
+public sealed record KpiConfig(
+   string Source,
+   List<WidgetCondition> Conditions,
+   bool Emits,
+   Listens Listens,
+   Measure Measure,
+   KpiCompare? Compare,
+   Dimension? Sparkline) : DataWidgetConfig(Source, Conditions, Emits, Listens);
 
 public enum RefreshMode
 {

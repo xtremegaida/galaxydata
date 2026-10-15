@@ -2,7 +2,9 @@ import type { Schema } from '../../../core/api/api-client';
 import type {
   BarConfig,
   Dimension,
+  Filter,
   HeadingConfig,
+  KpiConfig,
   LineConfig,
   Measure,
   PieConfig,
@@ -22,12 +24,21 @@ export function blankDimension(): Dimension {
 
 /**
  * A new line chart drawn over its source's time column (the one its rows are dated by, as the source says), by
- * month, when the source has one and the chart has no field yet; any other widget as it is.
+ * month, when the source has one and the chart has no field yet; a new KPI's sparkline over it, by day; any other
+ * widget as it is.
  */
 export function overTime(
   config: WidgetConfig,
   time: { readonly column: string; readonly label: string } | null,
 ): WidgetConfig {
+  if (config.kind === 'kpi') {
+    return time && !config.sparkline
+      ? {
+          ...config,
+          sparkline: { field: { path: [], column: time.column }, bucket: 'day', label: 'Day' },
+        }
+      : config;
+  }
   if (config.kind !== 'line' || !time || config.dimension.field.column) {
     return config;
   }
@@ -110,6 +121,31 @@ export function pieDefaults(source: string | null, listens: Listens = all): PieC
     donut: false,
     labels: true,
     legend: 'right',
+  };
+}
+
+/**
+ * A new KPI compared with the period before the dashboard's first relative filter's (one with a field), more being
+ * better; any other widget, or a KPI compared already, as it is.
+ */
+export function comparedWith(config: WidgetConfig, filters: readonly Filter[]): WidgetConfig {
+  const period = filters.find((f) => f.kind === 'relative' && f.field.column);
+  return config.kind === 'kpi' && !config.compare && period
+    ? { ...config, compare: { filter: period.id, good: 'up' } }
+    : config;
+}
+
+/** A KPI: one number, counting rows to begin with. It has no slices to choose. */
+export function kpiDefaults(source: string | null, listens: Listens = all): KpiConfig {
+  return {
+    kind: 'kpi',
+    source: source ?? '',
+    conditions: [],
+    emits: false,
+    listens,
+    measure: rowCount(),
+    compare: null,
+    sparkline: null,
   };
 }
 

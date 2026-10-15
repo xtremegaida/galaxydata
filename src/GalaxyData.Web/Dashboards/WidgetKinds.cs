@@ -38,7 +38,7 @@ public sealed class WidgetKinds(IEnumerable<IWidgetKind> kinds)
    }
 
    /// <summary>The kinds the application has.</summary>
-   public static IEnumerable<IWidgetKind> BuiltIn() => [new TextKind(), new HeadingKind(), new PieKind(), new BarKind(), new LineKind(), new TableKind()];
+   public static IEnumerable<IWidgetKind> BuiltIn() => [new TextKind(), new HeadingKind(), new PieKind(), new BarKind(), new LineKind(), new TableKind(), new KpiKind()];
 }
 
 /// <summary>A kind whose configs are <typeparamref name="T"/>.</summary>
@@ -407,6 +407,53 @@ public sealed class LineKind : WidgetKind<LineConfig>
          Whole = GroupQueries.Whole(rows, [("d0", dimension.Expression, dimension.Type), ("s0", series.Expression, series.Type)], measures[0].Expression,
             context.Combines(config.Measures[0], context.Path + ".measures[0]"), WholeShape.Lines, null, take, take, context),
       };
+   }
+}
+
+public sealed class KpiKind : WidgetKind<KpiConfig>
+{
+   /// <summary>The most points a sparkline draws: the latest.</summary>
+   public const int MaxPoints = 500;
+
+   protected override void Check(KpiConfig config, string? widget, DefinitionCheck check, string path)
+   {
+      check.Data(config, widget, path);
+      if (config.Emits) { check.Error(path + ".emits", "A KPI has no slices to choose"); }
+      check.Measure(config.Measure, path + ".measure");
+      if (config.Compare is { } compare)
+      {
+         if (compare.Filter == null || !check.FilterKinds.TryGetValue(compare.Filter, out FilterKind kind)) { check.Error(path + ".compare.filter", $"There is no filter {compare.Filter}"); }
+         else if (kind != FilterKind.Relative) { check.Error(path + ".compare.filter", "Compare with a period relative to today: a relative filter's"); }
+      }
+      if (config.Sparkline is { } sparkline)
+      {
+         check.Dimension(sparkline, path + ".sparkline");
+         if (sparkline.Bucket is not (Bucket.Day or Bucket.Week or Bucket.Month or Bucket.Quarter or Bucket.Year))
+         {
+            check.Error(path + ".sparkline.bucket", "A sparkline is by a period: a day, week, month, quarter or year");
+         }
+      }
+   }
+
+   /// <summary>
+   /// The measure over every row; over those of the period before the comparison's filter's, when it holds one; and
+   /// by the sparkline's period, the latest first.
+   /// </summary>
+   protected override WidgetPlan? Plan(KpiConfig config, PlanContext context)
+   {
+      string? measure = context.Measure(config.Measure, context.Path + ".measure");
+      DimensionExpression? sparkline = config.Sparkline == null ? null : context.Dimension(config.Sparkline, context.Path + ".sparkline");
+      if (measure == null || (config.Sparkline != null && sparkline == null)) { return null; }
+      string rows = context.Base();
+      BuiltQuery main = new(GroupQueries.Group(rows, [], [("m0", measure)], [], null), context.Parameters.Values);
+      PreviousPlan? previous = config.Compare is { } compare && context.Before(compare.Filter, context.Path + ".compare.filter") is { } before
+         ? new PreviousPlan(PlanContext.Using(GroupQueries.Group(before.Rows, [], [("m0", measure)], [], null), before.Parameters), before.From, before.To)
+         : null;
+      int points = Math.Min(MaxPoints, context.Limits.MaxChartRows);
+      SparklinePlan? trend = sparkline == null ? null
+         : new SparklinePlan(new BuiltQuery(GroupQueries.Group(rows, [("d0", sparkline.Expression)], [("m0", measure)], ["desc(d0)"], points + 1), context.Parameters.Values), points);
+      return new WidgetPlan([new PlannedColumn("m0", ColumnRole.Measure, 0, config.Measure.Label, config.Measure.Format)], null, _ => main, null,
+         context.Underlying(), 1, Paged: false) { Previous = previous, Sparkline = trend };
    }
 }
 

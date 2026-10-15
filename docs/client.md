@@ -539,6 +539,16 @@ the server keeps and checks).
   (ECharts, loaded with the first chart, `ECHARTS_IMPORT`; options built by pure functions; colours from their
   palette, below; a table of the rows instead, with buttons, for the keyboard, and each row's colour); tables. A kind
   the page doesn't know is said so. A new kind is a server `IWidgetKind` and a client `WidgetKind`.
+- **KPIs** (`widgets/kpi-widget.ts`, `model/kpi.ts`): one number, in its measure's format (a decimal's scale, or two
+  decimals of a float, without one), its measure's label above it when the widget has no title (the full number on
+  hover when it is shortened). Compared, a line says how it changed against the period before its filter's: an
+  arrow, the % (none against zero), the amount signed, and "vs Aug 15 – Sep 13" (the year when it isn't this one's),
+  in `--gd-good` or `--gd-bad` as the way it went is good or bad (`compare.good`; neither colours nothing), and in
+  words for screen readers ("Up 12.2% (81.2K) on …, for the better"). Its sparkline is a line through every period
+  between its first and last points (zero for counts and sums where there were no rows, a gap for the rest), drawn
+  to its box (an SVG stretched, its stroke not), the latest point marked; a pointer or the keyboard (arrows, Home,
+  End) reads a point, in a tip by it (and to screen readers). A short tile shows its number first: the sparkline goes, then the change (container
+  queries). It chooses nothing; its Data popup lists its sparkline's points under its number.
 - **Other.** A pie's rest, and the rest of a chart's largest series (`seriesLimit`, `seriesOther`), is "Other": grey,
   never chosen (faded while slices are), last in a chart's table. Clicking it (its slice, its bars, its line or its
   points; on the editor's canvas while trying) steps into it: the next slices or series, asked for with the page's
@@ -574,7 +584,8 @@ the server keeps and checks).
   first). What it can't read is said and left out, and nothing is laid out till it is read (so `?tab=` asks for its
   tab's rows alone).
 - **Popups:** a widget's Data (its rows; signed in, the rows they were worked out from, in the query results'
-  grid) and View query (its GDQ, its parameters, its SQL and plan, Open in the query editor).
+  grid) and View query (its GDQ, its parameters, its SQL and plan, Open in the query editor; a KPI's period before
+  and sparkline too).
 - **Refreshing:** by hand, or on the dashboard's timer while the page is shown (not while it is hidden or reading;
   longer after failures).
 
@@ -607,6 +618,11 @@ field, each with Go to).
 - **Every edit is a step** undone and redone by name (Ctrl+Z; Ctrl+Shift+Z or Ctrl+Y), edits of one field (or a
   drag) one step. Ctrl+S saves the working copy at the version read: changed elsewhere since, it is read again (the
   edits stay) or saved as a copy. Leaving with changes not saved asks first.
+- **KPIs:** a new one counts its source's rows, along its time column by day (when the source says it has one), and
+  compared with the dashboard's first relative filter, more being better. Its settings: its measure (as Measures
+  above, a rate too, with how its number shows), the period filter it compares through and which way is better
+  (none to choose until the dashboard has one), and its sparkline's date and period. A filter renamed while new takes its KPIs with it; one removed, or made of
+  another kind, leaves them compared with nothing.
 - **Colours:** a chart's settings choose its palette (or the dashboard's), bars' colours by category, and list what
   its preview colours and how (its own, by label, by order, moved apart, grey), each with Set colour…, which keeps
   the label's colour in the palette the chart is drawn with (saved there at once, not a step to undo: every

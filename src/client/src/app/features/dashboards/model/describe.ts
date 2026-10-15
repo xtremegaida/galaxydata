@@ -127,6 +127,9 @@ export function keyParts(
         : [part(config.dimension)];
     case 'table':
       return config.mode === 'grouped' ? config.dimensions.map(part) : [];
+    case 'kpi':
+      // One number: nothing to choose.
+      return [];
   }
 }
 
