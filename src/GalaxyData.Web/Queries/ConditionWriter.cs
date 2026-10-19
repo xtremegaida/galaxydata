@@ -232,17 +232,21 @@ public static class ConditionWriter
       return nulls ? $"({name} != null and not {Wrapped(any)})" : $"(not {Wrapped(any)} or {name} == null)";
    }
 
-   /// <summary>The days a period relative to today covers: from its first, to the day after its last (none after the last day there is).</summary>
+   /// <summary>
+   /// The days a period relative to today covers: from its first, to the day after its last (none after the last day
+   /// there is). One that leaves today out is as it was at the end of yesterday (<see cref="AsOf"/>).
+   /// </summary>
    public static (DateOnly Start, DateOnly? End) Period(RelativeRange period, DateOnly today)
    {
       ArgumentNullException.ThrowIfNull(period);
-      DateOnly startOfThis = StartOf(today, period.Unit);
+      DateOnly day = AsOf(period, today);
+      DateOnly startOfThis = StartOf(day, period.Unit);
       DateOnly? next = Plus(startOfThis, period.Unit, 1);
-      DateOnly? tomorrow = today == DateOnly.MaxValue ? null : today.AddDays(1);
+      DateOnly? tomorrow = day == DateOnly.MaxValue ? null : day.AddDays(1);
       return period.Mode switch
       {
-         // The last n days, weeks, …: up to today, from the day after today was, n of them ago.
-         RelativeMode.Last => (Plus(today, period.Unit, -period.Count)?.AddDays(1) ?? DateOnly.MinValue, tomorrow),
+         // The last n days, weeks, …: up to the day, from the day after it was, n of them ago.
+         RelativeMode.Last => (Plus(day, period.Unit, -period.Count)?.AddDays(1) ?? DateOnly.MinValue, tomorrow),
          RelativeMode.This => (startOfThis, next),
          RelativeMode.Previous => (Plus(startOfThis, period.Unit, -period.Count) ?? DateOnly.MinValue, startOfThis),
          _ => (startOfThis, tomorrow),
@@ -257,11 +261,24 @@ public static class ConditionWriter
    public static (DateOnly Start, DateOnly? End) Before(RelativeRange period, DateOnly today)
    {
       ArgumentNullException.ThrowIfNull(period);
-      if (period.Mode == RelativeMode.ToDate) { return Period(period, Plus(today, period.Unit, -1) ?? DateOnly.MinValue); }
+      if (period.Mode == RelativeMode.ToDate)
+      {
+         // To the same day of the period before as the period's last: yesterday, when it leaves today out.
+         DateOnly last = AsOf(period, today);
+         return Period(period with { ExcludeToday = null }, Plus(last, period.Unit, -1) ?? DateOnly.MinValue);
+      }
       (DateOnly start, _) = Period(period, today);
       int count = period.Mode == RelativeMode.This ? 1 : period.Count;
       return (Plus(start, period.Unit, -count) ?? DateOnly.MinValue, start);
    }
+
+   /// <summary>
+   /// The day a period ending today is worked out as of: yesterday when it leaves today out (<see
+   /// cref="RelativeRange.ExcludeToday"/>), so it ends with the last whole day; today otherwise, and for the periods
+   /// that don't end today (this period, whole; the previous ones).
+   /// </summary>
+   private static DateOnly AsOf(RelativeRange period, DateOnly today) =>
+      period is { ExcludeToday: true, Mode: RelativeMode.Last or RelativeMode.ToDate } && today > DateOnly.MinValue ? today.AddDays(-1) : today;
 
    /// <summary>The first day of the period <paramref name="day"/> is in; weeks start on Monday.</summary>
    public static DateOnly StartOf(DateOnly day, RelativeUnit unit) => unit switch

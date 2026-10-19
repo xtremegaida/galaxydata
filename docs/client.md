@@ -576,12 +576,13 @@ the server keeps and checks).
   widget filter the widgets that listen to it (on linked sources), and show as chips ("Status: open, shipped",
   "Region: not EMEA"). A widget asks for its rows again only when what reaches it changes.
 - **Filters:** those shown, as controls by kind (values found as typing pauses, under the other filters; ranges;
-  periods till today; text; yes or no), fixed ones as chips, hidden ones not at all.
+  periods till today, or till yesterday when the dashboard's leaves today out, as the usual ones offered then do;
+  text; yes or no), fixed ones as chips, hidden ones not at all.
 - **The address** (`core/dashboards/dashboard-url.ts`, the only place it is read and written) keeps filters' values
-  (`f.status=open,shipped`, `f.total=10~100`, `f.placed=last.3.month`) and slices chosen (`s.by-city=Cape Town`,
-  `!` first for left out, `|` between a series' parts), written in place; values keep their types (bare `null`,
-  numbers and booleans; text that would read as one, quoted), and the tab shown (`tab=customers`, left out for the
-  first). What it can't read is said and left out, and nothing is laid out till it is read (so `?tab=` asks for its
+  (`f.status=open,shipped`, `f.total=10~100`, `f.placed=last.3.month`, `last.30.day.excludeToday` for one leaving
+  today out) and slices chosen (`s.by-city=Cape Town`, `!` first for left out, `|` between a series' parts), written
+  in place; values keep their types (bare `null`, numbers and booleans; text that would read as one, quoted), and the
+  tab shown (`tab=customers`, left out for the first). What it can't read is said and left out, and nothing is laid out till it is read (so `?tab=` asks for its
   tab's rows alone).
 - **Popups:** a widget's Data (its rows; signed in, the rows they were worked out from, in the query results'
   grid) and View query (its GDQ, its parameters, its SQL and plan, Open in the query editor; a KPI's period before
@@ -607,6 +608,9 @@ field, each with Go to).
   out one tab's cells alone (`perTab`), property-tested.
 - **Fields** are picked by name (`customer.country`: columns, and navigations to one row stepped into), by the types
   their use takes (numbers to sum, periods for dates).
+- **Periods** (a relative filter's default, a condition's): the last n, this, the previous n, or to date, of days to
+  years; the last n and to date may run Up to yesterday (today isn't over), which a mode that doesn't end today
+  drops (`model/describe.ts`: "last 30 days to yesterday", "month to yesterday").
 - **Measures** (`controls/measure-list.ts`): an aggregate of a field (an average of yes-or-no values is the share
   yes, a percentage unless its format was chosen), its row conditions (Only rows where…), Divided by another
   aggregate with its own (a rate: Bounce rate, Submitted per started), a label, and how its numbers show
@@ -621,8 +625,8 @@ field, each with Go to).
 - **KPIs:** a new one counts its source's rows, along its time column by day (when the source says it has one), and
   compared with the dashboard's first relative filter, more being better. Its settings: its measure (as Measures
   above, a rate too, with how its number shows), the period filter it compares through and which way is better
-  (none to choose until the dashboard has one), and its sparkline's date and period. A filter renamed while new takes its KPIs with it; one removed, or made of
-  another kind, leaves them compared with nothing.
+  (none to choose until the dashboard has one), and its sparkline's date and period. A filter renamed while new
+  takes its KPIs with it; one removed, or made of another kind, leaves them compared with nothing.
 - **Colours:** a chart's settings choose its palette (or the dashboard's), bars' colours by category, and list what
   its preview colours and how (its own, by label, by order, moved apart, grey), each with Set colour…, which keeps
   the label's colour in the palette the chart is drawn with (saved there at once, not a step to undo: every

@@ -155,3 +155,27 @@ previous (2026-01-01 to 2026-01-30): (shop.orders).where(r0 => (r0.order_date >=
 m0
 0.5
 underlying: (shop.orders).where(r0 => (r0.order_date >= $f2 and r0.order_date < $f3))
+
+### The last 30 days up to yesterday (2026-02-28), and the 30 days before
+columns: m0 Measure total; limit 1
+main: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2)).groupBy().select(m0: sum(total))
+  $f1 = "2026-01-30" (date), $f2 = "2026-03-01" (date)
+m0
+"12.25"
+previous (2025-12-31 to 2026-01-29): (shop.orders).where(r0 => (r0.order_date >= $f3 and r0.order_date < $f4)).groupBy().select(m0: sum(total))
+  $f3 = "2025-12-31" (date), $f4 = "2026-01-30" (date)
+m0
+"349.50"
+underlying: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2))
+
+### This month up to yesterday, on its first day: February, and January to its 28th
+columns: m0 Measure total; limit 1
+main: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2)).groupBy().select(m0: sum(total))
+  $f1 = "2026-02-01" (date), $f2 = "2026-03-01" (date)
+m0
+"12.25"
+previous (2026-01-01 to 2026-01-28): (shop.orders).where(r0 => (r0.order_date >= $f3 and r0.order_date < $f4)).groupBy().select(m0: sum(total))
+  $f3 = "2026-01-01" (date), $f4 = "2026-01-29" (date)
+m0
+"349.50"
+underlying: (shop.orders).where(r0 => (r0.order_date >= $f1 and r0.order_date < $f2))

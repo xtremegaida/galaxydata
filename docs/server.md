@@ -755,6 +755,14 @@ of its own: every widget then names its `tab`, and its cells are in that tab's g
 was). Those are left out when unset (and no tabs, `[]`, are written as none), so a definition saved before palettes
 or tabs is written as it was. Tabs are only where widgets are shown: nothing a widget reads depends on them.
 
+**Periods relative to today** (a `relative` filter's value, or a condition's: `{op: relative, relative: {mode, count,
+unit}}`, of days in UTC): the `last` n days, weeks, months, quarters or years up to today; `this` one, whole; the
+`previous` n before this one; or this one `toDate`. Those that end today (`last` and `toDate`) may leave it out
+(`excludeToday: true`): they are as they were at the end of yesterday, so a day not over yet doesn't show as a drop
+(the last 30 days up to yesterday; this month up to yesterday, which on its first day is the month before, whole). A
+KPI compares one with the period before it as it would any other (the 30 days before those; the month before, up to
+the same day as yesterday). `excludeToday` is left out when false, and the other modes ignore it.
+
 **Measures, rates and how numbers show.** A measure is an `aggregate` (`count` of rows, `countValues`,
 `countDistinct`, `approxCountDistinct`, `sum`, `avg`, `min`, `max`) of a `field` (none for `count`), with a `label`
 and a `format`. It may aggregate only the rows its `where` keeps (conditions as a widget's own: the bounced sessions

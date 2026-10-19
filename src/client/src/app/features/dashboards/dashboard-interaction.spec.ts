@@ -206,6 +206,56 @@ describe('choosing and filtering on a dashboard', () => {
     expect(textOf(bar)).not.toContain('Tenant');
   });
 
+  it("offers periods up to yesterday when the dashboard's leaves today out, and keeps the one chosen", async () => {
+    const placed = filterOf('placed', 'orders', {
+      kind: 'relative',
+      multiple: false,
+      value: {
+        op: 'relative',
+        relative: { mode: 'last', count: 30, unit: 'day', excludeToday: true },
+      },
+    });
+    const { page, http, harness, router } = await open(
+      '/dashboards/1',
+      salesDefinition({ filters: [placed] }),
+    );
+    const field = page.querySelector('gd-relative-filter')!;
+    expect(textOf(field.querySelector('.mat-mdc-select-value'))).toBe('Last 30 days to yesterday');
+    field.querySelector<HTMLElement>('.mat-mdc-select-trigger')!.click();
+    harness.detectChanges();
+    await settle();
+    const options = [...document.querySelectorAll<HTMLElement>('mat-option')];
+    // Those that end today leave it out; the others are as they are.
+    expect(options.map((o) => textOf(o))).toEqual([
+      'Any time',
+      'Today',
+      'Last 7 days to yesterday',
+      'Last 30 days to yesterday',
+      'This week',
+      'This month',
+      'Previous month',
+      'Last 3 months to yesterday',
+      'Last 12 months to yesterday',
+      'This quarter',
+      'Previous quarter',
+      'This year',
+      'Previous year',
+      'Year to yesterday',
+    ]);
+    options.find((o) => textOf(o) === 'Last 7 days to yesterday')!.click();
+    harness.detectChanges();
+    const status = await next(http, 'by-status');
+    expect(status.request.body.state.filters).toEqual({
+      placed: {
+        op: 'relative',
+        relative: { mode: 'last', count: 7, unit: 'day', excludeToday: true },
+      },
+    });
+    status.flush(rowsOf('Status', []));
+    await eventually(harness, () => router.url.includes('f.placed='));
+    expect(decodeURIComponent(router.url)).toContain('f.placed=last.7.day.excludeToday');
+  });
+
   it("asks for a filter's values as typing pauses (under the other filters only), and filters by those chosen", async () => {
     // A slice chosen in a widget doesn't narrow a filter's values: a filter of the field chosen from would offer only it.
     const { page, http, router, harness } = await open('/dashboards/1?s.by-city=Cape Town');

@@ -169,7 +169,18 @@ public enum RelativeMode
    ToDate,
 }
 
-public sealed record RelativeRange(RelativeUnit Unit, int Count, RelativeMode Mode);
+/// <summary>
+/// A period relative to today. <see cref="ExcludeToday"/>: a period that ends today (the last n periods, a period
+/// to date) as it was at the end of yesterday, so a day not over yet doesn't show as a drop: the last 30 days up to
+/// yesterday; this month up to yesterday (on its first day, the month before, whole). True or left out (false is
+/// kept as left out), so periods saved before it are written as they were; the other modes don't end today, and
+/// ignore it.
+/// </summary>
+public sealed record RelativeRange(RelativeUnit Unit, int Count, RelativeMode Mode, bool? ExcludeToday = null)
+{
+   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+   public bool? ExcludeToday { get; init; } = ExcludeToday == true ? true : null;
+}
 
 /// <summary>A condition of a widget's own, on a field of its source.</summary>
 public sealed record WidgetCondition(FieldRef Field, ConditionValue Value);

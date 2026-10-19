@@ -3,7 +3,7 @@
   "version": 1,
   "name": "Web analytics",
   "description": "Visits, traffic sources, content, audience, forms and server requests from HyperWhirlpool's web domain",
-  "exportedAt": "2026-10-14T20:41:21.4400862Z",
+  "exportedAt": "2026-10-19T08:53:01.5352366Z",
   "definition": {
     "schema": 1,
     "layout": {
@@ -418,7 +418,8 @@
           "relative": {
             "unit": "day",
             "count": 30,
-            "mode": "last"
+            "mode": "last",
+            "excludeToday": true
           }
         },
         "visible": true,
@@ -600,7 +601,7 @@
         "title": null,
         "config": {
           "kind": "text",
-          "markdown": "Visits to the sites the HyperWhirlpool tracker is on. A **session** is a visit: it ends after 30 minutes without activity. **Visitors** are browser profiles (devices), estimated. Bots and data-centre traffic are left out until *Visitors* says otherwise. Click a slice or a bar to filter the rest; right-click for more."
+          "markdown": "Visits to the sites the HyperWhirlpool tracker is on. A **session** is a visit: it ends after 30 minutes without activity. **Visitors** are browser profiles (devices), estimated. Bots and data-centre traffic are left out until *Visitors* says otherwise. The *Period* runs up to yesterday, as today isn't over. Click a slice or a bar to filter the rest; right-click for more."
         },
         "tab": "overview"
       },

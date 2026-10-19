@@ -2853,6 +2853,7 @@ export interface components {
             /** Format: int32 */
             count: number;
             mode: components["schemas"]["RelativeMode"];
+            excludeToday?: null | boolean;
         };
         /** @enum {unknown} */
         RelativeUnit: "day" | "week" | "month" | "quarter" | "year";

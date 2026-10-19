@@ -162,6 +162,18 @@ describe('dashboard addresses', () => {
     ]);
   });
 
+  it('reads a period that leaves today out, and nothing else after one', () => {
+    expect(read('/dashboards/7?f.placed=last.30.day.excludeToday').state.filters).toEqual({
+      placed: {
+        op: 'relative',
+        relative: { mode: 'last', count: 30, unit: 'day', excludeToday: true },
+      },
+    });
+    expect(read('/dashboards/7?f.placed=last.30.day.today').problems).toEqual([
+      "The filter Placed couldn't be read: 'last.30.day.today' isn't a period such as last.7.day.",
+    ]);
+  });
+
   it('keeps the first slices of a selection longer than the most there may be', () => {
     const { state, problems } = read('/dashboards/7?s.by-status=a,b,c', 2);
     expect(state.selections['by-status']).toEqual({ mode: 'include', keys: [['a'], ['b']] });
@@ -273,22 +285,27 @@ function valuesOf(filter: Filter): fc.Arbitrary<ConditionValue | null> {
       case 'relative':
         return fc.record({
           op: fc.constant('relative' as const),
-          relative: fc.record({
-            mode: fc.constantFrom(
-              'last' as const,
-              'this' as const,
-              'previous' as const,
-              'toDate' as const,
-            ),
-            count: fc.integer({ min: 1, max: 1000 }),
-            unit: fc.constantFrom(
-              'day' as const,
-              'week' as const,
-              'month' as const,
-              'quarter' as const,
-              'year' as const,
-            ),
-          }),
+          relative: fc.record(
+            {
+              mode: fc.constantFrom(
+                'last' as const,
+                'this' as const,
+                'previous' as const,
+                'toDate' as const,
+              ),
+              count: fc.integer({ min: 1, max: 1000 }),
+              unit: fc.constantFrom(
+                'day' as const,
+                'week' as const,
+                'month' as const,
+                'quarter' as const,
+                'year' as const,
+              ),
+              // True or left out, as the server writes it.
+              excludeToday: fc.constant(true as const),
+            },
+            { requiredKeys: ['mode', 'count', 'unit'] },
+          ),
         });
       case 'text':
         return fc.record({ op: fc.constant('contains' as const), value: text() });

@@ -15960,6 +15960,12 @@
           },
           "mode": {
             "$ref": "#/components/schemas/RelativeMode"
+          },
+          "excludeToday": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },

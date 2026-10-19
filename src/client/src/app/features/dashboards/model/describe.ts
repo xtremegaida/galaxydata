@@ -44,12 +44,20 @@ export function valueText(
   return String(value);
 }
 
-/** A period relative to today, as said: "last 3 months", "this quarter", "previous month", "year to date". */
+/**
+ * A period relative to today, as said: "last 3 months", "this quarter", "previous month", "year to date"; one
+ * leaving today out, "last 30 days to yesterday", "month to yesterday".
+ */
 export function relativeText(range: RelativeRange): string {
   const [one, many] = unitNames[range.unit];
   switch (range.mode) {
-    case 'last':
-      return range.count === 1 ? `last ${one}` : `last ${range.count} ${many}`;
+    case 'last': {
+      if (range.excludeToday && range.count === 1 && range.unit === 'day') {
+        return 'yesterday';
+      }
+      const last = range.count === 1 ? `last ${one}` : `last ${range.count} ${many}`;
+      return range.excludeToday ? `${last} to yesterday` : last;
+    }
     case 'this':
       return range.unit === 'day' ? 'today' : `this ${one}`;
     case 'previous':
@@ -59,8 +67,20 @@ export function relativeText(range: RelativeRange): string {
           : `previous ${one}`
         : `previous ${range.count} ${many}`;
     case 'toDate':
-      return `${one} to date`;
+      return range.excludeToday ? `${one} to yesterday` : `${one} to date`;
   }
+}
+
+/** Whether a period ends today, so may leave it out instead: the last n periods, and one to date. */
+export function endsToday(range: RelativeRange): boolean {
+  return range.mode === 'last' || range.mode === 'toDate';
+}
+
+/** A period leaving today out (when it ends today), or not: true or left out, as the server writes it. */
+export function excludingToday(range: RelativeRange, exclude: boolean): RelativeRange {
+  const kept = { ...range };
+  delete kept.excludeToday;
+  return exclude && endsToday(range) ? { ...kept, excludeToday: true } : kept;
 }
 
 /** What a filter's value keeps, briefly: "open, shipped", "not EMEA", "10 to 100", "last 7 days", "contains Ada". */

@@ -1,5 +1,5 @@
 import { barDefaults, tableDefaults } from './widget-defaults';
-import { filterValueText, relativeText, selectionText } from './describe';
+import { excludingToday, filterValueText, relativeText, selectionText } from './describe';
 import type { Widget } from './definition';
 
 describe('what dashboards say', () => {
@@ -25,6 +25,41 @@ describe('what dashboards say', () => {
       'previous 2 years',
       'year to date',
     ]);
+  });
+
+  it('says periods leaving today out as up to yesterday, and leaves it out only of those ending today', () => {
+    const say = (range: object) => relativeText(range as Parameters<typeof relativeText>[0]);
+    expect([
+      say({ mode: 'last', count: 30, unit: 'day', excludeToday: true }),
+      say({ mode: 'last', count: 1, unit: 'day', excludeToday: true }),
+      say({ mode: 'last', count: 1, unit: 'month', excludeToday: true }),
+      say({ mode: 'toDate', count: 1, unit: 'month', excludeToday: true }),
+    ]).toEqual([
+      'last 30 days to yesterday',
+      'yesterday',
+      'last month to yesterday',
+      'month to yesterday',
+    ]);
+    expect(excludingToday({ mode: 'last', count: 7, unit: 'day' }, true)).toEqual({
+      mode: 'last',
+      count: 7,
+      unit: 'day',
+      excludeToday: true,
+    });
+    expect(
+      excludingToday({ mode: 'last', count: 7, unit: 'day', excludeToday: true }, false),
+    ).toEqual({
+      mode: 'last',
+      count: 7,
+      unit: 'day',
+    });
+    expect(
+      excludingToday({ mode: 'previous', count: 1, unit: 'month', excludeToday: true }, true),
+    ).toEqual({
+      mode: 'previous',
+      count: 1,
+      unit: 'month',
+    });
   });
 
   it("says what a filter's value keeps", () => {

@@ -10,8 +10,8 @@ import { sameJson } from '../api/same-json';
  * - `f.<filter>`: the value of a filter the viewer may change, when it isn't the dashboard's own. By the filter's
  *   kind: values `a,b` (`!` first for those left out: `!a,b`); a range `from~to` (either side empty: from or up
  *   to); a relative period `<mode>.<count>.<unit>` (`last.7.day`, `this.1.quarter`, `previous.1.month`,
- *   `toDate.1.year`); text as it is; a boolean `true` or `false`. Empty, the filter is cleared (its default, if
- *   it has one, doesn't hold).
+ *   `toDate.1.year`), `.excludeToday` after one that leaves today out (`last.30.day.excludeToday`); text as it is;
+ *   a boolean `true` or `false`. Empty, the filter is cleared (its default, if it has one, doesn't hold).
  * - `s.<widget>`: the slices chosen in a widget, `,` between them (`!` first when they are left out instead); a
  *   slice of two parts (a series' bar) has `|` between them.
  * - `tab`: the tab shown, by its id, when it isn't the first.
@@ -49,6 +49,8 @@ const tabParam = 'tab';
 const literal = /^(null|true|false|-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?)$/;
 const modes: readonly RelativeRange['mode'][] = ['last', 'this', 'previous', 'toDate'];
 const units: readonly RelativeRange['unit'][] = ['day', 'week', 'month', 'quarter', 'year'];
+/** After a period that leaves today out. */
+const excludeToday = 'excludeToday';
 
 /** Whether a query parameter is one of a dashboard's state (a filter's, a widget's, or the tab shown). */
 export function isDashboardParam(name: string): boolean {
@@ -190,7 +192,8 @@ function writeFilterValue(filter: Filter, value: ConditionValue): string | null 
     }
     case 'relative':
       return value.relative
-        ? `${value.relative.mode}.${value.relative.count}.${value.relative.unit}`
+        ? `${value.relative.mode}.${value.relative.count}.${value.relative.unit}` +
+            (value.relative.excludeToday ? `.${excludeToday}` : '')
         : null;
     case 'text':
       return writeScalar(String(value.value ?? ''));
@@ -231,8 +234,9 @@ function readFilterValue(filter: Filter, text: string): ConditionValue {
     case 'relative': {
       const [mode, count, unit, ...rest] = text.split('.');
       const n = Number(count);
+      const today = rest.length === 1 && rest[0] === excludeToday;
       if (
-        rest.length > 0 ||
+        rest.length > (today ? 1 : 0) ||
         !modes.includes(mode as RelativeRange['mode']) ||
         !units.includes(unit as RelativeRange['unit']) ||
         !/^\d+$/.test(count ?? '') ||
@@ -247,6 +251,7 @@ function readFilterValue(filter: Filter, text: string): ConditionValue {
           mode: mode as RelativeRange['mode'],
           count: n,
           unit: unit as RelativeRange['unit'],
+          ...(today ? { excludeToday: true } : {}),
         },
       };
     }

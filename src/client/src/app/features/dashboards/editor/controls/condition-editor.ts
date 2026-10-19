@@ -5,7 +5,9 @@ import { MatFormField, MatHint, MatLabel } from '@angular/material/form-field';
 import { MatIcon } from '@angular/material/icon';
 import { MatInput } from '@angular/material/input';
 import { MatSelect } from '@angular/material/select';
+import { MatSlideToggle } from '@angular/material/slide-toggle';
 import type { ConditionValue, FieldRef } from '../../model/definition';
+import { endsToday, excludingToday } from '../../model/describe';
 import { EntityCatalog } from '../entity-catalog';
 import { FieldPicker } from './field-picker';
 
@@ -83,7 +85,7 @@ function valuesOf(text: string): string[] {
  */
 @Component({
   selector: 'gd-condition-value',
-  imports: [MatFormField, MatHint, MatInput, MatLabel, MatOption, MatSelect],
+  imports: [MatFormField, MatHint, MatInput, MatLabel, MatOption, MatSelect, MatSlideToggle],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="value">
@@ -199,6 +201,14 @@ function valuesOf(text: string): string[] {
                 <mat-option value="year">years</mat-option>
               </mat-select>
             </mat-form-field>
+            @if (endsToday(value().relative!)) {
+              <mat-slide-toggle
+                [checked]="!!value().relative!.excludeToday"
+                (change)="leftOut($event.checked)"
+              >
+                Up to yesterday (today isn't over)
+              </mat-slide-toggle>
+            }
           </div>
         }
       }
@@ -273,8 +283,17 @@ export class ConditionValueEditor {
     this.value.set({ ...this.value(), ...change });
   }
 
+  protected readonly endsToday = endsToday;
+
+  /** Another mode, count or unit: one that doesn't end today can't leave it out. */
   protected period(change: Partial<RelativeRange>): void {
-    this.set({ relative: { ...this.value().relative!, ...change } });
+    const relative = this.value().relative!;
+    this.set({ relative: excludingToday({ ...relative, ...change }, !!relative.excludeToday) });
+  }
+
+  /** Today left out (the period as it was at the end of yesterday), or not. */
+  protected leftOut(exclude: boolean): void {
+    this.set({ relative: excludingToday(this.value().relative!, exclude) });
   }
 
   protected counted(event: Event): void {

@@ -24,7 +24,7 @@ import { MatInput } from '@angular/material/input';
 import { MatSelect } from '@angular/material/select';
 import { EMPTY, switchMap, timer } from 'rxjs';
 import { sameJson } from '../../../core/api/same-json';
-import { filterValueOf, relativeText, valueText } from '../model/describe';
+import { excludingToday, filterValueOf, relativeText, valueText } from '../model/describe';
 import type { ConditionValue, DashboardState, Filter } from '../model/definition';
 import { DashboardStore } from '../state/dashboard-store';
 import { DASHBOARD_WAITS } from '../state/waits';
@@ -322,7 +322,10 @@ const presets: readonly RelativeRange[] = [
   { mode: 'toDate', count: 1, unit: 'year' },
 ];
 
-/** A filter of a period relative to today: chosen from the usual ones (and the dashboard's, if it is another). */
+/**
+ * A filter of a period relative to today: chosen from the usual ones (and the dashboard's, if it is another). When
+ * the dashboard's leaves today out, so do the usual ones that end today.
+ */
 @Component({
   selector: 'gd-relative-filter',
   imports: [MatFormField, MatLabel, MatOption, MatSelect],
@@ -347,8 +350,10 @@ const presets: readonly RelativeRange[] = [
 export class RelativeFilter extends FilterControl {
   /** The periods offered: the usual ones, and the one that holds when it isn't one of them. */
   protected readonly ranges = computed(() => {
+    const today = !!this.filter().value?.relative?.excludeToday;
+    const offered = today ? presets.map((p) => excludingToday(p, true)) : presets;
     const now = this.value()?.relative;
-    return now && !presets.some((p) => sameJson(p, now)) ? [...presets, now] : presets;
+    return now && !offered.some((p) => sameJson(p, now)) ? [...offered, now] : offered;
   });
 
   protected readonly chosen = computed(() => {

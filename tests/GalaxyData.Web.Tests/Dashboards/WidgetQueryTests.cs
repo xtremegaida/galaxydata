@@ -459,9 +459,9 @@ public sealed class WidgetQueryTests
       Report report = new();
       static KpiConfig Kpi(string source, Measure measure, string? compare = null, Dimension? sparkline = null) =>
          new(source, [], false, All, measure, compare == null ? null : new KpiCompare(compare, KpiGood.Up), sparkline);
-      static DashboardFilter Period(RelativeUnit unit, int count, RelativeMode mode) =>
+      static DashboardFilter Period(RelativeUnit unit, int count, RelativeMode mode, bool excludeToday = false) =>
          new("period", "Period", new SourceField("orders", [], "order_date"), FilterKind.Relative,
-            new ConditionValue(ConditionOp.Relative, Relative: new RelativeRange(unit, count, mode)), true, true, false, []);
+            new ConditionValue(ConditionOp.Relative, Relative: new RelativeRange(unit, count, mode, excludeToday)), true, true, false, []);
       static DashboardState Viewer(ConditionValue? period) => new(new Dictionary<string, ConditionValue?> { ["period"] = period });
       DashboardWidget orders = W("orders", Kpi("orders", Count()));
       DashboardWidget revenue = W("revenue", Kpi("orders", Of(Aggregate.Sum, "total"), "period"));
@@ -495,6 +495,10 @@ public sealed class WidgetQueryTests
       await report.CaseAsync(harness, "A sparkline over text", Dashboard([words]), "words");
       await report.CaseAsync(harness, "A rate of the rows a condition keeps, and over the period before (with the condition's value)", Dashboard([openShare], [last30]),
          "open-share");
+      await report.CaseAsync(harness, "The last 30 days up to yesterday (2026-02-28), and the 30 days before", Dashboard([revenue], [Period(RelativeUnit.Day, 30, RelativeMode.Last, true)]),
+         "revenue");
+      await report.CaseAsync(harness, "This month up to yesterday, on its first day: February, and January to its 28th",
+         Dashboard([revenue], [Period(RelativeUnit.Month, 1, RelativeMode.ToDate, true)]), "revenue");
 
       Golden.Match(report.ToString());
    }
